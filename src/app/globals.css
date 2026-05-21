@@ -1,21 +1,65 @@
 @import "tailwindcss";
 
+/* Travel Journal Design System */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Primary Colors */
+  --color-cream: #F5EDD8;
+  --color-gold: #C9A96E;
+  --color-gold-deep: #8B6035;
+  --color-ink: #3D2B0E;
+
+  /* Semantic Colors */
+  --background: #F5EDD8;
+  --foreground: #3D2B0E;
+  --accent: #C9A96E;
+  --accent-dark: #8B6035;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-cream: var(--color-cream);
+  --color-gold: var(--color-gold);
+  --color-gold-deep: var(--color-gold-deep);
+  --color-ink: var(--color-ink);
+  --color-accent: var(--accent);
+  --color-accent-dark: var(--accent-dark);
+
+  /* Font families */
+  --font-sans: "Crimson Pro", serif;
+  --font-serif: "Playfair Display", serif;
+  --font-script: "Caveat", cursive;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Custom base styles for Travel Journal aesthetic */
+@layer base {
+  body {
+    @apply bg-cream text-ink;
+    font-family: "Crimson Pro", serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: "Playfair Display", serif;
+  }
+}
+
+@layer utilities {
+  /* Soft shadow variants */
+  .shadow-soft {
+    box-shadow: 0 4px 6px rgba(61, 43, 14, 0.1);
+  }
+
+  .shadow-md-soft {
+    box-shadow: 0 10px 15px rgba(61, 43, 14, 0.12);
+  }
+
+  .shadow-lg-soft {
+    box-shadow: 0 20px 25px rgba(61, 43, 14, 0.15);
   }
 }
 
