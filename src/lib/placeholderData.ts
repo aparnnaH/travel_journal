@@ -7,7 +7,14 @@ export const placeholderCountries: Country[] = [
     code: 'US',
     pathData: '',
     visited: false,
+    coordinates: [-95.7129, 37.0902],
     journalEntries: [],
+    cities: [
+      { id: 'nyc', name: 'New York', region: 'East Coast', visited: true },
+      { id: 'sf', name: 'San Francisco', region: 'West Coast', visited: false },
+      { id: 'nash', name: 'Nashville', region: 'Midwest', visited: false },
+    ],
+    highlights: ['Met the sunrise at Times Square', 'Pinned a route through Napa Valley'],
   },
   {
     id: 'FR',
@@ -15,7 +22,13 @@ export const placeholderCountries: Country[] = [
     code: 'FR',
     pathData: '',
     visited: false,
+    coordinates: [2.2137, 46.2276],
     journalEntries: [],
+    cities: [
+      { id: 'par', name: 'Paris', region: 'Île-de-France', visited: true },
+      { id: 'nic', name: 'Nice', region: 'French Riviera', visited: false },
+    ],
+    highlights: ['Collected a passport stamp at Charles de Gaulle', 'Saved a photo of the Seine at dusk'],
   },
   {
     id: 'JP',
@@ -23,7 +36,13 @@ export const placeholderCountries: Country[] = [
     code: 'JP',
     pathData: '',
     visited: false,
+    coordinates: [138.2529, 36.2048],
     journalEntries: [],
+    cities: [
+      { id: 'tok', name: 'Tokyo', region: 'Kanto', visited: true },
+      { id: 'kyoto', name: 'Kyoto', region: 'Kansai', visited: false },
+    ],
+    highlights: ['Pinned a memory at Shibuya Crossing', 'Journaled about a temple stroll'],
   },
   {
     id: 'BR',
@@ -31,7 +50,13 @@ export const placeholderCountries: Country[] = [
     code: 'BR',
     pathData: '',
     visited: false,
+    coordinates: [-51.9253, -14.2350],
     journalEntries: [],
+    cities: [
+      { id: 'rio', name: 'Rio de Janeiro', region: 'Southeast', visited: false },
+      { id: 'sao', name: 'São Paulo', region: 'Southeast', visited: false },
+    ],
+    highlights: ['Dreaming of a carnival parade route', 'Planning a rainforest trek'],
   },
   {
     id: 'IT',
@@ -39,7 +64,13 @@ export const placeholderCountries: Country[] = [
     code: 'IT',
     pathData: '',
     visited: false,
+    coordinates: [12.5674, 41.8719],
     journalEntries: [],
+    cities: [
+      { id: 'rom', name: 'Rome', region: 'Lazio', visited: true },
+      { id: 'ven', name: 'Venice', region: 'Veneto', visited: false },
+    ],
+    highlights: ['Locked in a vintage canal route', 'Saved a memory at the Colosseum'],
   },
   {
     id: 'AU',
@@ -47,6 +78,12 @@ export const placeholderCountries: Country[] = [
     code: 'AU',
     pathData: '',
     visited: false,
+    coordinates: [134.491, -25.734],
     journalEntries: [],
+    cities: [
+      { id: 'syd', name: 'Sydney', region: 'New South Wales', visited: false },
+      { id: 'mel', name: 'Melbourne', region: 'Victoria', visited: false },
+    ],
+    highlights: ['Imagining a coastal road route', 'Planning a city explorer for the Outback'],
   },
 ];

@@ -57,6 +57,14 @@ export interface Country {
   visited: boolean;
   visitedAt?: string;
   journalEntries: JournalEntry[];
+  coordinates?: [number, number];
+  cities?: Array<{
+    id: string;
+    name: string;
+    region: string;
+    visited: boolean;
+  }>;
+  highlights?: string[];
 }
 
 export interface ScratchMapState {

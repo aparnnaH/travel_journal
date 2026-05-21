@@ -1,30 +1,52 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, Badge } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
-import ScratchMap from '@/components/map/ScratchMap';
+import WorldAtlas from '@/components/maps/world/WorldAtlas';
+import CityExplorer from '@/components/maps/city/CityExplorer';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
 
 export default function MapPage() {
-  const { visitedCountries, scratchPercentage, reset, addVisitedCountry, removeVisitedCountry } =
-    useMapStore();
+  const {
+    visitedCountries,
+    scratchPercentage,
+    reset,
+    addVisitedCountry,
+    removeVisitedCountry,
+    setScratchPercentage,
+  } = useMapStore();
+
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
+  const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && user === null) {
       router.replace('/login');
     }
   }, [user, router, isLoading]);
+
+  useEffect(() => {
+    const percent = Math.round((visitedCountries.length / placeholderCountries.length) * 100);
+    setScratchPercentage(percent);
+  }, [visitedCountries, setScratchPercentage]);
+
+  const selectedCountry = useMemo(
+    () => placeholderCountries.find((country) => country.id === selectedCountryId) ?? null,
+    [selectedCountryId]
+  );
+
+  const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
+  const recentlyVisited = placeholderCountries.filter((country) => visitedCountries.includes(country.id));
 
   if (isLoading || !user) {
     return null;
@@ -38,20 +60,12 @@ export default function MapPage() {
     router.push('/login');
   };
 
-  const availableCountries = placeholderCountries.filter(
-    (country) => !visitedCountries.includes(country.id)
-  );
-
-  const recentlyVisited = placeholderCountries.filter((country) =>
-    visitedCountries.includes(country.id)
-  );
-
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
       <PageShell
-        title="Scratch Map"
-        description="Track your globe-trotting story with a vintage scratch map, journal entries, and country milestones."
+        title="World Atlas"
+        description="Track your globe-trotting story with a world atlas, country discovery, and city-level exploration."
         actions={
           <Button variant="secondary" isLoading={signingOut} onClick={handleSignOut}>
             Sign Out
@@ -61,23 +75,24 @@ export default function MapPage() {
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <Card>
             <div className="flex flex-col gap-6">
-              <ScratchMap
+              <WorldAtlas
                 visitedCountries={visitedCountries}
                 onToggleCountry={(id) =>
                   visitedCountries.includes(id) ? removeVisitedCountry(id) : addVisitedCountry(id)
                 }
+                onSelectCountry={(id) => setSelectedCountryId(id)}
               />
 
               <Card className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="gold">Scratched {scratchPercentage}%</Badge>
+                  <Badge variant="gold">Atlas {scratchPercentage}% revealed</Badge>
                   <Badge>{visitedCountries.length} countries visited</Badge>
                 </div>
                 <p className="text-ink/70">
-                  Scratch off more countries as you visit them. Use the quick actions to simulate your next destination.
+                  Click a country to unlock the detailed country explorer and start building your city memory map.
                 </p>
                 <Button variant="outline" onClick={() => reset()}>
-                  Reset Map Progress
+                  Reset Atlas Progress
                 </Button>
               </Card>
             </div>
@@ -124,6 +139,8 @@ export default function MapPage() {
           </div>
         </div>
       </PageShell>
+
+      <CityExplorer country={selectedCountry} onClose={() => setSelectedCountryId(null)} />
     </div>
   );
 }
