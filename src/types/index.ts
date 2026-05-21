@@ -71,6 +71,7 @@ export interface ScratchMapState {
   scratchPercentage: number;
   visitedCountries: string[]; // country IDs
   countryColors: Record<string, string>; // country ID => persisted display color
+  countryLabels: Record<string, string>; // country ID => persisted display label
   lastUpdated: string;
 }
 

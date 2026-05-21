@@ -8,7 +8,7 @@ import { placeholderCountries } from '@/lib/placeholderData';
 interface WorldAtlasProps {
   visitedCountries: string[];
   countryColors: Record<string, string>;
-  onToggleCountry: (countryId: string) => void;
+  onToggleCountry: (countryId: string, countryName?: string) => void;
   onSelectCountry: (countryId: string) => void;
 }
 
@@ -53,6 +53,11 @@ function getCountryIso(geo: AtlasGeography) {
   return '';
 }
 
+function getCountryName(geo: AtlasGeography) {
+  const name = geo.properties?.name;
+  return name ? String(name) : undefined;
+}
+
 export default function WorldAtlas({ visitedCountries, countryColors, onToggleCountry, onSelectCountry }: WorldAtlasProps) {
   const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
   const [animatingCountry, setAnimatingCountry] = useState<string | null>(null);
@@ -62,9 +67,9 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
     [hoveredCountryId]
   );
 
-  function handleCountryToggle(id: string) {
+  function handleCountryToggle(id: string, countryName?: string) {
     setAnimatingCountry(id);
-    onToggleCountry(id);
+    onToggleCountry(id, countryName);
     window.setTimeout(() => setAnimatingCountry(null), 900);
   }
 
@@ -107,6 +112,7 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
                     const isTracked = trackedCountryIds.has(iso);
                     const isVisited = visitedCountries.includes(iso);
                     const visitedColor = countryColors[iso] ?? '#4ECFFF';
+                    const countryName = getCountryName(geo);
 
                     return (
                       <Geography
@@ -120,7 +126,7 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
                         }}
                         onMouseLeave={() => setHoveredCountryId(null)}
                         onClick={() => {
-                          if (iso) handleCountryToggle(iso);
+                          if (iso) handleCountryToggle(iso, countryName);
                         }}
                         style={{
                           default: { outline: 'none', transition: 'fill 450ms ease' },

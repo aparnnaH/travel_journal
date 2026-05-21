@@ -16,12 +16,14 @@ export default function MapPage() {
   const {
     visitedCountries,
     countryColors,
+    countryLabels,
     scratchPercentage,
     reset,
     addVisitedCountry,
     removeVisitedCountry,
     setScratchPercentage,
     setCountryColor,
+    setCountryLabel,
   } = useMapStore();
 
   const user = useAuthStore((state) => state.user);
@@ -60,11 +62,11 @@ export default function MapPage() {
         const displayName = knownCountry?.name ?? regionNames.of(countryId) ?? countryId;
         return {
           id: countryId,
-          name: displayName,
+          name: countryLabels[countryId] ?? displayName,
           color: countryColors[countryId] ?? '#4ECFFF',
         };
       }),
-    [visitedCountries, countryColors, regionNames]
+    [visitedCountries, countryColors, countryLabels, regionNames]
   );
 
   if (isLoading || !user) {
@@ -85,9 +87,12 @@ export default function MapPage() {
     return palette[randomIndex];
   }
 
-  const handleMapCountryClick = (countryId: string) => {
+  const handleMapCountryClick = (countryId: string, countryName?: string) => {
     if (!countryColors[countryId]) {
       setCountryColor(countryId, randomVisitedColor());
+    }
+    if (countryName) {
+      setCountryLabel(countryId, countryName);
     }
     addVisitedCountry(countryId);
   };
