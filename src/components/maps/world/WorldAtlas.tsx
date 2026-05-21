@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from 'react-simple-maps';
 import { placeholderCountries } from '@/lib/placeholderData';
+import ScratchLayer from './ScratchLayer';
 
 interface WorldAtlasProps {
   visitedCountries: string[];
@@ -111,6 +112,7 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
               return (
                 <Marker key={country.id} coordinates={coordinates}>
                   <g
+                    data-marker-id={country.id}
                     role="button"
                     tabIndex={0}
                     onClick={() => onSelectCountry(country.id)}
@@ -140,6 +142,12 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
                 </Marker>
               );
             })}
+            {/* Scratch layer overlay (Konva) - size matches the SVG viewBox */}
+            <foreignObject x={0} y={0} width={760} height={380}>
+              <div style={{ width: 760, height: 380, position: 'relative' }}>
+                <ScratchLayer width={760} height={380} onScratchReveal={(id) => onToggleCountry(id)} />
+              </div>
+            </foreignObject>
           </ZoomableGroup>
         </ComposableMap>
 
