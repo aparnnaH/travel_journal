@@ -7,6 +7,7 @@ import { placeholderCountries } from '@/lib/placeholderData';
 
 interface WorldAtlasProps {
   visitedCountries: string[];
+  countryColors: Record<string, string>;
   onToggleCountry: (countryId: string) => void;
   onSelectCountry: (countryId: string) => void;
 }
@@ -34,19 +35,25 @@ const slantedGrid = [
 type AtlasGeography = ExtendedFeature & {
   rsmKey: string;
   svgPath?: string;
+  id?: string | number;
   properties: {
     ISO_A2?: unknown;
     iso_a2?: unknown;
     ISO_A3?: unknown;
+    name?: unknown;
   } | null;
 };
 
 function getCountryIso(geo: AtlasGeography) {
-  const iso = geo.properties?.ISO_A2 || geo.properties?.iso_a2 || geo.properties?.ISO_A3 || '';
-  return String(iso).toUpperCase();
+  const iso = geo.properties?.ISO_A2 || geo.properties?.iso_a2 || geo.properties?.ISO_A3;
+  if (iso) return String(iso).toUpperCase();
+  if (geo.id !== undefined && geo.id !== null) return String(geo.id).toUpperCase();
+  const name = geo.properties?.name;
+  if (name) return String(name).toUpperCase();
+  return '';
 }
 
-export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelectCountry }: WorldAtlasProps) {
+export default function WorldAtlas({ visitedCountries, countryColors, onToggleCountry, onSelectCountry }: WorldAtlasProps) {
   const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
   const [animatingCountry, setAnimatingCountry] = useState<string | null>(null);
 
@@ -99,12 +106,13 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
                     const iso = getCountryIso(geo);
                     const isTracked = trackedCountryIds.has(iso);
                     const isVisited = visitedCountries.includes(iso);
+                    const visitedColor = countryColors[iso] ?? '#4ECFFF';
 
                     return (
                       <Geography
                         key={geo.rsmKey}
                         geography={geo}
-                        fill={isVisited ? '#4ECFFF' : '#E6D5B8'}
+                        fill={isVisited ? visitedColor : '#E6D5B8'}
                         stroke="#9D7B4A"
                         strokeWidth={0.35}
                         onMouseEnter={() => {
@@ -112,12 +120,12 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
                         }}
                         onMouseLeave={() => setHoveredCountryId(null)}
                         onClick={() => {
-                          if (isTracked) handleCountryToggle(iso);
+                          if (iso) handleCountryToggle(iso);
                         }}
                         style={{
                           default: { outline: 'none', transition: 'fill 450ms ease' },
-                          hover: { fill: isTracked ? '#8FDDFF' : '#E6D5B8', cursor: isTracked ? 'pointer' : 'default' },
-                          pressed: { fill: '#4ECFFF', outline: 'none' },
+                          hover: { fill: isVisited ? visitedColor : '#DCC9A8', cursor: iso ? 'pointer' : 'default' },
+                          pressed: { fill: isVisited ? visitedColor : '#D6C19D', outline: 'none' },
                         }}
                       />
                     );
@@ -129,6 +137,7 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
                     const isVisited = visitedCountries.includes(country.id);
                     const isHovered = hoveredCountryId === country.id;
                     const isAnimating = animatingCountry === country.id;
+                    const markerColor = countryColors[country.id] ?? '#4ECFFF';
 
                     return (
                       <Marker key={country.id} coordinates={coordinates}>
@@ -149,7 +158,7 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
                           transform={isAnimating ? 'scale(1.18)' : 'scale(1)'}
                           style={{ transition: 'transform 350ms ease' }}
                         >
-                          <circle cx="0" cy="0" r={isHovered ? 14 : 12} fill={isVisited ? '#4ECFFF' : '#F7F1DE'} stroke="#7C6A46" strokeWidth="2" />
+                          <circle cx="0" cy="0" r={isHovered ? 14 : 12} fill={isVisited ? markerColor : '#F7F1DE'} stroke="#7C6A46" strokeWidth="2" />
                           <circle cx="0" cy="0" r={isHovered ? 20 : 18} fill="none" stroke="#7C6A46" strokeWidth="1" opacity="0.3" />
                           <text
                             x="0"
@@ -172,7 +181,7 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
         </ComposableMap>
 
         <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-3xl border border-ink/10 bg-white/75 px-4 py-3 text-xs text-ink/70 shadow-inner">
-          Click countries to mark them visited, then click a marker to open the city explorer.
+          Click a country to mark it visited with a random color, then click a marker to open the city explorer.
         </div>
       </div>
 
@@ -192,7 +201,7 @@ export default function WorldAtlas({ visitedCountries, onToggleCountry, onSelect
         </div>
         <div className="rounded-3xl border border-ink/10 bg-white p-4 text-ink/80">
           <p className="text-sm uppercase tracking-[0.26em] text-gold/70">Action</p>
-          <p className="text-sm">Click a country geography to toggle visited status. Click a marker to open the detailed country explorer.</p>
+          <p className="text-sm">Click a country geography to assign a random visited color. Click a marker to open the detailed country explorer.</p>
         </div>
       </div>
     </div>

@@ -15,11 +15,13 @@ import { signOut } from '@/lib/supabase';
 export default function MapPage() {
   const {
     visitedCountries,
+    countryColors,
     scratchPercentage,
     reset,
     addVisitedCountry,
     removeVisitedCountry,
     setScratchPercentage,
+    setCountryColor,
   } = useMapStore();
 
   const user = useAuthStore((state) => state.user);
@@ -36,7 +38,9 @@ export default function MapPage() {
   }, [user, router, isLoading]);
 
   useEffect(() => {
-    const percent = Math.round((visitedCountries.length / placeholderCountries.length) * 100);
+    const trackedCountryIds = new Set(placeholderCountries.map((country) => country.id));
+    const trackedVisitedCount = visitedCountries.filter((countryId) => trackedCountryIds.has(countryId)).length;
+    const percent = Math.round((trackedVisitedCount / placeholderCountries.length) * 100);
     setScratchPercentage(percent);
   }, [visitedCountries, setScratchPercentage]);
 
@@ -46,7 +50,22 @@ export default function MapPage() {
   );
 
   const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
-  const recentlyVisited = placeholderCountries.filter((country) => visitedCountries.includes(country.id));
+
+  const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
+
+  const recentlyVisited = useMemo(
+    () =>
+      visitedCountries.map((countryId) => {
+        const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+        const displayName = knownCountry?.name ?? regionNames.of(countryId) ?? countryId;
+        return {
+          id: countryId,
+          name: displayName,
+          color: countryColors[countryId] ?? '#4ECFFF',
+        };
+      }),
+    [visitedCountries, countryColors, regionNames]
+  );
 
   if (isLoading || !user) {
     return null;
@@ -58,6 +77,19 @@ export default function MapPage() {
     logout();
     setSigningOut(false);
     router.push('/login');
+  };
+
+  function randomVisitedColor() {
+    const palette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
+    const randomIndex = Math.floor(Math.random() * palette.length);
+    return palette[randomIndex];
+  }
+
+  const handleMapCountryClick = (countryId: string) => {
+    if (!countryColors[countryId]) {
+      setCountryColor(countryId, randomVisitedColor());
+    }
+    addVisitedCountry(countryId);
   };
 
   return (
@@ -77,9 +109,8 @@ export default function MapPage() {
             <div className="flex flex-col gap-6">
               <WorldAtlas
                 visitedCountries={visitedCountries}
-                onToggleCountry={(id) =>
-                  visitedCountries.includes(id) ? removeVisitedCountry(id) : addVisitedCountry(id)
-                }
+                countryColors={countryColors}
+                onToggleCountry={handleMapCountryClick}
                 onSelectCountry={(id) => setSelectedCountryId(id)}
               />
 
@@ -127,7 +158,10 @@ export default function MapPage() {
                       key={country.id}
                       className="flex items-center justify-between rounded-2xl bg-cream p-3"
                     >
-                      <span>{country.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: country.color }} />
+                        <span>{country.name}</span>
+                      </div>
                       <Button size="sm" variant="outline" onClick={() => removeVisitedCountry(country.id)}>
                         Remove
                       </Button>

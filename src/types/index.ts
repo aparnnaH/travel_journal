@@ -70,6 +70,7 @@ export interface Country {
 export interface ScratchMapState {
   scratchPercentage: number;
   visitedCountries: string[]; // country IDs
+  countryColors: Record<string, string>; // country ID => persisted display color
   lastUpdated: string;
 }
 

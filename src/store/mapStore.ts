@@ -7,12 +7,15 @@ interface MapStore extends ScratchMapState {
   addVisitedCountry: (countryId: string) => void;
   removeVisitedCountry: (countryId: string) => void;
   setVisitedCountries: (countries: string[]) => void;
+  setCountryColor: (countryId: string, color: string) => void;
+  clearCountryColor: (countryId: string) => void;
   reset: () => void;
 }
 
 const initialState: ScratchMapState = {
   scratchPercentage: 0,
   visitedCountries: [],
+  countryColors: {},
   lastUpdated: new Date().toISOString(),
 };
 
@@ -45,6 +48,9 @@ export const useMapStore = create<MapStore>()(
       removeVisitedCountry: (countryId) =>
         set((state) => ({
           visitedCountries: state.visitedCountries.filter((id) => id !== countryId),
+          countryColors: Object.fromEntries(
+            Object.entries(state.countryColors).filter(([id]) => id !== countryId)
+          ),
           lastUpdated: new Date().toISOString(),
         })),
       setVisitedCountries: (visitedCountries) =>
@@ -52,6 +58,21 @@ export const useMapStore = create<MapStore>()(
           visitedCountries,
           lastUpdated: new Date().toISOString(),
         }),
+      setCountryColor: (countryId, color) =>
+        set((state) => ({
+          countryColors: {
+            ...state.countryColors,
+            [countryId]: color,
+          },
+          lastUpdated: new Date().toISOString(),
+        })),
+      clearCountryColor: (countryId) =>
+        set((state) => ({
+          countryColors: Object.fromEntries(
+            Object.entries(state.countryColors).filter(([id]) => id !== countryId)
+          ),
+          lastUpdated: new Date().toISOString(),
+        })),
       reset: () => set(initialState),
     }),
     {
