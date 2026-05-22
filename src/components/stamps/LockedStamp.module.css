@@ -1,0 +1,118 @@
+.lockedStampContainer {
+  cursor: pointer;
+  position: relative;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.12));
+  transition: filter 0.3s ease;
+
+  &:hover {
+    filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.2));
+  }
+}
+
+.lockedCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+  box-sizing: border-box;
+}
+
+.mysteryPattern {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.03) 0,
+    rgba(0, 0, 0, 0.03) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+.lockedContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  position: relative;
+  z-index: 2;
+  text-align: center;
+}
+
+.lockIconLarge {
+  font-size: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.mysteryText {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #666666;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+.hintText {
+  font-size: 0.65rem;
+  color: #888888;
+  font-style: italic;
+  opacity: 0.7;
+  transition: all 0.3s ease;
+}
+
+.shimmerEffect {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  z-index: 10;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
+.floatingParticle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: 1rem;
+  pointer-events: none;
+  z-index: 9;
+}
+
+@media (max-width: 640px) {
+  .mysteryText {
+    font-size: 0.7rem;
+  }
+
+  .lockIconLarge {
+    font-size: 2rem;
+  }
+
+  .hintText {
+    font-size: 0.6rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .lockedContent {
+    gap: 0.5rem;
+  }
+
+  .mysteryText {
+    font-size: 0.65rem;
+  }
+
+  .lockIconLarge {
+    font-size: 1.5rem;
+  }
+}
