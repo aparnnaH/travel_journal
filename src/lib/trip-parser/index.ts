@@ -738,8 +738,12 @@ const buildSourceLines = (text: string | undefined, files: TripImportFile[]): So
     const cleanName = cleanFileName(file.name);
 
     if (cleanName) {
+      if (file.kind === 'pdf' && !findLocationsInText(cleanName).length && !/\b(?:itinerary|plan|trip|travel)\b/i.test(cleanName)) {
+        return;
+      }
+
       lines.push({
-        line: `${file.kind === 'pdf' ? 'PDF' : 'Screenshot'}: ${cleanName}`,
+        line: file.kind === 'pdf' ? cleanName : `Screenshot: ${cleanName}`,
         kind: 'file',
       });
     }

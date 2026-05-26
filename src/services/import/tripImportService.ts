@@ -53,24 +53,160 @@ const readFileAsArrayBuffer = (file: File) =>
     reader.readAsArrayBuffer(file);
   });
 
+const decodePdfHexString = (value: string) => {
+  const hex = value.replace(/[^0-9a-f]/gi, '');
+
+  if (hex.length < 4 || hex.length % 2 !== 0) {
+    return '';
+  }
+
+  if (hex.startsWith('FEFF') || hex.startsWith('feff')) {
+    const codePoints: number[] = [];
+
+    for (let index = 4; index + 3 < hex.length; index += 4) {
+      codePoints.push(Number.parseInt(hex.slice(index, index + 4), 16));
+    }
+
+    return String.fromCodePoint(...codePoints);
+  }
+
+  const bytes = new Uint8Array(hex.length / 2);
+
+  for (let index = 0; index < hex.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
+  }
+
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+};
+
+const decodePdfLiteralString = (value: string) =>
+  value
+    .replace(/^[(]|[)]$/g, '')
+    .replace(/\\([nrtbf()\\])/g, (_, escaped: string) => {
+      const escapes: Record<string, string> = {
+        n: '\n',
+        r: '\r',
+        t: '\t',
+        b: '',
+        f: '',
+        '(': '(',
+        ')': ')',
+        '\\': '\\',
+      };
+
+      return escapes[escaped] ?? escaped;
+    })
+    .replace(/\\([0-7]{1,3})/g, (_, octal: string) => String.fromCharCode(Number.parseInt(octal, 8)));
+
+const titleCaseWords = (value: string) =>
+  value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+
+const getPlaceTextFromUri = (uri: string) => {
+  try {
+    const url = new URL(uri);
+    const segments = url.pathname.split('/').map(decodeURIComponent).filter(Boolean);
+    const segment = segments.at(-1)?.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();
+
+    if (!segment || /^(?:amp|index|maps?|places?|search|travel)$/i.test(segment)) {
+      return '';
+    }
+
+    return titleCaseWords(segment);
+  } catch {
+    return '';
+  }
+};
+
+const isUsefulPdfLine = (line: string) => {
+  const cleanLine = line.replace(/\s+/g, ' ').trim();
+  const lowerLine = cleanLine.toLowerCase();
+  const letters = cleanLine.match(/[a-z]/gi)?.length ?? 0;
+  const hexCharacters = cleanLine.match(/[a-f0-9]/gi)?.length ?? 0;
+
+  if (cleanLine.length < 3 || cleanLine.length > 160 || letters < 2) {
+    return false;
+  }
+
+  if (/^[a-f0-9\s]{16,}$/i.test(cleanLine) || hexCharacters / cleanLine.length > 0.82) {
+    return false;
+  }
+
+  if (
+    /^(?:adobe|annots|applewebkit|charprocs|creator|encoding|endobj|endstream|extgstate|filter|font|identity|length|macintosh|mediabox|moddate|obj|ordering|pdf-\d(?:\.\d+)?|procset|producer|rect|registry|startxref|stream|subtype|title|trailer|type|uri|xref)$/i.test(cleanLine) ||
+    /^\/?[a-z]\d+\s+\d+\s+\d+\s+r\b/i.test(cleanLine) ||
+    /^\/?[a-z]+\s+\/?[a-z0-9.-]+/i.test(cleanLine) ||
+    /^g[0-9a-f]+\s+\d+\s+\d+\s+r\b/i.test(cleanLine) ||
+    /(?:applewebkit|creationdate|flateDecode|https?:\/\/|khtml|mozilla|producer|safari|skia|www\.|xref)/i.test(cleanLine) ||
+    /(?:^|[\s/])(?:bm|ca|CA|lc|LJ|LW|ML|SA)\s+[\d.]+/.test(cleanLine)
+  ) {
+    return false;
+  }
+
+  if (
+    lowerLine.includes('font') ||
+    lowerLine.includes('normal') ||
+    lowerLine.includes('chrome/') ||
+    lowerLine.includes('macintosh;') ||
+    lowerLine.includes('applewebkit')
+  ) {
+    return false;
+  }
+
+  return true;
+};
+
+const uniqueCleanPdfLines = (lines: string[]) =>
+  Array.from(
+    new Set(
+      lines
+        .map((line) => line.replace(/[\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim())
+        .filter(isUsefulPdfLine)
+    )
+  );
+
 const extractPdfText = async (file: File) => {
   const buffer = await readFileAsArrayBuffer(file);
-  const rawText = new TextDecoder().decode(buffer);
-  const candidates =
-    rawText
-      .replace(/\\r|\\n|\r|\n/g, '\n')
-      .match(/[A-Za-z][A-Za-z0-9\s.,:;'"!?()&/@#-]{4,}/g) || [];
-  const ignoredTerms = ['endobj', 'stream', 'xref', 'trailer', 'font', 'obj', 'pdf'];
+  const rawText = new TextDecoder('iso-8859-1').decode(buffer);
+  const searchableText = rawText
+    .replace(/stream[\s\S]*?endstream/g, '\n')
+    .replace(/\\r|\\n|\r|\n/g, '\n');
+  const candidates: string[] = [];
 
-  return Array.from(new Set(candidates))
-    .map((candidate) => candidate.replace(/\s+/g, ' ').trim())
-    .filter((candidate) => {
-      const lower = candidate.toLowerCase();
-      return candidate.length >= 5 && !ignoredTerms.some((term) => lower === term || lower.startsWith(`${term} `));
-    })
-    .slice(0, 80)
+  Array.from(searchableText.matchAll(/\/(?:Title|Subject|Keywords)\s*(\((?:\\.|[^\\)])*\)|<\s*[0-9a-f\s]{8,}\s*>)/gi)).forEach(
+    (match) => {
+      const value = match[1];
+      candidates.push(value.startsWith('(') ? decodePdfLiteralString(value) : decodePdfHexString(value));
+    }
+  );
+
+  Array.from(searchableText.matchAll(/\bFEFF(?:[0-9a-f]{4}){3,}\b/gi)).forEach((match) => {
+    candidates.push(decodePdfHexString(match[0]));
+  });
+
+  Array.from(searchableText.matchAll(/\/URI\s*\(([^)]+)\)/gi)).forEach((match) => {
+    const placeText = getPlaceTextFromUri(decodePdfLiteralString(`(${match[1]})`));
+
+    if (placeText) {
+      candidates.push(placeText);
+    }
+  });
+
+  Array.from(searchableText.matchAll(/https?:\/\/[^\s)<>]+/gi)).forEach((match) => {
+    const placeText = getPlaceTextFromUri(match[0]);
+
+    if (placeText) {
+      candidates.push(placeText);
+    }
+  });
+
+  return uniqueCleanPdfLines(candidates)
+    .slice(0, 40)
     .join('\n')
-    .slice(0, 12000);
+    .slice(0, 6000);
 };
 
 export const readTripImportFiles = async (files: File[] = []): Promise<TripImportFile[]> => {
@@ -88,9 +224,11 @@ export const readTripImportFiles = async (files: File[] = []): Promise<TripImpor
       } satisfies Omit<TripImportFile, 'dataUrl' | 'extractedText'>;
 
       if (isPdf) {
+        const extractedText = await extractPdfText(file);
+
         return {
           ...baseFile,
-          extractedText: await extractPdfText(file),
+          ...(extractedText ? { extractedText } : {}),
         };
       }
 
