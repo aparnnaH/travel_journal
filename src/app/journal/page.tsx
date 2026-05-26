@@ -47,6 +47,58 @@ type DragState = {
   offsetY: number;
 };
 
+type DictationTarget =
+  | {
+      type: 'story';
+    }
+  | {
+      type: 'note';
+      itemId: string;
+    };
+
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionResultListLike = {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: SpeechRecognitionResultListLike;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error?: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  abort: () => void;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
 const PHOTO_WIDTH = 190;
 const PHOTO_HEIGHT = 246;
 const NOTE_WIDTH = 190;
@@ -54,6 +106,21 @@ const NOTE_HEIGHT = 178;
 const noteColors = ['#fff2a8', '#dcecff', '#ffd8d2', '#dff5d6'];
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const appendDictationText = (currentValue: string, transcript: string) => {
+  const cleanTranscript = transcript.trim();
+
+  if (!cleanTranscript) {
+    return currentValue;
+  }
+
+  if (!currentValue.trim()) {
+    return cleanTranscript;
+  }
+
+  const separator = /\s$/.test(currentValue) ? '' : ' ';
+  return `${currentValue}${separator}${cleanTranscript}`;
+};
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -75,12 +142,38 @@ const readPhotoFile = (file: File) =>
 const getEntryDate = (entry: SavedEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_id || '';
 
+const getSpeechRecognition = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const speechWindow = window as SpeechWindow;
+  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null;
+};
+
+const isSameDictationTarget = (firstTarget: DictationTarget | null, secondTarget: DictationTarget) => {
+  if (!firstTarget || firstTarget.type !== secondTarget.type) {
+    return false;
+  }
+
+  if (firstTarget.type === 'story' && secondTarget.type === 'story') {
+    return true;
+  }
+
+  if (firstTarget.type === 'note' && secondTarget.type === 'note') {
+    return firstTarget.itemId === secondTarget.itemId;
+  }
+
+  return false;
+};
+
 export default function JournalPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const router = useRouter();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
   const [entries, setEntries] = useState<SavedEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -88,6 +181,8 @@ export default function JournalPage() {
   const [scrapbookItems, setScrapbookItems] = useState<ScrapbookItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [dictationTarget, setDictationTarget] = useState<DictationTarget | null>(null);
+  const [dictationError, setDictationError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
@@ -185,6 +280,13 @@ export default function JournalPage() {
     }
   }, [scrapbookItems, scrapbookStorageKey]);
 
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
+
   if (isLoading || !user) {
     return null;
   }
@@ -206,7 +308,106 @@ export default function JournalPage() {
   const deleteScrapbookItem = (itemId: string) => {
     setScrapbookItems((current) => current.filter((item) => item.id !== itemId));
     setSelectedItemId((current) => (current === itemId ? null : current));
+    setDictationTarget((current) => (current?.type === 'note' && current.itemId === itemId ? null : current));
     setStorageWarning(null);
+  };
+
+  const appendTranscriptToTarget = (target: DictationTarget, transcript: string) => {
+    if (target.type === 'story') {
+      setForm((current) => ({
+        ...current,
+        content: appendDictationText(current.content, transcript),
+      }));
+      return;
+    }
+
+    setScrapbookItems((current) =>
+      current.map((item) => {
+        if (item.type !== 'note' || item.id !== target.itemId) {
+          return item;
+        }
+
+        return {
+          ...item,
+          text: appendDictationText(item.text, transcript),
+        };
+      })
+    );
+  };
+
+  const stopDictation = () => {
+    const recognition = recognitionRef.current;
+    recognitionRef.current = null;
+    recognition?.stop();
+    setDictationTarget(null);
+  };
+
+  const toggleDictation = (target: DictationTarget) => {
+    if (isSameDictationTarget(dictationTarget, target)) {
+      stopDictation();
+      return;
+    }
+
+    const currentRecognition = recognitionRef.current;
+    recognitionRef.current = null;
+    currentRecognition?.stop();
+
+    const SpeechRecognition = getSpeechRecognition();
+
+    if (!SpeechRecognition) {
+      setDictationError('Voice dictation is not available in this browser.');
+      setDictationTarget(null);
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+
+        if (result.isFinal) {
+          finalTranscript = `${finalTranscript} ${result[0].transcript}`;
+        }
+      }
+
+      appendTranscriptToTarget(target, finalTranscript);
+    };
+
+    recognition.onerror = (event) => {
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null;
+      }
+
+      setDictationTarget(null);
+      setDictationError(
+        event.error === 'not-allowed'
+          ? 'Microphone permission was blocked.'
+          : 'Voice dictation stopped. Try again when you are ready.'
+      );
+    };
+
+    recognition.onend = () => {
+      if (recognitionRef.current === recognition) {
+        recognitionRef.current = null;
+        setDictationTarget(null);
+      }
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setDictationTarget(target);
+      setDictationError(null);
+    } catch {
+      setDictationTarget(null);
+      setDictationError('Voice dictation could not start.');
+    }
   };
 
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>, item: ScrapbookItem) => {
@@ -403,6 +604,12 @@ export default function JournalPage() {
     setError(response.error || 'Could not save entry.');
   };
 
+  const isStoryDictating = dictationTarget?.type === 'story';
+  const isSelectedNoteDictating =
+    selectedItem?.type === 'note' &&
+    dictationTarget?.type === 'note' &&
+    dictationTarget.itemId === selectedItem.id;
+
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
@@ -569,7 +776,17 @@ export default function JournalPage() {
                   onChange={(event) => setForm({ ...form, mood: event.target.value })}
                 />
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-ink">Story</label>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <label className="block text-sm font-medium text-ink">Story</label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={isStoryDictating ? 'secondary' : 'ghost'}
+                      onClick={() => toggleDictation({ type: 'story' })}
+                    >
+                      {isStoryDictating ? 'Stop' : 'Dictate'}
+                    </Button>
+                  </div>
                   <textarea
                     value={form.content}
                     onChange={(event) => setForm({ ...form, content: event.target.value })}
@@ -577,6 +794,7 @@ export default function JournalPage() {
                     className="w-full rounded-lg border-2 border-gold/30 bg-cream/50 px-4 py-3 text-ink placeholder-ink/50 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30"
                     required
                   />
+                  {isStoryDictating ? <p className="mt-1 text-sm text-gold-deep">Listening...</p> : null}
                 </div>
                 <Input
                   label="Tags"
@@ -584,6 +802,7 @@ export default function JournalPage() {
                   onChange={(event) => setForm({ ...form, tags: event.target.value })}
                   placeholder="market, sunset, train"
                 />
+                {dictationError ? <p className="text-sm text-red-600">{dictationError}</p> : null}
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
                 <Button type="submit" isLoading={saving} className="w-full">
                   Save Entry
@@ -601,6 +820,15 @@ export default function JournalPage() {
                   <Button type="button" variant="secondary" onClick={() => bringToFront(selectedItem.id)}>
                     Bring Front
                   </Button>
+                  {selectedItem.type === 'note' ? (
+                    <Button
+                      type="button"
+                      variant={isSelectedNoteDictating ? 'secondary' : 'ghost'}
+                      onClick={() => toggleDictation({ type: 'note', itemId: selectedItem.id })}
+                    >
+                      {isSelectedNoteDictating ? 'Stop' : 'Dictate Note'}
+                    </Button>
+                  ) : null}
                   <Button type="button" variant="outline" onClick={() => deleteScrapbookItem(selectedItem.id)}>
                     Remove
                   </Button>
