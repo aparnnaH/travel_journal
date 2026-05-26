@@ -10,6 +10,7 @@ import ImportTripModal from '@/components/import/ImportTripModal';
 import ScrapbookCanvas from '@/components/journal/canvas/ScrapbookCanvas';
 import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
+import { appendImportedTripToStorage, getScrapbookStorageKey } from '@/lib/ai/storage';
 import { useAuthStore } from '@/store/authStore';
 import { fetchJournalEntries, createJournalEntry } from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -236,7 +237,7 @@ export default function JournalPage() {
   );
   const currentTheme = scrapbookThemes.find((theme) => theme.id === currentPage?.theme) || scrapbookThemes[0];
   const scrapbookStorageKey = useMemo(
-    () => (user ? `travel-journal-scrapbook:${user.id}` : null),
+    () => (user ? getScrapbookStorageKey(user.id) : null),
     [user]
   );
 
@@ -1116,6 +1117,14 @@ export default function JournalPage() {
   const handleTripImported = (result: TripImportResult) => {
     if (!result.scrapbookPages.length) {
       return;
+    }
+
+    if (user) {
+      try {
+        appendImportedTripToStorage(user.id, result.trip);
+      } catch {
+        setStorageWarning('Trip pages were imported, but AI companion history could not be cached on this device.');
+      }
     }
 
     setScrapbookPages((current) => [...current, ...result.scrapbookPages]);

@@ -1,0 +1,286 @@
+'use client';
+
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import AppHeader from '@/components/layout/AppHeader';
+import ChatPanel from '@/components/chat/ChatPanel';
+import SuggestedPromptCard from '@/components/ai/SuggestedPromptCard';
+import MemoryInsightCard from '@/components/ai/MemoryInsightCard';
+import TravelReflectionCard from '@/components/ai/TravelReflectionCard';
+import AITripSummaryCard from '@/components/ai/AITripSummaryCard';
+import { useTravelCompanionChat } from '@/hooks/chat/useTravelCompanionChat';
+import { useAuthStore } from '@/store/authStore';
+import { useMapStore } from '@/store/mapStore';
+import { fetchJournalEntries } from '@/lib/journalService';
+import { readImportedTripsFromStorage, readScrapbookPagesFromStorage } from '@/lib/ai/storage';
+import type { ImportedTripSnapshot } from '@/lib/ai/types';
+import type { JournalEntry } from '@/types';
+import {
+  buildCompanionInsights,
+  buildTravelCompanionContext,
+} from '@/services/ai/travelCompanionService';
+
+type RawJournalEntry = Partial<JournalEntry> & {
+  country_id?: string;
+  created_at?: string;
+};
+
+type CompanionDataState = {
+  journalEntries: RawJournalEntry[];
+  importedTrips: ImportedTripSnapshot[];
+  scrapbookPagesLoaded: ReturnType<typeof readScrapbookPagesFromStorage>;
+};
+
+const initialDataState: CompanionDataState = {
+  journalEntries: [],
+  importedTrips: [],
+  scrapbookPagesLoaded: [],
+};
+
+export default function TravelCompanionPage() {
+  const user = useAuthStore((state) => state.user);
+  const isLoading = useAuthStore((state) => state.isLoading);
+  const visitedCountryIds = useMapStore((state) => state.visitedCountries);
+  const router = useRouter();
+
+  const [dataState, setDataState] = useState<CompanionDataState>(initialDataState);
+  const [loadingState, setLoadingState] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      router.replace('/login');
+    }
+  }, [isLoading, router, user]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let isActive = true;
+
+    const loadTravelData = async () => {
+      setLoadingState(true);
+
+      const [journalResponse] = await Promise.all([fetchJournalEntries(user.id)]);
+      if (!isActive) {
+        return;
+      }
+
+      const scrapbookPagesLoaded = readScrapbookPagesFromStorage(user.id);
+      const importedTrips = readImportedTripsFromStorage(user.id);
+
+      if (!journalResponse.success) {
+        setLoadError(journalResponse.error || 'Journal entries could not be loaded.');
+      } else {
+        setLoadError(null);
+      }
+
+      setDataState({
+        journalEntries: journalResponse.success && Array.isArray(journalResponse.data) ? journalResponse.data : [],
+        importedTrips,
+        scrapbookPagesLoaded,
+      });
+      setLoadingState(false);
+    };
+
+    void loadTravelData();
+
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
+
+  const context = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+
+    return buildTravelCompanionContext({
+      journalEntries: dataState.journalEntries,
+      importedTrips: dataState.importedTrips,
+      scrapbookPages: dataState.scrapbookPagesLoaded,
+      visitedCountryIds,
+    });
+  }, [dataState, user, visitedCountryIds]);
+
+  const insights = useMemo(() => (context ? buildCompanionInsights(context) : null), [context]);
+  const recentMemories = useMemo(() => context?.memoryPool.slice(0, 5) ?? [], [context]);
+  const passportSnapshot = useMemo(() => context?.passportStamps.slice(0, 6) ?? [], [context]);
+
+  const { messages, isThinking, sendMessage, sendPrompt } = useTravelCompanionChat({ context });
+
+  if (isLoading || !user) {
+    return null;
+  }
+
+  return (
+    <div className="min-h-screen bg-cream">
+      <AppHeader />
+      <main className="relative overflow-hidden pb-10">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_10%,rgba(139,96,53,0.18),transparent_28rem),radial-gradient(circle_at_85%_8%,rgba(47,111,109,0.2),transparent_30rem),repeating-linear-gradient(0deg,rgba(61,43,14,0.028)_0_1px,transparent_1px_8px)]" />
+
+        <div className="relative mx-auto w-full max-w-[1380px] px-4 pt-8 sm:px-6 lg:px-8">
+          <motion.header
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 overflow-hidden rounded-lg border border-gold/28 bg-[#f7eedc] px-5 py-5 shadow-lg-soft"
+          >
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gold-deep">AI Companion</p>
+            <h1 className="mt-2 text-4xl font-serif text-ink sm:text-5xl">Travel Memory Companion</h1>
+            <p className="mt-2 max-w-4xl text-base leading-7 text-ink/78">
+              A dedicated scrapbook intelligence space that learns from your journal entries, imported trips, passport stamps, and page layouts.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ink/66">
+              <span className="rounded-md border border-gold/25 bg-white/72 px-2.5 py-1.5">{context?.journalEntries.length ?? 0} journal entries</span>
+              <span className="rounded-md border border-gold/25 bg-white/72 px-2.5 py-1.5">{context?.scrapbookPages.length ?? 0} scrapbook pages</span>
+              <span className="rounded-md border border-gold/25 bg-white/72 px-2.5 py-1.5">{context?.importedTrips.length ?? 0} imported trips</span>
+              <span className="rounded-md border border-gold/25 bg-white/72 px-2.5 py-1.5">{context?.passportStamps.length ?? 0} stamp links</span>
+            </div>
+          </motion.header>
+
+          {loadingState ? (
+            <div className="rounded-lg border border-gold/20 bg-white/84 px-5 py-4 text-sm text-ink/72 shadow-soft">
+              Syncing travel archive...
+            </div>
+          ) : null}
+
+          {loadError ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
+          ) : null}
+
+          <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <ChatPanel messages={messages} isThinking={isThinking} onSendMessage={sendMessage} />
+
+              {insights ? (
+                <section className="rounded-lg border border-gold/20 bg-[#fffaf0] px-4 py-4 shadow-soft">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-2xl font-serif text-ink">Journal + Caption Studio</h2>
+                    <p className="text-xs uppercase tracking-[0.2em] text-ink/52">AI suggestions</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <article className="rounded-lg border border-gold/20 bg-white px-4 py-3">
+                      <h3 className="text-lg font-semibold text-ink">Journal Suggestions</h3>
+                      <div className="mt-2 space-y-2">
+                        {insights.journalSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => sendPrompt(suggestion)}
+                            className="block w-full rounded-md border border-gold/16 bg-cream/45 px-3 py-2 text-left text-sm leading-6 text-ink/78 transition hover:border-gold/35"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-lg border border-gold/20 bg-white px-4 py-3">
+                      <h3 className="text-lg font-semibold text-ink">Scrapbook Caption Ideas</h3>
+                      <div className="mt-2 space-y-2">
+                        {insights.captionIdeas.map((caption) => (
+                          <button
+                            key={caption}
+                            type="button"
+                            onClick={() => sendPrompt(`Use this caption direction: ${caption}`)}
+                            className="block w-full rounded-md border border-gold/16 bg-cream/45 px-3 py-2 text-left text-sm leading-6 text-ink/78 transition hover:border-gold/35"
+                          >
+                            {caption}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+
+            <aside className="space-y-4">
+              {insights ? (
+                <section className="rounded-lg border border-gold/24 bg-[#f9f2e2] px-4 py-4 shadow-soft">
+                  <h2 className="text-xl font-serif text-ink">Suggested Prompts</h2>
+                  <div className="mt-3 space-y-2.5">
+                    {insights.prompts.map((prompt) => (
+                      <SuggestedPromptCard key={prompt.id} title={prompt.title} prompt={prompt.prompt} onSelect={sendPrompt} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {context ? <AITripSummaryCard summary={context.tripSummary} /> : null}
+
+              {insights ? (
+                <section className="space-y-2.5">
+                  {insights.reflections.map((reflection) => (
+                    <TravelReflectionCard
+                      key={reflection.id}
+                      title={reflection.title}
+                      reflection={reflection.reflection}
+                      anchor={reflection.anchor}
+                    />
+                  ))}
+                </section>
+              ) : null}
+
+              {insights ? (
+                <section className="space-y-2.5">
+                  {insights.insightCards.map((card) => (
+                    <MemoryInsightCard key={card.id} title={card.title} detail={card.detail} cta={card.cta} />
+                  ))}
+                </section>
+              ) : null}
+
+              <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-xl font-serif text-ink">Recent Memories</h2>
+                    <p className="text-sm text-ink/62">From journal, scrapbook, and imported trip context.</p>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {recentMemories.length ? (
+                    recentMemories.map((memory) => (
+                      <article key={memory.id} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2">
+                        <p className="text-sm font-semibold text-ink">{memory.title}</p>
+                        <p className="mt-1 text-sm text-ink/72">{memory.detail}</p>
+                      </article>
+                    ))
+                  ) : (
+                    <p className="text-sm text-ink/60">No travel memories found yet.</p>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
+                <h2 className="text-xl font-serif text-ink">Passport Quick Access</h2>
+                <div className="mt-3 space-y-2">
+                  {passportSnapshot.length ? (
+                    passportSnapshot.map((stamp) => (
+                      <p key={`${stamp.stampId}-${stamp.countryName}`} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2 text-sm text-ink/76">
+                        {stamp.countryName} · {stamp.region} · {stamp.rarity}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-sm text-ink/60">No collected stamps detected yet.</p>
+                  )}
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center text-sm">
+                  <Link href="/passport" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
+                    Open Passport
+                  </Link>
+                  <Link href="/journal" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
+                    Open Journal
+                  </Link>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

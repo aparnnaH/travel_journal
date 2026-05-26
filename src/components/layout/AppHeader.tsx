@@ -38,6 +38,9 @@ export default function AppHeader() {
           <Link href="/journal" className="hover:text-gold transition-colors">
             Journal
           </Link>
+          <Link href="/companion" className="hover:text-gold transition-colors">
+            Companion
+          </Link>
           <Link href="/passport" className="hover:text-gold transition-colors">
             Passport
           </Link>

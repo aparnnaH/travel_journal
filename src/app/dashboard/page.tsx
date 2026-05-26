@@ -50,7 +50,7 @@ export default function DashboardPage() {
         title="Dashboard"
         description="A quick vintage dashboard for your travel habits, story count, and map progress."
       >
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
           <Card className="space-y-4">
             <div>
               <p className="text-sm uppercase tracking-[0.2em] text-ink/60">Profile</p>
@@ -79,6 +79,17 @@ export default function DashboardPage() {
             <p className="text-ink/70">Entries saved to your travel journal.</p>
             <Button variant="outline" onClick={() => router.push('/journal')}>
               View journal
+            </Button>
+          </Card>
+
+          <Card className="space-y-4">
+            <div>
+              <p className="text-sm uppercase tracking-[0.2em] text-ink/60">AI Companion</p>
+              <h2 className="text-3xl font-semibold text-ink mt-2">{visitedCountries.length + journalCount}</h2>
+            </div>
+            <p className="text-ink/70">Chat with your travel memory assistant using journal and passport context.</p>
+            <Button variant="outline" onClick={() => router.push('/companion')}>
+              Open companion
             </Button>
           </Card>
         </div>

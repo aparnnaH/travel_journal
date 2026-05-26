@@ -44,6 +44,12 @@ export function Header({ isScrolled = false }: HeaderProps) {
             Journal
           </Link>
           <Link
+            href="/companion"
+            className="text-ink hover:text-gold transition-colors"
+          >
+            Companion
+          </Link>
+          <Link
             href="/passport"
             className="text-ink hover:text-gold transition-colors"
           >
