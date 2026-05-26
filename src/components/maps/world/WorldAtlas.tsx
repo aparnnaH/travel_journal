@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ExtendedFeature } from 'd3-geo';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -8,8 +8,9 @@ import { placeholderCountries } from '@/lib/placeholderData';
 interface WorldAtlasProps {
   visitedCountries: string[];
   countryColors: Record<string, string>;
-  onToggleCountry: (countryId: string, countryName?: string) => void;
+  onToggleCountry: (countryId: string, countryName?: string, neighboringCountryIds?: string[]) => void;
   onSelectCountry: (countryId: string) => void;
+  onCountryNeighborsReady?: (countryNeighborIds: Record<string, string[]>) => void;
 }
 
 const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
@@ -44,6 +45,28 @@ type AtlasGeography = ExtendedFeature & {
   } | null;
 };
 
+type TopoArcReference = number | TopoArcReference[];
+
+type TopoGeometry = {
+  type: string;
+  id?: string | number;
+  properties?: {
+    name?: unknown;
+  } | null;
+  arcs?: TopoArcReference;
+  geometries?: TopoGeometry[];
+};
+
+type TopoGeometryCollection = {
+  type: 'GeometryCollection';
+  geometries: TopoGeometry[];
+};
+
+type Topology = {
+  type: 'Topology';
+  objects: Record<string, TopoGeometryCollection>;
+};
+
 function getCountryIso(geo: AtlasGeography) {
   const iso = geo.properties?.ISO_A2 || geo.properties?.iso_a2 || geo.properties?.ISO_A3;
   if (iso) return String(iso).toUpperCase();
@@ -58,14 +81,114 @@ function getCountryName(geo: AtlasGeography) {
   return name ? String(name) : undefined;
 }
 
-export default function WorldAtlas({ visitedCountries, countryColors, onToggleCountry, onSelectCountry }: WorldAtlasProps) {
+function getTopologyCountryId(geometry: TopoGeometry) {
+  if (geometry.id !== undefined && geometry.id !== null) return String(geometry.id).toUpperCase();
+  const name = geometry.properties?.name;
+  return name ? String(name).toUpperCase() : '';
+}
+
+function addArcOwner(arcIndex: number, geometryIndex: number, arcOwners: Map<number, number[]>) {
+  const normalizedArcIndex = arcIndex < 0 ? ~arcIndex : arcIndex;
+  const owners = arcOwners.get(normalizedArcIndex);
+
+  if (owners) {
+    if (!owners.includes(geometryIndex)) owners.push(geometryIndex);
+    return;
+  }
+
+  arcOwners.set(normalizedArcIndex, [geometryIndex]);
+}
+
+function collectArcOwners(arcs: TopoArcReference | undefined, geometryIndex: number, arcOwners: Map<number, number[]>) {
+  if (arcs === undefined) return;
+
+  if (typeof arcs === 'number') {
+    addArcOwner(arcs, geometryIndex, arcOwners);
+    return;
+  }
+
+  arcs.forEach((arc) => collectArcOwners(arc, geometryIndex, arcOwners));
+}
+
+function collectGeometryArcOwners(geometry: TopoGeometry, geometryIndex: number, arcOwners: Map<number, number[]>) {
+  if (geometry.type === 'GeometryCollection') {
+    geometry.geometries?.forEach((childGeometry) => collectGeometryArcOwners(childGeometry, geometryIndex, arcOwners));
+    return;
+  }
+
+  collectArcOwners(geometry.arcs, geometryIndex, arcOwners);
+}
+
+function buildCountryNeighborMap(topology: Topology) {
+  const collection = topology.objects[Object.keys(topology.objects)[0]];
+  const geometries = collection?.geometries ?? [];
+  const arcOwners = new Map<number, number[]>();
+  const neighborSets = geometries.map(() => new Set<number>());
+
+  geometries.forEach((geometry, geometryIndex) => {
+    collectGeometryArcOwners(geometry, geometryIndex, arcOwners);
+  });
+
+  arcOwners.forEach((owners) => {
+    for (let index = 0; index < owners.length; index += 1) {
+      for (let nextIndex = index + 1; nextIndex < owners.length; nextIndex += 1) {
+        neighborSets[owners[index]].add(owners[nextIndex]);
+        neighborSets[owners[nextIndex]].add(owners[index]);
+      }
+    }
+  });
+
+  return Object.fromEntries(
+    geometries.map((geometry, geometryIndex) => [
+      getTopologyCountryId(geometry),
+      Array.from(neighborSets[geometryIndex])
+        .map((neighborIndex) => getTopologyCountryId(geometries[neighborIndex]))
+        .filter(Boolean),
+    ])
+  );
+}
+
+export default function WorldAtlas({
+  visitedCountries,
+  countryColors,
+  onToggleCountry,
+  onSelectCountry,
+  onCountryNeighborsReady,
+}: WorldAtlasProps) {
   const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
   const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
   const [animatingCountry, setAnimatingCountry] = useState<string | null>(null);
+  const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCountryNeighbors = async () => {
+      try {
+        const response = await fetch(geoUrl);
+        if (!response.ok) return;
+
+        const topology = (await response.json()) as Topology;
+        const neighborMap = buildCountryNeighborMap(topology);
+        if (isMounted) {
+          setCountryNeighborIds(neighborMap);
+          onCountryNeighborsReady?.(neighborMap);
+        }
+      } catch {
+        if (isMounted) setCountryNeighborIds({});
+      }
+    };
+
+    loadCountryNeighbors();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [onCountryNeighborsReady]);
 
   function handleCountryToggle(id: string, countryName?: string) {
     setAnimatingCountry(id);
-    onToggleCountry(id, countryName);
+    onToggleCountry(id, countryName, countryNeighborIds[id] ?? []);
     window.setTimeout(() => setAnimatingCountry(null), 900);
   }
 

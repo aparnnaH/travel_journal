@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, Button, Badge } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const visitedColorPalette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
 
 const countryNameAliases: Record<string, string> = {
   'united states of america': 'US',
@@ -36,15 +37,29 @@ function normalizeCountryName(countryName: string) {
     .trim();
 }
 
+function getRegionDisplayName(regionNames: Intl.DisplayNames, countryId: string) {
+  if (!/^[A-Z]{2}$/i.test(countryId)) return undefined;
+
+  const normalizedCountryId = countryId.toUpperCase();
+
+  try {
+    const displayName = regionNames.of(normalizedCountryId);
+    if (!displayName || displayName === normalizedCountryId || displayName === 'Unknown Region') return undefined;
+    return displayName;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildAlpha2CountryLookup(regionNames: Intl.DisplayNames) {
   const lookup = new Map<string, string>();
 
   for (const firstLetter of alphabet) {
     for (const secondLetter of alphabet) {
       const code = `${firstLetter}${secondLetter}`;
-      const displayName = regionNames.of(code);
+      const displayName = getRegionDisplayName(regionNames, code);
 
-      if (displayName && displayName !== code && displayName !== 'Unknown Region') {
+      if (displayName) {
         lookup.set(normalizeCountryName(displayName), code);
       }
     }
@@ -63,6 +78,30 @@ function getCountryInitials(countryName: string) {
   const words = countryName.match(/[A-Za-z]+/g) ?? [];
   const initials = words.slice(0, 2).map((word) => word[0]).join('');
   return initials.toUpperCase() || countryName.slice(0, 2).toUpperCase();
+}
+
+function pickVisitedColor(
+  countryId: string,
+  countryColors: Record<string, string>,
+  neighboringCountryIds: string[] = []
+) {
+  const blockedNeighborColors = new Set(
+    neighboringCountryIds.map((neighborId) => countryColors[neighborId]).filter(Boolean)
+  );
+  const colorUseCounts = new Map(visitedColorPalette.map((color) => [color, 0]));
+
+  Object.entries(countryColors).forEach(([coloredCountryId, color]) => {
+    if (coloredCountryId === countryId) return;
+    colorUseCounts.set(color, (colorUseCounts.get(color) ?? 0) + 1);
+  });
+
+  const availableColors = visitedColorPalette.filter((color) => !blockedNeighborColors.has(color));
+  const colorOptions = availableColors.length > 0 ? availableColors : visitedColorPalette;
+  const lowestUseCount = Math.min(...colorOptions.map((color) => colorUseCounts.get(color) ?? 0));
+  const leastUsedColors = colorOptions.filter((color) => (colorUseCounts.get(color) ?? 0) === lowestUseCount);
+  const randomIndex = Math.floor(Math.random() * leastUsedColors.length);
+
+  return leastUsedColors[randomIndex];
 }
 
 export default function MapPage() {
@@ -85,6 +124,11 @@ export default function MapPage() {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
+  const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
+
+  const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
+    setCountryNeighborIds(neighborIds);
+  }, []);
 
   useEffect(() => {
     if (!isLoading && user === null) {
@@ -98,6 +142,34 @@ export default function MapPage() {
     const percent = Math.round((trackedVisitedCount / placeholderCountries.length) * 100);
     setScratchPercentage(percent);
   }, [visitedCountries, setScratchPercentage]);
+
+  useEffect(() => {
+    if (Object.keys(countryNeighborIds).length === 0) return;
+
+    const visitedCountryIds = new Set(visitedCountries);
+    const nextCountryColors = { ...countryColors };
+    const colorChanges: Array<[string, string]> = [];
+
+    visitedCountries.forEach((countryId) => {
+      const currentColor = nextCountryColors[countryId];
+      if (!currentColor) return;
+
+      const neighboringCountryIds = countryNeighborIds[countryId] ?? [];
+      const hasNeighborColorConflict = neighboringCountryIds.some(
+        (neighborId) => visitedCountryIds.has(neighborId) && nextCountryColors[neighborId] === currentColor
+      );
+
+      if (!hasNeighborColorConflict) return;
+
+      const nextColor = pickVisitedColor(countryId, nextCountryColors, neighboringCountryIds);
+      if (nextColor === currentColor) return;
+
+      nextCountryColors[countryId] = nextColor;
+      colorChanges.push([countryId, nextColor]);
+    });
+
+    colorChanges.forEach(([countryId, color]) => setCountryColor(countryId, color));
+  }, [countryColors, countryNeighborIds, setCountryColor, visitedCountries]);
 
   const selectedCountry = useMemo(
     () => placeholderCountries.find((country) => country.id === selectedCountryId) ?? null,
@@ -113,7 +185,7 @@ export default function MapPage() {
     () =>
       visitedCountries.map((countryId) => {
         const knownCountry = placeholderCountries.find((country) => country.id === countryId);
-        const displayName = knownCountry?.name ?? regionNames.of(countryId) ?? countryId;
+        const displayName = knownCountry?.name ?? getRegionDisplayName(regionNames, countryId) ?? countryId;
         const name = countryLabels[countryId] ?? displayName;
         const normalizedName = normalizeCountryName(name);
         const alpha2Code =
@@ -145,15 +217,21 @@ export default function MapPage() {
     router.push('/login');
   };
 
-  function randomVisitedColor() {
-    const palette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
-    const randomIndex = Math.floor(Math.random() * palette.length);
-    return palette[randomIndex];
-  }
-
-  const handleMapCountryClick = (countryId: string, countryName?: string) => {
+  const handleQuickVisit = (countryId: string) => {
     if (!countryColors[countryId]) {
-      setCountryColor(countryId, randomVisitedColor());
+      setCountryColor(countryId, pickVisitedColor(countryId, countryColors));
+    }
+    addVisitedCountry(countryId);
+  };
+
+  const handleMapCountryClick = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
+    const currentColor = countryColors[countryId];
+    const hasNeighborColorConflict =
+      currentColor !== undefined &&
+      neighboringCountryIds.some((neighborId) => countryColors[neighborId] === currentColor);
+
+    if (!currentColor || hasNeighborColorConflict) {
+      setCountryColor(countryId, pickVisitedColor(countryId, countryColors, neighboringCountryIds));
     }
     if (countryName) {
       setCountryLabel(countryId, countryName);
@@ -181,6 +259,7 @@ export default function MapPage() {
                 countryColors={countryColors}
                 onToggleCountry={handleMapCountryClick}
                 onSelectCountry={(id) => setSelectedCountryId(id)}
+                onCountryNeighborsReady={handleCountryNeighborsReady}
               />
 
               <Card className="space-y-4">
@@ -209,11 +288,11 @@ export default function MapPage() {
                         {getFlagEmoji(country.code)}
                       </span>
                       <div className="min-w-0">
-                      <p className="font-medium text-ink">{country.name}</p>
-                      <p className="text-sm text-ink/60">Tap to mark as visited.</p>
+                        <p className="font-medium text-ink">{country.name}</p>
+                        <p className="text-sm text-ink/60">Tap to mark as visited.</p>
                       </div>
                     </div>
-                    <Button size="sm" onClick={() => addVisitedCountry(country.id)}>
+                    <Button size="sm" onClick={() => handleQuickVisit(country.id)}>
                       Visit
                     </Button>
                   </div>
