@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import type { ExtendedFeature } from 'd3-geo';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -60,17 +60,18 @@ function getCountryName(geo: AtlasGeography) {
 
 export default function WorldAtlas({ visitedCountries, countryColors, onToggleCountry, onSelectCountry }: WorldAtlasProps) {
   const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
+  const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
   const [animatingCountry, setAnimatingCountry] = useState<string | null>(null);
-
-  const hoveredCountry = useMemo(
-    () => placeholderCountries.find((country) => country.id === hoveredCountryId),
-    [hoveredCountryId]
-  );
 
   function handleCountryToggle(id: string, countryName?: string) {
     setAnimatingCountry(id);
     onToggleCountry(id, countryName);
     window.setTimeout(() => setAnimatingCountry(null), 900);
+  }
+
+  function clearHoveredCountry() {
+    setHoveredCountryId(null);
+    setHoveredCountryName(null);
   }
 
   return (
@@ -81,7 +82,7 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
           <h2 className="text-2xl font-semibold text-ink">Scratch the globe, then explore the story.</h2>
         </div>
         <div className="rounded-full border border-ink/15 bg-white/80 px-4 py-2 text-xs uppercase tracking-[0.22em] text-ink/75">
-          {hoveredCountry?.name ?? 'Hover a country to reveal the atlas flow'}
+          {hoveredCountryName ?? 'Hover a country to reveal the atlas flow'}
         </div>
       </div>
 
@@ -122,9 +123,10 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
                         stroke="#9D7B4A"
                         strokeWidth={0.35}
                         onMouseEnter={() => {
-                          if (isTracked) setHoveredCountryId(iso);
+                          setHoveredCountryId(isTracked ? iso : null);
+                          setHoveredCountryName(countryName ?? (iso || null));
                         }}
-                        onMouseLeave={() => setHoveredCountryId(null)}
+                        onMouseLeave={clearHoveredCountry}
                         onClick={() => {
                           if (iso) handleCountryToggle(iso, countryName);
                         }}
@@ -158,8 +160,11 @@ export default function WorldAtlas({ visitedCountries, countryColors, onToggleCo
                               onSelectCountry(country.id);
                             }
                           }}
-                          onMouseEnter={() => setHoveredCountryId(country.id)}
-                          onMouseLeave={() => setHoveredCountryId(null)}
+                          onMouseEnter={() => {
+                            setHoveredCountryId(country.id);
+                            setHoveredCountryName(country.name);
+                          }}
+                          onMouseLeave={clearHoveredCountry}
                           className="cursor-pointer"
                           transform={isAnimating ? 'scale(1.18)' : 'scale(1)'}
                           style={{ transition: 'transform 350ms ease' }}
