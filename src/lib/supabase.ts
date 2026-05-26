@@ -31,6 +31,10 @@ function setAuthCookie(token: string | null) {
   }
 }
 
+export function syncAuthCookie(token: string | null) {
+  setAuthCookie(token);
+}
+
 // Auth helpers (client-side)
 export async function signUpWithEmail(email: string, password: string) {
   const result = await supabase.auth.signUp({ email, password });

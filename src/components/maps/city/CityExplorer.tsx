@@ -13,8 +13,8 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
     return null;
   }
 
-  const cityList = (country as any).cities ?? [];
-  const highlights = (country as any).highlights ?? [];
+  const cityList = country.cities ?? [];
+  const highlights = country.highlights ?? [];
 
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-black/70 p-6 backdrop-blur-sm">
@@ -56,7 +56,7 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
                 <p className="text-sm uppercase tracking-[0.26em] text-white/50">Visited cities</p>
                 <ul className="mt-3 space-y-3 text-sm text-white/80">
                   {cityList.length > 0 ? (
-                    cityList.map((city: any) => (
+                    cityList.map((city) => (
                       <li key={city.id} className="rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3">
                         <p className="font-medium">{city.name}</p>
                         <p className="text-xs text-white/60">{city.region}</p>

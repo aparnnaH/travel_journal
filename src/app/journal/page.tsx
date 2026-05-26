@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -8,13 +8,48 @@ import { Card, Button, Input } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { fetchJournalEntries, createJournalEntry } from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
+import InstagramImportModal from '@/components/social/InstagramImportModal';
+import type { JournalEntry } from '@/types';
+
+function getInstagramCallbackState() {
+  if (typeof window === 'undefined') {
+    return { connected: false, notice: null as string | null };
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return {
+    connected: params.get('instagram_connected') === 'true',
+    notice: params.get('instagram_error'),
+  };
+}
+
+function getFriendlyInstagramNotice(rawNotice: string | null) {
+  if (!rawNotice) {
+    return null;
+  }
+
+  const normalized = rawNotice.toLowerCase();
+  if (normalized.includes('invalid platform app')) {
+    return 'Instagram rejected this connection. Meta currently allows API connections for Professional accounts (Creator or Business). Switch the account type in Instagram settings, then reconnect.';
+  }
+
+  return rawNotice;
+}
 
 export default function JournalPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const router = useRouter();
-  const [entries, setEntries] = useState<Array<any>>([]);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [instagramModalOpen, setInstagramModalOpen] = useState(false);
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [instagramConnected, setInstagramConnected] = useState(
+    () => getInstagramCallbackState().connected
+  );
+  const [instagramNotice] = useState(() =>
+    getFriendlyInstagramNotice(getInstagramCallbackState().notice)
+  );
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -23,11 +58,8 @@ export default function JournalPage() {
     tags: '',
   });
   const [error, setError] = useState<string | null>(null);
-
-  const currentCountry = useMemo(
-    () => placeholderCountries.find((country) => country.id === form.countryId),
-    [form.countryId]
-  );
+  const [instagramDiagnostics, setInstagramDiagnostics] = useState<string | null>(null);
+  const [runningInstagramDiagnostics, setRunningInstagramDiagnostics] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -48,8 +80,47 @@ export default function JournalPage() {
       }
     };
 
+    const loadInstagramConnection = async () => {
+      const response = await fetch('/api/instagram/connection');
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json() as { success: boolean; connected?: boolean };
+      if (data.success) {
+        setInstagramConnected(Boolean(data.connected));
+      }
+    };
+
     loadEntries();
+    loadInstagramConnection();
   }, [router, user, isLoading]);
+
+  useEffect(() => {
+    if (!selectedEntryId && entries.length > 0) {
+      setSelectedEntryId(entries[0].id);
+    }
+  }, [entries, selectedEntryId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('instagram_connected') && !params.has('instagram_error')) {
+      return;
+    }
+
+    params.delete('instagram_connected');
+    params.delete('instagram_error');
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      document.title,
+      `${window.location.pathname}${query ? `?${query}` : ''}`
+    );
+  }, []);
 
   if (isLoading || !user) {
     return null;
@@ -74,12 +145,54 @@ export default function JournalPage() {
     setLoading(false);
 
     if (response.success && response.data) {
-      setEntries((current) => [response.data, ...current]);
+      const createdEntry = response.data;
+      setEntries((current) => [createdEntry, ...current]);
+      setSelectedEntryId(createdEntry.id);
       setForm({ ...form, title: '', content: '', tags: '' });
       return;
     }
 
     setError(response.error || 'Could not save entry.');
+  };
+
+  const runInstagramDiagnostics = async () => {
+    setRunningInstagramDiagnostics(true);
+    setInstagramDiagnostics(null);
+
+    try {
+      const response = await fetch('/api/auth/instagram/diagnostics');
+      const data = (await response.json()) as {
+        success: boolean;
+        checks?: Array<{ ok: boolean; message: string }>;
+        summary?: {
+          oauthHost?: string;
+          scope?: string | null;
+          redirectUri?: string | null;
+          appIdPrefix?: string;
+          appIdSuffix?: string;
+        };
+      };
+
+      if (!response.ok || !data.success || !data.checks) {
+        setInstagramDiagnostics('Diagnostics failed. Check server console for details.');
+        return;
+      }
+
+      const failedChecks = data.checks.filter((check) => !check.ok);
+      if (failedChecks.length === 0) {
+        setInstagramDiagnostics(
+          `Config checks passed. OAuth host=${data.summary?.oauthHost}, scope=${data.summary?.scope}, redirect=${data.summary?.redirectUri}, appId=${data.summary?.appIdPrefix}...${data.summary?.appIdSuffix}`
+        );
+        return;
+      }
+
+      setInstagramDiagnostics(failedChecks.map((check) => check.message).join(' '));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown diagnostics error';
+      setInstagramDiagnostics(message);
+    } finally {
+      setRunningInstagramDiagnostics(false);
+    }
   };
 
   return (
@@ -137,9 +250,37 @@ export default function JournalPage() {
                   onChange={(e) => setForm({ ...form, tags: e.target.value })}
                 />
                 {error && <p className="text-sm text-red-600">{error}</p>}
-                <Button type="submit" isLoading={loading}>
-                  Save Entry
-                </Button>
+                {instagramNotice && (
+                  <p className="text-sm text-red-600">Instagram: {instagramNotice}</p>
+                )}
+                {instagramDiagnostics && (
+                  <p className="text-sm text-ink/80">Instagram diagnostics: {instagramDiagnostics}</p>
+                )}
+                <div className="flex gap-2">
+                  <Button type="submit" isLoading={loading}>
+                    Save Entry
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      if (selectedEntryId) {
+                        setInstagramModalOpen(true);
+                      }
+                    }}
+                    disabled={!selectedEntryId}
+                  >
+                    📸 Import from Instagram
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    isLoading={runningInstagramDiagnostics}
+                    onClick={runInstagramDiagnostics}
+                  >
+                    Check Instagram Config
+                  </Button>
+                </div>
               </form>
             </div>
           </Card>
@@ -168,6 +309,17 @@ export default function JournalPage() {
                         </span>
                       ))}
                     </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="mt-3 w-full"
+                      onClick={() => {
+                        setSelectedEntryId(entry.id);
+                        setInstagramModalOpen(true);
+                      }}
+                    >
+                      📸 Add Instagram Media
+                    </Button>
                   </div>
                 ))
               )}
@@ -175,6 +327,29 @@ export default function JournalPage() {
           </Card>
         </div>
       </PageShell>
+      
+      {user && selectedEntryId && (
+        <InstagramImportModal
+          userId={user.id}
+          journalEntryId={selectedEntryId}
+          isOpen={instagramModalOpen}
+          onClose={() => setInstagramModalOpen(false)}
+          onSuccess={() => {
+            setInstagramModalOpen(false);
+            setInstagramConnected(true);
+            setSelectedEntryId(null);
+            // Reload entries to show imported media
+            const loadEntries = async () => {
+              const response = await fetchJournalEntries(user.id);
+              if (response.success && response.data) {
+                setEntries(response.data);
+              }
+            };
+            loadEntries();
+          }}
+          isConnected={instagramConnected}
+        />
+      )}
     </div>
   );
 }

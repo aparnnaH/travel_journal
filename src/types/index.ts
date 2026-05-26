@@ -21,6 +21,7 @@ export interface JournalEntry {
   mood: 'happy' | 'excited' | 'peaceful' | 'nostalgic' | 'reflective';
   tags: string[];
   photos: Photo[];
+  externalMedia?: ExternalMedia[];
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +31,38 @@ export interface Photo {
   url: string;
   alt: string;
   uploadedAt: string;
+}
+
+/**
+ * External media (Instagram, etc.)
+ */
+export interface ExternalMedia {
+  id: string;
+  externalMediaId: string; // Instagram media ID
+  sourcePlatform: 'instagram' | 'facebook' | 'twitter';
+  mediaUrl: string;
+  permalink: string;
+  caption?: string;
+  timestamp: string;
+  mediaType: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+  importedAt: string;
+}
+
+export interface InstagramUser {
+  id: string;
+  username: string;
+  name: string;
+  profilePictureUrl?: string;
+}
+
+export interface InstagramMedia {
+  id: string;
+  caption?: string;
+  mediaType: 'IMAGE' | 'VIDEO' | 'CAROUSEL_ALBUM';
+  mediaUrl?: string;
+  permalink: string;
+  timestamp: string;
+  thumbnailUrl?: string;
 }
 
 /**

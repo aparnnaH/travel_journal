@@ -22,7 +22,7 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const { data, error } = await signUpWithEmail(email, password);
+      const { error } = await signUpWithEmail(email, password);
       if (error) {
         setError(error.message || 'Sign up failed');
         setLoading(false);
@@ -48,8 +48,9 @@ export default function SignupPage() {
 
       setLoading(false);
       router.push('/map');
-    } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unexpected error';
+      setError(message);
       setLoading(false);
     }
   };

@@ -30,16 +30,17 @@ export default function ProfilePage() {
       return;
     }
 
-    setDisplayName(user.displayName ?? '');
-    setAvatar(user.avatar ?? '');
-
     const loadProfile = async () => {
       const response = await fetchProfile(user.id);
       if (response.success && response.data?.[0]) {
         const profile = response.data[0];
         setDisplayName(profile.displayName ?? '');
         setAvatar(profile.avatar ?? '');
+        return;
       }
+
+      setDisplayName(user.displayName ?? '');
+      setAvatar(user.avatar ?? '');
     };
 
     loadProfile();
@@ -76,8 +77,9 @@ export default function ProfilePage() {
       await updateUserMetadata({ full_name: displayName || null, avatar_url: avatar || null });
       setUser(profile);
       setSuccessMessage('Profile updated successfully.');
-    } catch (err: any) {
-      setError(err?.message || 'Unexpected error updating profile.');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unexpected error updating profile.';
+      setError(message);
     } finally {
       setLoading(false);
     }

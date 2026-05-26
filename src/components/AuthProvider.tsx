@@ -2,8 +2,8 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { fetchProfile } from '@/lib/profileService';
+import { supabase, syncAuthCookie } from '@/lib/supabase';
+import { fetchProfile, createOrUpdateProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 
 interface AuthProviderProps {
@@ -21,19 +21,33 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     const initialize = async () => {
       setLoading(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      syncAuthCookie(sessionData.session?.access_token ?? null);
+
       const { data } = await supabase.auth.getUser();
       const user = data?.user;
       if (user) {
         const profileResponse = await fetchProfile(user.id);
         const profile = profileResponse?.success && profileResponse?.data?.[0];
 
+        // If profile doesn't exist, create one
+        if (!profile) {
+          await createOrUpdateProfile({
+            id: user.id,
+            email: user.email || '',
+            displayName: user.user_metadata?.full_name || undefined,
+            avatar: user.user_metadata?.avatar_url || undefined,
+            createdAt: new Date().toISOString(),
+          });
+        }
+
         setUser({
           id: user.id,
           email: user.email || '',
           displayName:
-            profile?.displayName || user.user_metadata?.full_name || undefined,
-          avatar: profile?.avatar || user.user_metadata?.avatar_url || undefined,
-          createdAt: profile?.createdAt || (user.created_at as string) || new Date().toISOString(),
+            profile?.display_name || user.user_metadata?.full_name || undefined,
+          avatar: profile?.avatar_url || user.user_metadata?.avatar_url || undefined,
+          createdAt: profile?.created_at || (user.created_at as string) || new Date().toISOString(),
         });
       } else {
         logout();
@@ -45,18 +59,31 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        syncAuthCookie(session?.access_token ?? null);
+
         const user = session?.user;
         if (event === 'SIGNED_IN' && user) {
           const profileResponse = await fetchProfile(user.id);
           const profile = profileResponse?.success && profileResponse?.data?.[0];
 
+          // If profile doesn't exist, create one
+          if (!profile) {
+            await createOrUpdateProfile({
+              id: user.id,
+              email: user.email || '',
+              displayName: user.user_metadata?.full_name || undefined,
+              avatar: user.user_metadata?.avatar_url || undefined,
+              createdAt: new Date().toISOString(),
+            });
+          }
+
           setUser({
             id: user.id,
             email: user.email || '',
             displayName:
-              profile?.displayName || user.user_metadata?.full_name || undefined,
-            avatar: profile?.avatar || user.user_metadata?.avatar_url || undefined,
-            createdAt: profile?.createdAt || (user.created_at as string) || new Date().toISOString(),
+              profile?.display_name || user.user_metadata?.full_name || undefined,
+            avatar: profile?.avatar_url || user.user_metadata?.avatar_url || undefined,
+            createdAt: profile?.created_at || (user.created_at as string) || new Date().toISOString(),
           });
         }
 

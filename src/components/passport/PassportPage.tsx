@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { COUNTRY_STAMPS, STAMP_REGIONS } from '@/data/stamps/countries';
 import { PassportStats } from '@/types/stamps';
@@ -15,15 +15,12 @@ interface PassportPageComponentProps {
 export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
   initialUnlockedStamps = [],
 }) => {
-  const [unlockedStamps, setUnlockedStamps] = useState<string[]>(initialUnlockedStamps);
+  const [unlockedStamps, setUnlockedStamps] = useState<string[]>(
+    initialUnlockedStamps.length > 0
+      ? initialUnlockedStamps
+      : ['japan', 'france', 'canada', 'italy', 'greece']
+  );
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (initialUnlockedStamps.length === 0) {
-      const demoUnlocked = ['japan', 'france', 'canada', 'italy', 'greece'];
-      setUnlockedStamps(demoUnlocked);
-    }
-  }, []);
 
   const stats: PassportStats = useMemo(() => {
     const unlocked = unlockedStamps.length;

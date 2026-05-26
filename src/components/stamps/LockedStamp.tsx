@@ -11,6 +11,14 @@ interface LockedStampProps {
   onUnlockClick?: () => void;
 }
 
+const PARTICLE_MOTION = [
+  { x: -26, y: -24, duration: 0.82 },
+  { x: 22, y: -28, duration: 0.95 },
+  { x: -30, y: 20, duration: 1.02 },
+  { x: 28, y: 24, duration: 0.88 },
+  { x: 0, y: -34, duration: 0.9 },
+];
+
 export const LockedStamp: React.FC<LockedStampProps> = ({ stamp, onUnlockClick }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -82,7 +90,7 @@ export const LockedStamp: React.FC<LockedStampProps> = ({ stamp, onUnlockClick }
 
       {isHovered && (
         <>
-          {Array.from({ length: 5 }).map((_, i) => (
+          {PARTICLE_MOTION.map((particle, i) => (
             <motion.div
               key={i}
               className={styles.floatingParticle}
@@ -93,11 +101,11 @@ export const LockedStamp: React.FC<LockedStampProps> = ({ stamp, onUnlockClick }
               }}
               animate={{
                 opacity: 0,
-                x: (Math.random() - 0.5) * 60,
-                y: (Math.random() - 0.5) * 60,
+                x: particle.x,
+                y: particle.y,
               }}
               transition={{
-                duration: 0.8 + Math.random() * 0.4,
+                duration: particle.duration,
                 delay: i * 0.1,
               }}
             >

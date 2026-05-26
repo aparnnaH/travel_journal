@@ -41,8 +41,9 @@ export default function LoginPage() {
 
       setLoading(false);
       router.push('/map');
-    } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unexpected error';
+      setError(message);
       setLoading(false);
     }
   };
