@@ -36,6 +36,9 @@ const stampById = new Map(COUNTRY_STAMPS.map((stamp) => [stamp.id, stamp]));
 const countryById = new Map(placeholderCountries.map((country) => [country.id, country]));
 const countryByCode = new Map(placeholderCountries.map((country) => [country.code, country]));
 const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+let worldCountryCatalogCache: string[] | null = null;
 
 const intentKeywords: Record<TravelCompanionIntent, string[]> = {
   general: [],
@@ -112,6 +115,84 @@ const normalizeJournalEntry = (entry: RawJournalEntry): CompanionJournalEntry =>
 const toTimestamp = (value?: string) => (value ? new Date(value).getTime() || 0 : 0);
 const countryTokenPattern = '(?:countries?|countr(?:y|ies)|countires|coutires|places)';
 const isNumericCountryCode = (value: string) => /^\d{3}$/.test(value.trim());
+const normalizeCountryLabel = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const countryNameAliases: Record<string, string> = {
+  'united states of america': 'united states',
+  usa: 'united states',
+  uk: 'united kingdom',
+  'russian federation': 'russia',
+  'czech republic': 'czechia',
+  'korea republic of': 'south korea',
+  'korea democratic people s republic of': 'north korea',
+  'lao people s democratic republic': 'laos',
+  'myanmar burma': 'myanmar',
+  'eswatini swaziland': 'eswatini',
+  'cape verde': 'cabo verde',
+  'viet nam': 'vietnam',
+};
+
+const canonicalCountryKey = (value: string) => {
+  const normalized = normalizeCountryLabel(value);
+  return countryNameAliases[normalized] ?? normalized;
+};
+
+const buildWorldCountryCatalog = () => {
+  if (worldCountryCatalogCache) {
+    return worldCountryCatalogCache;
+  }
+
+  try {
+    const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
+    const countryNames = new Set<string>();
+
+    alphabet.forEach((firstLetter) => {
+      alphabet.forEach((secondLetter) => {
+        const code = `${firstLetter}${secondLetter}`;
+        const label = regionNames.of(code);
+
+        if (!label || label === code || label === 'Unknown Region') {
+          return;
+        }
+
+        countryNames.add(label);
+      });
+    });
+
+    worldCountryCatalogCache = [...countryNames].sort((first, second) => first.localeCompare(second));
+    return worldCountryCatalogCache;
+  } catch {
+    worldCountryCatalogCache = [];
+    return worldCountryCatalogCache;
+  }
+};
+
+const nearbyDestinationHints: Record<string, string[]> = {
+  'United States': ['Canada', 'Mexico', 'Iceland', 'Portugal'],
+  Canada: ['Iceland', 'Ireland', 'Norway', 'Japan'],
+  Mexico: ['Colombia', 'Peru', 'Chile', 'Portugal'],
+  France: ['Portugal', 'Croatia', 'Greece', 'Morocco'],
+  Italy: ['Croatia', 'Greece', 'Turkey', 'Portugal'],
+  Spain: ['Portugal', 'Morocco', 'Croatia', 'Greece'],
+  Germany: ['Austria', 'Croatia', 'Greece', 'Norway'],
+  Japan: ['South Korea', 'Vietnam', 'Thailand', 'Indonesia'],
+  Australia: ['New Zealand', 'Indonesia', 'Vietnam', 'Thailand'],
+  Brazil: ['Argentina', 'Chile', 'Peru', 'Colombia'],
+};
+
+const personalityDestinationHints: Record<string, string[]> = {
+  'Story Archivist': ['Japan', 'Italy', 'Portugal', 'Croatia', 'Morocco'],
+  'Cultural Curator': ['Greece', 'Turkey', 'Egypt', 'Morocco', 'Vietnam'],
+  'Wanderflow Explorer': ['New Zealand', 'Chile', 'Peru', 'Iceland', 'Norway'],
+  'Taste & Texture Traveler': ['Thailand', 'Vietnam', 'Turkey', 'Portugal', 'Mexico'],
+  'Momentum Traveler': ['South Africa', 'Argentina', 'Indonesia', 'Chile', 'Turkey'],
+  'Reflective Explorer': ['Iceland', 'New Zealand', 'Japan', 'Norway', 'Portugal'],
+};
 
 const hasCountryStatsQuestion = (message: string) => {
   const lowerMessage = message.toLowerCase();
@@ -378,35 +459,63 @@ const getVisitedStampIds = (context: CompanionTravelContext) => {
   return collected;
 };
 
-const createNextDestinationReason = (
-  slot: number,
-  countryName: string,
-  region: string,
-  topRegion: string | null,
-  context: CompanionTravelContext
+const getCountryRecommendationMeta = (countryName: string) => {
+  const stamp = stampById.get(normalizeCountryToStampId(countryName));
+
+  return {
+    region: stamp?.region ?? 'Global',
+    rarity: stamp?.rarity ?? 'standard',
+  };
+};
+
+const getNearbySuggestionsFromRecentCountry = (
+  recentCountryName: string | undefined,
+  isUnvisited: (countryName: string) => boolean
 ) => {
-  if (slot === 0 && topRegion && topRegion === region) {
-    return `You already have momentum in ${region}; ${countryName} builds naturally on that route.`;
+  if (!recentCountryName) {
+    return [];
   }
 
-  if (slot === 1 && topRegion !== region) {
-    return `${region} is less represented in your archive, so this adds range to your map story.`;
+  const nearby = nearbyDestinationHints[recentCountryName];
+  if (!nearby) {
+    return [];
   }
 
-  const personality = context.personality.label;
-  if (personality.includes('Cultural')) {
-    return `${countryName} fits your culture-first travel pattern and would feed stronger story entries.`;
-  }
-  if (personality.includes('Wanderflow')) {
-    return `${countryName} supports your move-through-the-day style with strong route potential.`;
-  }
+  return nearby.filter(isUnvisited);
+};
 
-  return `${countryName} complements your current travel pattern while adding fresh memory texture.`;
+const getPersonalitySuggestionPool = (personalityLabel: string, isUnvisited: (countryName: string) => boolean) => {
+  const pool = personalityDestinationHints[personalityLabel] ?? personalityDestinationHints['Reflective Explorer'];
+  return pool.filter(isUnvisited);
 };
 
 const buildNextDestinationRecommendations = (context: CompanionTravelContext): DestinationRecommendation[] => {
   const visitedStampIds = getVisitedStampIds(context);
   const visitedRegionCount = new Map<string, number>();
+  const visitedCountryNameSet = new Set(context.visitedCountryNames.map((countryName) => canonicalCountryKey(countryName)));
+  const worldCatalog = buildWorldCountryCatalog();
+  const unvisitedCatalog = worldCatalog.filter(
+    (countryName) => !visitedCountryNameSet.has(canonicalCountryKey(countryName))
+  );
+  const wildcardDestinationList = [
+    'Portugal',
+    'Greece',
+    'Japan',
+    'Iceland',
+    'New Zealand',
+    'Chile',
+    'Peru',
+    'Vietnam',
+    'Thailand',
+    'Turkey',
+    'Croatia',
+    'Morocco',
+    'Indonesia',
+    'Norway',
+    'South Africa',
+    'Argentina',
+    'Colombia',
+  ];
 
   context.passportStamps.forEach((stamp) => {
     if (stamp.region === 'Unmapped') {
@@ -418,8 +527,26 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
   const sortedRegions = [...visitedRegionCount.entries()].sort((first, second) => second[1] - first[1]);
   const topRegion = sortedRegions[0]?.[0] ?? null;
   const availableStamps = COUNTRY_STAMPS.filter((stamp) => !visitedStampIds.has(stamp.id));
-  const usedIds = new Set<string>();
+  const usedCountries = new Set<string>();
   const picked: DestinationRecommendation[] = [];
+  const recentCountryName = context.visitedCountryNames.at(-1);
+  const isUnvisited = (countryName: string) => !visitedCountryNameSet.has(canonicalCountryKey(countryName));
+  const addRecommendation = (countryName: string, reason: string) => {
+    const key = canonicalCountryKey(countryName);
+
+    if (!key || usedCountries.has(key) || !isUnvisited(countryName)) {
+      return;
+    }
+
+    usedCountries.add(key);
+    const meta = getCountryRecommendationMeta(countryName);
+    picked.push({
+      countryName,
+      region: meta.region,
+      rarity: meta.rarity,
+      reason,
+    });
+  };
 
   const pickCandidate = (candidates: typeof COUNTRY_STAMPS) =>
     [...candidates]
@@ -431,18 +558,33 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
 
         return first.country_name.localeCompare(second.country_name);
       })
-      .find((candidate) => !usedIds.has(candidate.id));
+      .find((candidate) => !usedCountries.has(canonicalCountryKey(candidate.country_name)));
+
+  const nearbySuggestions = getNearbySuggestionsFromRecentCountry(recentCountryName, isUnvisited);
+  if (nearbySuggestions.length) {
+    const nearbyCountryName = nearbySuggestions[0];
+    addRecommendation(
+      nearbyCountryName,
+      `This is a strong next hop from ${recentCountryName}, based on your recent route pattern.`
+    );
+  }
+
+  const personalitySuggestions = getPersonalitySuggestionPool(context.personality.label, isUnvisited);
+  if (personalitySuggestions.length && picked.length < 3) {
+    const personalityCountryName = personalitySuggestions[0];
+    addRecommendation(
+      personalityCountryName,
+      `${personalityCountryName} matches your ${context.personality.label.toLowerCase()} travel style.`
+    );
+  }
 
   if (topRegion) {
     const regionalCandidate = pickCandidate(availableStamps.filter((stamp) => stamp.region === topRegion));
     if (regionalCandidate) {
-      usedIds.add(regionalCandidate.id);
-      picked.push({
-        countryName: regionalCandidate.country_name,
-        region: regionalCandidate.region,
-        rarity: regionalCandidate.rarity,
-        reason: createNextDestinationReason(0, regionalCandidate.country_name, regionalCandidate.region, topRegion, context),
-      });
+      addRecommendation(
+        regionalCandidate.country_name,
+        `You already have momentum in ${topRegion}; this keeps that chapter going with a new country.`
+      );
     }
   }
 
@@ -450,28 +592,36 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
     availableStamps.filter((stamp) => !visitedRegionCount.has(stamp.region))
   );
   if (unseenRegionCandidate) {
-    usedIds.add(unseenRegionCandidate.id);
-    picked.push({
-      countryName: unseenRegionCandidate.country_name,
-      region: unseenRegionCandidate.region,
-      rarity: unseenRegionCandidate.rarity,
-      reason: createNextDestinationReason(1, unseenRegionCandidate.country_name, unseenRegionCandidate.region, topRegion, context),
-    });
+    addRecommendation(
+      unseenRegionCandidate.country_name,
+      `${unseenRegionCandidate.region} is less represented in your archive, so this adds range to your travel map.`
+    );
   }
 
-  while (picked.length < 3) {
-    const wildcard = pickCandidate(availableStamps);
-    if (!wildcard) {
-      break;
+  wildcardDestinationList.forEach((countryName) => {
+    if (picked.length >= 3) {
+      return;
     }
 
-    usedIds.add(wildcard.id);
-    picked.push({
-      countryName: wildcard.country_name,
-      region: wildcard.region,
-      rarity: wildcard.rarity,
-      reason: createNextDestinationReason(picked.length, wildcard.country_name, wildcard.region, topRegion, context),
-    });
+    if (!unvisitedCatalog.some((candidateName) => canonicalCountryKey(candidateName) === canonicalCountryKey(countryName))) {
+      return;
+    }
+
+    addRecommendation(
+      countryName,
+      `${countryName} is still unvisited in your map and is a high-signal addition to your memory archive.`
+    );
+  });
+
+  if (picked.length < 3 && unvisitedCatalog.length) {
+    const offset = context.visitedCountryIds.length % unvisitedCatalog.length;
+    for (let index = 0; index < unvisitedCatalog.length && picked.length < 3; index += 1) {
+      const candidateCountry = unvisitedCatalog[(offset + index) % unvisitedCatalog.length];
+      addRecommendation(
+        candidateCountry,
+        `${candidateCountry} is currently unvisited and keeps your travel coverage expanding.`
+      );
+    }
   }
 
   return picked;
