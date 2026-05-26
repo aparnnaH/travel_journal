@@ -1,0 +1,448 @@
+.renderer {
+  width: 190px;
+  aspect-ratio: 1;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 8px;
+  color: var(--stamp-primary);
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.62), transparent 28%),
+    linear-gradient(145deg, var(--stamp-paper), var(--stamp-background));
+  box-shadow:
+    0 18px 28px rgba(43, 33, 22, 0.18),
+    0 3px 0 rgba(255, 255, 255, 0.5) inset,
+    0 -8px 18px rgba(44, 31, 18, 0.08) inset;
+}
+
+.square {
+  border-radius: 3px;
+}
+
+.roundedSquare {
+  border-radius: 8px;
+}
+
+.circle {
+  border-radius: 50%;
+}
+
+.hexagon,
+.diamond,
+.organic {
+  border-radius: 4px;
+}
+
+.locked {
+  color: #4d4a45;
+  filter: saturate(0.2);
+}
+
+.paperBase,
+.inkBloom,
+.borderFrame,
+.microPerforation,
+.embossLayer,
+.wornEdges,
+.lockedVeil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.paperBase {
+  z-index: 0;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(55, 42, 28, 0.04) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.14) 0 1px, transparent 1px 9px);
+  mix-blend-mode: multiply;
+}
+
+.inkBloom {
+  z-index: 1;
+  opacity: calc(0.24 + (var(--stamp-ink-bleed) * 0.26));
+  background:
+    radial-gradient(circle at 18% 24%, var(--stamp-primary), transparent 19%),
+    radial-gradient(circle at 82% 18%, var(--stamp-secondary), transparent 16%),
+    radial-gradient(circle at 66% 76%, var(--stamp-primary), transparent 21%);
+  filter: blur(18px);
+  mix-blend-mode: multiply;
+}
+
+.textureLayer,
+.overlayLayer {
+  position: absolute;
+  inset: -5%;
+  width: 110%;
+  height: 110%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.textureLayer {
+  z-index: 2;
+}
+
+.borderFrame {
+  z-index: 4;
+  inset: 10px;
+  border: 2px solid color-mix(in srgb, var(--stamp-primary) 78%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.24) inset,
+    0 0 0 5px color-mix(in srgb, var(--stamp-border) 12%, transparent),
+    0 0 18px color-mix(in srgb, var(--stamp-primary) 20%, transparent) inset;
+}
+
+.borderFrame::before,
+.borderFrame::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1px dashed color-mix(in srgb, var(--stamp-border) 62%, transparent);
+}
+
+.borderFrame::after {
+  inset: 16px;
+  border-style: dotted;
+  opacity: 0.44;
+}
+
+.microPerforation {
+  z-index: 5;
+  opacity: 0.48;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--stamp-border) 52%, transparent) 0 1px, transparent 1.5px) 5px 5px / 12px 12px;
+  mask:
+    linear-gradient(#000 0 0) top / 100% 12px no-repeat,
+    linear-gradient(#000 0 0) bottom / 100% 12px no-repeat,
+    linear-gradient(#000 0 0) left / 12px 100% no-repeat,
+    linear-gradient(#000 0 0) right / 12px 100% no-repeat;
+}
+
+.artworkPlate {
+  position: absolute;
+  z-index: 6;
+  inset: 34px 26px 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.artwork {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.9;
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.45))
+    drop-shadow(0 2px 3px rgba(29, 21, 14, 0.16));
+  mix-blend-mode: multiply;
+}
+
+.locked .artwork {
+  opacity: 0.22;
+  filter: grayscale(1) blur(1.3px);
+  transform: scale(0.94);
+}
+
+.cancellation {
+  position: absolute;
+  z-index: 8;
+  right: 18px;
+  top: 36px;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  color: var(--stamp-primary);
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1;
+  mix-blend-mode: multiply;
+}
+
+.cancellation::before,
+.cancellation::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+}
+
+.cancellation::before {
+  inset: 5px;
+}
+
+.cancellation::after {
+  inset: 14px;
+  opacity: 0.54;
+}
+
+.cancellation span,
+.cancellation strong,
+.cancellation small {
+  position: absolute;
+  display: block;
+  width: 100%;
+}
+
+.cancellation span {
+  top: 12px;
+  font-size: 0.52rem;
+  font-weight: 700;
+}
+
+.cancellation strong {
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.cancellation small {
+  bottom: 12px;
+  font-size: 0.48rem;
+  font-weight: 700;
+}
+
+.overlayLayer {
+  z-index: 10;
+}
+
+.topRail {
+  position: absolute;
+  z-index: 11;
+  top: 17px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--stamp-border);
+  font-size: 0.48rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.topRail span,
+.topRail b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.countryCode {
+  position: absolute;
+  z-index: 11;
+  left: 18px;
+  top: 42px;
+  padding: 4px 5px;
+  border: 1px solid color-mix(in srgb, var(--stamp-border) 70%, transparent);
+  color: var(--stamp-border);
+  font-size: 0.58rem;
+  font-weight: 900;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.copyBlock {
+  position: absolute;
+  z-index: 12;
+  left: 21px;
+  right: 21px;
+  bottom: 27px;
+  display: grid;
+  gap: 2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.regionLabel,
+.editionName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--stamp-border);
+  font-size: 0.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.countryName {
+  color: var(--stamp-primary);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.04;
+  overflow-wrap: anywhere;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
+}
+
+.editionName {
+  color: color-mix(in srgb, var(--stamp-primary) 76%, #2b2116);
+}
+
+.culturalBand {
+  position: absolute;
+  z-index: 11;
+  left: 16px;
+  right: 16px;
+  bottom: 13px;
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--stamp-border);
+  font-size: 0.45rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.culturalBand span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.embossLayer {
+  z-index: 13;
+  opacity: calc(0.18 + (var(--stamp-emboss) * 0.18));
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.42), transparent 32%),
+    linear-gradient(315deg, rgba(40, 25, 12, 0.18), transparent 28%);
+  mix-blend-mode: soft-light;
+}
+
+.wornEdges {
+  z-index: 14;
+  opacity: calc(0.34 + (var(--stamp-wear) * 0.34));
+  background:
+    radial-gradient(circle at 0 0, transparent 0 11px, rgba(45, 32, 20, 0.18) 12px, transparent 18px),
+    radial-gradient(circle at 100% 0, transparent 0 10px, rgba(45, 32, 20, 0.16) 11px, transparent 17px),
+    radial-gradient(circle at 0 100%, transparent 0 9px, rgba(45, 32, 20, 0.15) 10px, transparent 16px),
+    radial-gradient(circle at 100% 100%, transparent 0 12px, rgba(45, 32, 20, 0.18) 13px, transparent 19px);
+  mix-blend-mode: multiply;
+}
+
+.lockedVeil {
+  z-index: 16;
+  display: grid;
+  place-items: center;
+  background:
+    repeating-linear-gradient(-35deg, rgba(45, 39, 31, 0.1) 0 1px, transparent 1px 8px),
+    rgba(238, 232, 220, 0.5);
+  backdrop-filter: blur(0.5px);
+}
+
+.lockedVeil span {
+  padding: 7px 10px;
+  border: 1px solid rgba(63, 55, 46, 0.46);
+  color: #4c463e;
+  background: rgba(245, 239, 228, 0.68);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+@media (max-width: 640px) {
+  .renderer {
+    width: 160px;
+  }
+
+  .topRail {
+    left: 17px;
+    right: 17px;
+    font-size: 0.44rem;
+  }
+
+  .artworkPlate {
+    inset: 31px 23px 53px;
+  }
+
+  .countryName {
+    font-size: 0.88rem;
+  }
+
+  .cancellation {
+    right: 15px;
+    top: 34px;
+    width: 62px;
+    height: 62px;
+  }
+
+  .cancellation strong {
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .renderer {
+    width: 140px;
+  }
+
+  .artworkPlate {
+    inset: 28px 20px 48px;
+  }
+
+  .topRail {
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    font-size: 0.4rem;
+  }
+
+  .countryCode {
+    left: 15px;
+    top: 38px;
+    font-size: 0.5rem;
+  }
+
+  .copyBlock {
+    left: 17px;
+    right: 17px;
+    bottom: 25px;
+  }
+
+  .countryName {
+    font-size: 0.78rem;
+  }
+
+  .regionLabel,
+  .editionName {
+    font-size: 0.42rem;
+  }
+
+  .culturalBand {
+    left: 13px;
+    right: 13px;
+    bottom: 12px;
+    gap: 3px;
+    font-size: 0.38rem;
+  }
+
+  .cancellation {
+    right: 12px;
+    top: 30px;
+    width: 54px;
+    height: 54px;
+  }
+
+  .cancellation span {
+    top: 9px;
+    font-size: 0.44rem;
+  }
+
+  .cancellation strong {
+    font-size: 0.72rem;
+  }
+
+  .cancellation small {
+    bottom: 9px;
+    font-size: 0.4rem;
+  }
+}

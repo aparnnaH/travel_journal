@@ -49,6 +49,10 @@ export const getStampBorderStyle = (stamp: CountryStamp): {
 };
 
 export const getCompletionPercentage = (unlockedCount: number, totalCount: number): number => {
+  if (totalCount === 0) {
+    return 0;
+  }
+
   return Math.round((unlockedCount / totalCount) * 100);
 };
 
@@ -64,3 +68,6 @@ export const sortStampsByRegion = (stamps: CountryStamp[]): Record<string, Count
     {} as Record<string, CountryStamp[]>,
   );
 };
+
+export const getAvailableStampIds = (stamps: CountryStamp[]): Set<string> =>
+  new Set(stamps.map((stamp) => stamp.id));

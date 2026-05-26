@@ -1,464 +1,391 @@
 .passportPageWrapper {
-  width: 100%;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f5f5 0%, #ffffff 100%);
-  padding: 2rem 1rem;
+  padding: 34px 18px 72px;
+  color: #211a13;
+  background:
+    linear-gradient(90deg, rgba(31, 102, 119, 0.1), transparent 28%, rgba(125, 54, 84, 0.1) 72%, transparent),
+    radial-gradient(circle at 16% 12%, rgba(157, 27, 50, 0.12), transparent 22rem),
+    radial-gradient(circle at 84% 8%, rgba(31, 102, 119, 0.14), transparent 24rem),
+    repeating-linear-gradient(0deg, rgba(42, 32, 22, 0.035) 0 1px, transparent 1px 7px),
+    #f1e6d2;
 }
 
-.pageHeader {
-  max-width: 1200px;
-  margin: 0 auto 3rem;
-  text-align: center;
+.masthead,
+.collectionPanel,
+.filterSection,
+.stampsSection {
+  width: min(1180px, 100%);
+  margin-inline: auto;
 }
 
-.headerContent {
-  padding: 2rem;
-  background: linear-gradient(135deg, rgba(153, 50, 204, 0.08) 0%, rgba(65, 105, 225, 0.08) 100%);
-  border-radius: 1.5rem;
-  border: 1px solid rgba(153, 50, 204, 0.15);
+.masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 32px;
+  align-items: end;
+  padding: 18px 0 30px;
+  border-bottom: 3px double rgba(54, 43, 31, 0.28);
+}
+
+.mastheadCopy {
+  display: grid;
+  gap: 13px;
+}
+
+.kicker,
+.panelEyebrow {
+  margin: 0;
+  color: #7d3654;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .pageTitle {
-  font-size: 2.5rem;
-  font-weight: 800;
-  color: #1a1a1a;
+  max-width: 720px;
   margin: 0;
-  margin-bottom: 0.75rem;
-  letter-spacing: -0.02em;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-}
-
-.titleIcon {
-  font-size: 2.75rem;
-  display: inline-block;
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+  color: #1c1712;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 3.8rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 0.96;
 }
 
 .pageDescription {
-  font-size: 1rem;
-  color: #666;
+  max-width: 610px;
   margin: 0;
-  max-width: 600px;
-  margin: 0 auto;
-  line-height: 1.6;
+  color: rgba(33, 26, 19, 0.76);
+  font-size: 1.08rem;
+  line-height: 1.55;
 }
 
-.statsSection {
-  max-width: 1200px;
-  margin: 0 auto 2rem;
+.archiveMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.statsCard {
-  background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
-  border: 2px solid #e0e0e0;
-  border-radius: 1rem;
-  padding: 2rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+.archiveMeta span,
+.filterCount {
+  padding: 7px 10px;
+  border: 1px solid rgba(54, 43, 31, 0.22);
+  border-radius: 6px;
+  color: #2d251d;
+  background: rgba(255, 250, 241, 0.58);
+  box-shadow: 0 8px 22px rgba(48, 35, 22, 0.08);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
-.statsHeader {
+.passportCover {
+  min-height: 270px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(209, 168, 83, 0.52);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at center 34%, rgba(209, 168, 83, 0.22), transparent 34%),
+    linear-gradient(135deg, #173f49, #24364a 54%, #561f32);
+  box-shadow:
+    0 22px 45px rgba(36, 28, 18, 0.26),
+    0 1px 0 rgba(255, 255, 255, 0.18) inset;
+}
+
+.passportCover::before {
+  content: '';
+  position: absolute;
+  inset: 15px;
+  border: 1px solid rgba(221, 180, 92, 0.56);
+  border-radius: 6px;
+}
+
+.passportCover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 8px),
+    linear-gradient(120deg, rgba(255, 255, 255, 0.16), transparent 36%);
+  mix-blend-mode: soft-light;
+}
+
+.coverBadge {
+  position: absolute;
+  top: 46px;
+  left: 50%;
+  z-index: 2;
+  width: 112px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  transform: translateX(-50%);
+  border: 2px solid rgba(224, 184, 96, 0.76);
+  border-radius: 50%;
+  color: #e3bd68;
+  text-align: center;
+}
+
+.coverBadge::before,
+.coverBadge::after {
+  content: '';
+  position: absolute;
+  border: 1px solid rgba(224, 184, 96, 0.52);
+  border-radius: 50%;
+}
+
+.coverBadge::before {
+  inset: 8px;
+}
+
+.coverBadge::after {
+  inset: 20px;
+}
+
+.coverBadge span,
+.coverBadge strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+
+.coverBadge span {
+  align-self: end;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.coverBadge strong {
+  align-self: start;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.45rem;
+}
+
+.coverLines {
+  position: absolute;
+  z-index: 2;
+  left: 56px;
+  right: 56px;
+  bottom: 84px;
+  display: grid;
+  gap: 8px;
+}
+
+.coverLines span {
+  height: 1px;
+  background: rgba(224, 184, 96, 0.52);
+}
+
+.passportCover p {
+  position: absolute;
+  z-index: 2;
+  left: 32px;
+  right: 32px;
+  bottom: 28px;
+  margin: 0;
+  color: rgba(238, 206, 132, 0.92);
+  font-size: 0.9rem;
+  font-weight: 900;
+  line-height: 1.2;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.collectionPanel {
+  margin-top: 28px;
+  padding: 22px;
+  border: 1px solid rgba(54, 43, 31, 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 252, 244, 0.82), rgba(238, 225, 203, 0.74)),
+    repeating-linear-gradient(90deg, rgba(42, 32, 22, 0.03) 0 1px, transparent 1px 10px);
+  box-shadow: 0 18px 38px rgba(47, 35, 23, 0.12);
+}
+
+.progressHeader,
+.filterHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1.5rem;
+  gap: 18px;
 }
 
-.statsTitle {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin: 0;
+.panelTitle {
+  margin: 5px 0 0;
+  color: #1e1812;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1.55rem;
+  letter-spacing: 0;
+  line-height: 1.15;
 }
 
 .progressPercent {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #9932CC;
+  color: #1f6677;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2.15rem;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .progressBar {
-  width: 100%;
-  height: 12px;
-  background-color: #f0f0f0;
-  border-radius: 6px;
+  height: 11px;
+  margin: 20px 0;
   overflow: hidden;
-  margin-bottom: 1.5rem;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(54, 43, 31, 0.16);
+  border-radius: 999px;
+  background: rgba(33, 26, 19, 0.08);
+  box-shadow: 0 1px 3px rgba(33, 26, 19, 0.12) inset;
 }
 
 .progressFill {
   height: 100%;
-  background: linear-gradient(90deg, #9932CC, #4169E1);
-  border-radius: 6px;
-  box-shadow: 0 0 10px rgba(153, 50, 204, 0.3);
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(31, 102, 119, 0.94), rgba(125, 54, 84, 0.94), rgba(182, 141, 50, 0.96));
+  box-shadow: 0 0 18px rgba(31, 102, 119, 0.24);
 }
 
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
 }
 
 .statBox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem;
-  background-color: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 0.75rem;
-  transition: all 0.3s ease;
-}
-
-.statBox:hover {
-  background-color: #ffffff;
-  border-color: #9932CC;
-  box-shadow: 0 4px 12px rgba(153, 50, 204, 0.1);
-}
-
-.statIcon {
-  font-size: 1.75rem;
-  margin-bottom: 0.5rem;
+  min-height: 92px;
+  display: grid;
+  align-content: center;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(54, 43, 31, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(160deg, rgba(255, 252, 244, 0.78), rgba(234, 220, 197, 0.46));
 }
 
 .statLabel {
-  font-size: 0.75rem;
-  color: #999;
+  color: rgba(33, 26, 19, 0.62);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.5rem;
 }
 
 .statValue {
-  font-size: 1.75rem;
-  font-weight: 700;
-  color: #1a1a1a;
+  color: #211a13;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 2rem;
+  line-height: 1;
 }
 
 .filterSection {
-  max-width: 1200px;
-  margin: 0 auto 2rem;
+  margin-top: 22px;
+  display: grid;
+  gap: 14px;
 }
 
-.filterContainer {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%);
-  border: 1px solid #e0e0e0;
-  border-radius: 0.75rem;
-}
-
-.filterTitle {
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: #333;
-  margin: 0;
-  letter-spacing: 0.05em;
+.filterCount {
+  color: #1f6677;
 }
 
 .buttonGroup {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 8px;
 }
 
 .filterButton {
-  padding: 0.6rem 1.25rem;
-  background-color: #ffffff;
-  border: 2px solid #e0e0e0;
-  border-radius: 2rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #666;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(54, 43, 31, 0.22);
+  border-radius: 6px;
+  color: #2d251d;
+  background: rgba(255, 250, 241, 0.62);
+  box-shadow: 0 8px 18px rgba(48, 35, 22, 0.08);
   cursor: pointer;
-  transition: all 0.3s ease;
+  font-size: 0.76rem;
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
 }
 
 .filterButton:hover {
-  border-color: #9932CC;
-  color: #9932CC;
-  box-shadow: 0 2px 8px rgba(153, 50, 204, 0.15);
+  border-color: rgba(31, 102, 119, 0.58);
+  color: #1f6677;
+  background: rgba(255, 252, 246, 0.88);
 }
 
 .filterButton.active {
-  background: linear-gradient(135deg, #9932CC 0%, #4169E1 100%);
-  border-color: #9932CC;
-  color: white;
-  box-shadow: 0 4px 12px rgba(153, 50, 204, 0.3);
+  border-color: rgba(31, 102, 119, 0.72);
+  color: #f9efe1;
+  background: linear-gradient(135deg, #1f6677, #24364a);
+  box-shadow: 0 12px 24px rgba(31, 102, 119, 0.18);
 }
 
 .stampsSection {
-  max-width: 1400px;
-  margin: 0 auto 3rem;
+  margin-top: 32px;
 }
 
-.tipsSection {
-  max-width: 1200px;
-  margin: 2rem auto 0;
-}
-
-.tipsCard {
-  display: flex;
-  gap: 1.5rem;
-  padding: 2rem;
-  background: linear-gradient(135deg, #fffacd 0%, #f0f8ff 100%);
-  border: 2px solid #e0e0e0;
-  border-radius: 1rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.tipsIcon {
-  font-size: 2.5rem;
-  flex-shrink: 0;
-}
-
-.tipsContent {
-  flex: 1;
-}
-
-.tipsTitle {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin: 0 0 1rem;
-}
-
-.tipsList {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 0.75rem;
-}
-
-.tipsList li {
-  font-size: 0.9rem;
-  color: #666;
-  padding-left: 1.5rem;
-  position: relative;
-  line-height: 1.5;
-}
-
-.tipsList li:before {
-  content: '✓';
-  position: absolute;
-  left: 0;
-  color: #9932CC;
-  font-weight: 700;
-  font-size: 1.1rem;
-}
-
-@media (max-width: 1200px) {
-  .passportPageWrapper {
-    padding: 1.5rem 1rem;
+@media (max-width: 900px) {
+  .masthead {
+    grid-template-columns: 1fr;
   }
 
-  .pageTitle {
-    font-size: 2rem;
-  }
-
-  .pageDescription {
-    font-size: 0.95rem;
+  .passportCover {
+    min-height: 220px;
   }
 
   .statsGrid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .tipsCard {
-    gap: 1rem;
-    padding: 1.5rem;
-  }
-
-  .tipsIcon {
-    font-size: 2rem;
-  }
-
-  .tipsTitle {
-    font-size: 1.1rem;
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 640px) {
   .passportPageWrapper {
-    padding: 1rem 0.75rem;
-  }
-
-  .headerContent {
-    padding: 1.5rem;
+    padding: 24px 12px 54px;
   }
 
   .pageTitle {
-    font-size: 1.75rem;
-  }
-
-  .pageHeader {
-    margin-bottom: 1.5rem;
-  }
-
-  .statsCard {
-    padding: 1.5rem;
-  }
-
-  .statsGrid {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-
-  .filterContainer {
-    padding: 1rem;
-    gap: 0.75rem;
-  }
-
-  .filterButton {
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
-  }
-
-  .tipsCard {
-    gap: 0.75rem;
-    padding: 1.25rem;
-  }
-
-  .tipsIcon {
-    font-size: 1.75rem;
-  }
-
-  .tipsTitle {
-    font-size: 1rem;
-  }
-
-  .tipsList {
-    gap: 0.5rem;
-  }
-
-  .tipsList li {
-    font-size: 0.85rem;
-    padding-left: 1.25rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .passportPageWrapper {
-    padding: 0.75rem 0.5rem;
-  }
-
-  .headerContent {
-    padding: 1rem;
-  }
-
-  .pageTitle {
-    font-size: 1.4rem;
-    gap: 0.5rem;
-  }
-
-  .titleIcon {
-    font-size: 1.5rem;
+    font-size: 2.45rem;
   }
 
   .pageDescription {
-    font-size: 0.85rem;
+    font-size: 0.98rem;
   }
 
-  .pageHeader {
-    margin-bottom: 1rem;
+  .collectionPanel {
+    padding: 16px;
   }
 
-  .statsCard {
-    padding: 1rem;
-  }
-
-  .statsHeader {
-    margin-bottom: 1rem;
-  }
-
-  .statsTitle {
-    font-size: 1.25rem;
+  .progressHeader,
+  .filterHeader {
+    align-items: start;
+    flex-direction: column;
   }
 
   .progressPercent {
-    font-size: 1.25rem;
+    font-size: 1.75rem;
   }
+}
 
+@media (max-width: 460px) {
   .statsGrid {
     grid-template-columns: 1fr;
-    gap: 0.75rem;
-  }
-
-  .statBox {
-    flex-direction: row;
-    justify-content: space-between;
-    padding: 0.75rem;
-  }
-
-  .statIcon {
-    font-size: 1.25rem;
-    margin-bottom: 0;
-  }
-
-  .statValue {
-    font-size: 1.25rem;
-  }
-
-  .filterContainer {
-    padding: 0.75rem;
-    gap: 0.5rem;
-  }
-
-  .filterTitle {
-    font-size: 0.8rem;
-  }
-
-  .filterButton {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.7rem;
-    border-radius: 1rem;
   }
 
   .buttonGroup {
-    gap: 0.4rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .tipsCard {
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 1rem;
-  }
-
-  .tipsIcon {
-    font-size: 1.5rem;
-    text-align: center;
-  }
-
-  .tipsTitle {
-    font-size: 0.95rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .tipsList {
-    grid-template-columns: 1fr;
-    gap: 0.4rem;
-  }
-
-  .tipsList li {
-    font-size: 0.8rem;
-    padding-left: 1rem;
+  .filterButton {
+    width: 100%;
   }
 }

@@ -1,135 +1,147 @@
 'use client';
 
 import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CountryStamp } from '@/types/stamps';
-import { getStampClipPath, getStampBorderStyle } from '@/lib/stamps/utils';
+import StampRenderer from './StampRenderer';
 import styles from './PassportStamp.module.css';
 
 interface PassportStampProps {
   stamp: CountryStamp;
   isLocked?: boolean;
   onUnlock?: () => void;
+  index?: number;
 }
 
-export const PassportStamp: React.FC<PassportStampProps> = ({ stamp, isLocked = false, onUnlock }) => {
+const burstParticles = [
+  { x: -54, y: -66 },
+  { x: 8, y: -78 },
+  { x: 62, y: -42 },
+  { x: 72, y: 22 },
+  { x: 26, y: 74 },
+  { x: -42, y: 68 },
+  { x: -78, y: 6 },
+  { x: -68, y: -36 },
+];
+
+export const PassportStamp: React.FC<PassportStampProps> = ({
+  stamp,
+  isLocked = false,
+  onUnlock,
+  index = 0,
+}) => {
   const [isHovered, setIsHovered] = useState(false);
-  const borderStyle = getStampBorderStyle(stamp);
+  const [isPressed, setIsPressed] = useState(false);
+  const canUnlock = isLocked && Boolean(onUnlock);
+  const rotation = isLocked
+    ? stamp.rotation_angle * 0.35
+    : stamp.rotation_angle + stamp.visual.rotation_jitter * 0.24;
 
   const handleClick = () => {
-    if (isLocked && onUnlock) {
-      onUnlock();
+    if (canUnlock) {
+      onUnlock?.();
     }
   };
 
   return (
-    <motion.div
-      className={`${styles.stampContainer} ${isLocked ? styles.locked : ''}`}
+    <motion.button
+      type="button"
+      className={`${styles.stampButton} ${isLocked ? styles.locked : styles.unlocked}`}
       onHoverStart={() => setIsHovered(true)}
       onHoverEnd={() => setIsHovered(false)}
+      onTapStart={() => setIsPressed(true)}
+      onTapCancel={() => setIsPressed(false)}
+      onTap={() => setIsPressed(false)}
       onClick={handleClick}
-      initial={{ opacity: 0, scale: 0.8 }}
-      animate={{ opacity: 1, scale: 1 }}
-      whileHover={!isLocked ? { scale: 1.08, rotateZ: -2 } : {}}
-      whileTap={!isLocked ? { scale: 0.95 } : {}}
+      aria-label={
+        isLocked
+          ? `Locked ${stamp.region} passport stamp`
+          : `${stamp.country_name} passport stamp`
+      }
+      initial={{ opacity: 0, y: 18, rotate: rotation - 2, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, rotate: rotation, scale: 1 }}
+      whileHover={
+        isLocked
+          ? { y: -4, rotate: rotation - 1.2 }
+          : { y: -8, rotate: rotation - 1.8, scale: 1.025 }
+      }
+      whileTap={{ scale: 0.98 }}
       transition={{
         type: 'spring',
-        stiffness: 260,
-        damping: 20,
+        stiffness: 240,
+        damping: 22,
+        delay: Math.min(index * 0.025, 0.24),
       }}
     >
-      <motion.div
-        className={styles.stampCard}
-        style={{
-          width: '180px',
-          height: '180px',
-          backgroundColor: stamp.colors.background,
-          borderColor: borderStyle.borderColor,
-          borderStyle: borderStyle.borderStyle as any,
-          borderWidth: borderStyle.borderWidth,
-          boxShadow: borderStyle.boxShadow,
-          clipPath: getStampClipPath(stamp.shape) || 'auto',
-          transform: `rotate(${stamp.rotation_angle}deg)`,
-        }}
-      >
-        {/* Texture overlay */}
-        <div className={styles.textureOverlay} />
+      <span className={styles.shadowMat} aria-hidden="true" />
+      <StampRenderer stamp={stamp} isLocked={isLocked} isHovered={isHovered} />
 
-        {/* Main content */}
-        <div className={styles.stampContent}>
-          <motion.div
-            className={styles.stampIcon}
-            animate={isHovered && !isLocked ? { scale: 1.2, rotate: 360 } : {}}
-            transition={{ duration: 0.6 }}
+      <AnimatePresence>
+        {isHovered && !isLocked && (
+          <motion.span
+            className={styles.foilGlint}
+            aria-hidden="true"
+            initial={{ x: '-120%', opacity: 0 }}
+            animate={{ x: '120%', opacity: [0, 0.5, 0] }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.9, ease: 'easeInOut' }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isPressed && !isLocked && (
+          <motion.span
+            className={styles.pressHalo}
+            aria-hidden="true"
+            initial={{ opacity: 0.36, scale: 0.86 }}
+            animate={{ opacity: 0, scale: 1.24 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.42, ease: 'easeOut' }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {canUnlock && isHovered && (
+          <motion.span
+            className={styles.lockHint}
+            aria-hidden="true"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
           >
-            <span style={{ fontSize: '3rem' }}>{stamp.emoji}</span>
-          </motion.div>
+            Pending
+          </motion.span>
+        )}
+      </AnimatePresence>
 
-          <div
-            className={styles.stampTitle}
-            style={{
-              color: stamp.colors.primary,
-            }}
-          >
-            {stamp.country_name}
-          </div>
-
-          {stamp.unlocked_date && !isLocked && (
-            <motion.div
-              className={styles.stampDate}
-              style={{
-                color: stamp.colors.secondary,
-              }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={isHovered ? { opacity: 1, y: 0 } : { opacity: 0.6, y: 10 }}
-              transition={{ delay: 0.1 }}
-            >
-              {new Date(stamp.unlocked_date).toLocaleDateString('en-US', {
-                month: 'short',
-                year: 'numeric',
-              })}
-            </motion.div>
-          )}
-        </div>
-
-        {/* Inner glow */}
-        <div
-          className={styles.innerGlow}
-          style={{
-            background: `radial-gradient(circle at center, ${stamp.colors.secondary}15, transparent 70%)`,
-          }}
-        />
-      </motion.div>
-
-      {/* Lock overlay */}
-      {isLocked && (
-        <motion.div
-          className={styles.lockOverlay}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-        >
-          <motion.div
-            animate={{ scale: [1, 1.2, 1] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className={styles.lockIcon}
-          >
-            🔒
-          </motion.div>
-          <div className={styles.lockText}>Locked</div>
-        </motion.div>
-      )}
-
-      {/* Shine effect */}
-      {isHovered && !isLocked && (
-        <motion.div
-          className={styles.shineEffect}
-          initial={{ x: '-100%', opacity: 0 }}
-          animate={{ x: '100%', opacity: [0, 0.3, 0] }}
-          transition={{ duration: 0.6, ease: 'easeInOut' }}
-        />
-      )}
-    </motion.div>
+      <AnimatePresence>
+        {!isLocked && isHovered && (
+          <span className={styles.rewardBurst} aria-hidden="true">
+            {burstParticles.map((particle, particleIndex) => (
+              <motion.span
+                key={`${particle.x}-${particle.y}`}
+                className={styles.rewardParticle}
+                initial={{ opacity: 0, x: 0, y: 0, scale: 0.6 }}
+                animate={{
+                  opacity: [0, 0.9, 0],
+                  x: particle.x,
+                  y: particle.y,
+                  scale: [0.6, 1, 0.7],
+                }}
+                exit={{ opacity: 0 }}
+                transition={{
+                  duration: 1,
+                  delay: particleIndex * 0.035,
+                  ease: 'easeOut',
+                }}
+              />
+            ))}
+          </span>
+        )}
+      </AnimatePresence>
+    </motion.button>
   );
 };
 

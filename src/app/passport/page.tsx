@@ -4,6 +4,9 @@ import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PassportPageComponent from '@/components/passport/PassportPage';
+import { COUNTRY_STAMPS } from '@/data/stamps/countries';
+import { normalizeCountryToStampId } from '@/lib/stamps/assets';
+import { getAvailableStampIds } from '@/lib/stamps/utils';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 
@@ -23,16 +26,13 @@ export default function PassportPage() {
     return null;
   }
 
-  // Map visited countries to stamp IDs
+  const availableStampIds = getAvailableStampIds(COUNTRY_STAMPS);
   const unlockedStampIds = visitedCountries
-    .map((country) => country.toLowerCase().replace(/\s+/g, '-'))
-    .filter((id) => {
-      const validIds = ['japan', 'france', 'canada', 'egypt', 'brazil', 'italy', 'greece', 'mexico', 'thailand', 'iceland'];
-      return validIds.includes(id);
-    });
+    .map((country) => normalizeCountryToStampId(country))
+    .filter((id) => availableStampIds.has(id));
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-cream">
       <AppHeader />
       <PassportPageComponent initialUnlockedStamps={unlockedStampIds} />
     </div>

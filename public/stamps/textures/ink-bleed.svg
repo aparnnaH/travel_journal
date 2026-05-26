@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <filter id="soft">
+    <feGaussianBlur stdDeviation="18"/>
+  </filter>
+  <g filter="url(#soft)" opacity="0.58" fill="#2b2116">
+    <path d="M94 120c82-58 160 8 142 84s-118 90-172 28-32-68 30-112Z"/>
+    <path d="M728 84c120-42 216 72 162 174s-188 62-210-34 2-122 48-140Z"/>
+    <path d="M172 710c104-76 264-8 238 122s-202 166-300 62-52-128 62-184Z"/>
+    <path d="M642 664c126-92 306-18 298 118s-186 194-298 94-118-126 0-212Z"/>
+    <path d="M392 312c92-58 222 10 212 108s-126 142-220 82-98-126 8-190Z"/>
+  </g>
+  <g opacity="0.25" fill="#2b2116">
+    <circle cx="80" cy="438" r="18"/>
+    <circle cx="206" cy="254" r="10"/>
+    <circle cx="482" cy="166" r="14"/>
+    <circle cx="880" cy="426" r="20"/>
+    <circle cx="568" cy="738" r="12"/>
+    <circle cx="338" cy="914" r="16"/>
+    <circle cx="956" cy="886" r="10"/>
+  </g>
+</svg>
