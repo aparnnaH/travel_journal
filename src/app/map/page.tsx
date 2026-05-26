@@ -12,6 +12,59 @@ import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
 
+const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+const countryNameAliases: Record<string, string> = {
+  'united states of america': 'US',
+  'united states': 'US',
+  'dem rep congo': 'CD',
+  'dominican rep': 'DO',
+  'central african rep': 'CF',
+  'eq guinea': 'GQ',
+  'bosnia and herz': 'BA',
+  's sudan': 'SS',
+  'solomon is': 'SB',
+  'falkland is': 'FK',
+  'w sahara': 'EH',
+};
+
+function normalizeCountryName(countryName: string) {
+  return countryName
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function buildAlpha2CountryLookup(regionNames: Intl.DisplayNames) {
+  const lookup = new Map<string, string>();
+
+  for (const firstLetter of alphabet) {
+    for (const secondLetter of alphabet) {
+      const code = `${firstLetter}${secondLetter}`;
+      const displayName = regionNames.of(code);
+
+      if (displayName && displayName !== code && displayName !== 'Unknown Region') {
+        lookup.set(normalizeCountryName(displayName), code);
+      }
+    }
+  }
+
+  return lookup;
+}
+
+function getFlagEmoji(countryCode: string) {
+  return countryCode
+    .toUpperCase()
+    .replace(/[A-Z]/g, (letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)));
+}
+
+function getCountryInitials(countryName: string) {
+  const words = countryName.match(/[A-Za-z]+/g) ?? [];
+  const initials = words.slice(0, 2).map((word) => word[0]).join('');
+  return initials.toUpperCase() || countryName.slice(0, 2).toUpperCase();
+}
+
 export default function MapPage() {
   const {
     visitedCountries,
@@ -54,19 +107,30 @@ export default function MapPage() {
   const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
 
   const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
+  const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
 
   const recentlyVisited = useMemo(
     () =>
       visitedCountries.map((countryId) => {
         const knownCountry = placeholderCountries.find((country) => country.id === countryId);
         const displayName = knownCountry?.name ?? regionNames.of(countryId) ?? countryId;
+        const name = countryLabels[countryId] ?? displayName;
+        const normalizedName = normalizeCountryName(name);
+        const alpha2Code =
+          knownCountry?.code ??
+          (/^[A-Z]{2}$/.test(countryId) ? countryId : undefined) ??
+          countryNameAliases[normalizedName] ??
+          alpha2CountryLookup.get(normalizedName);
+
         return {
           id: countryId,
-          name: countryLabels[countryId] ?? displayName,
+          name,
           color: countryColors[countryId] ?? '#4ECFFF',
+          flag: alpha2Code ? getFlagEmoji(alpha2Code) : null,
+          initials: getCountryInitials(name),
         };
       }),
-    [visitedCountries, countryColors, countryLabels, regionNames]
+    [visitedCountries, countryColors, countryLabels, regionNames, alpha2CountryLookup]
   );
 
   if (isLoading || !user) {
@@ -140,9 +204,14 @@ export default function MapPage() {
               <div className="space-y-3">
                 {availableCountries.slice(0, 3).map((country) => (
                   <div key={country.id} className="flex items-center justify-between gap-3">
-                    <div>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-cream text-xl">
+                        {getFlagEmoji(country.code)}
+                      </span>
+                      <div className="min-w-0">
                       <p className="font-medium text-ink">{country.name}</p>
                       <p className="text-sm text-ink/60">Tap to mark as visited.</p>
+                      </div>
                     </div>
                     <Button size="sm" onClick={() => addVisitedCountry(country.id)}>
                       Visit
@@ -153,25 +222,43 @@ export default function MapPage() {
             </Card>
 
             <Card>
-              <h3 className="text-xl font-semibold mb-4">Visited Countries</h3>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-xl font-semibold">Visited Countries</h3>
+                <Badge variant="outline">{recentlyVisited.length}</Badge>
+              </div>
               {recentlyVisited.length === 0 ? (
-                <p className="text-ink/60">No countries visited yet.</p>
+                <div className="rounded-2xl border border-dashed border-gold/30 bg-cream/60 p-4 text-sm text-ink/60">
+                  No countries visited yet.
+                </div>
               ) : (
-                <div className="space-y-3">
-                  {recentlyVisited.map((country) => (
-                    <div
-                      key={country.id}
-                      className="flex items-center justify-between rounded-2xl bg-cream p-3"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: country.color }} />
-                        <span>{country.name}</span>
+                <div className="max-h-[22rem] overflow-y-auto pr-1">
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    {recentlyVisited.map((country) => (
+                      <div
+                        key={country.id}
+                        className="group flex min-w-0 items-center gap-2 rounded-2xl border border-gold/15 bg-cream/70 p-2"
+                      >
+                        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-white text-lg shadow-sm">
+                          {country.flag ?? (
+                            <span className="text-xs font-semibold text-ink/65">{country.initials}</span>
+                          )}
+                          <span
+                            className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-white"
+                            style={{ backgroundColor: country.color }}
+                          />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{country.name}</span>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${country.name}`}
+                          onClick={() => removeVisitedCountry(country.id)}
+                          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-ink/45 transition hover:bg-white hover:text-ink focus:outline-none focus:ring-2 focus:ring-gold"
+                        >
+                          X
+                        </button>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => removeVisitedCountry(country.id)}>
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </Card>
