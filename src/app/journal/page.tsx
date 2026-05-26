@@ -1,50 +1,81 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import Image from 'next/image';
+import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import { Button, Input } from '@/components/ui';
+import ImportTripModal from '@/components/import/ImportTripModal';
+import ScrapbookCanvas from '@/components/journal/canvas/ScrapbookCanvas';
+import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
+import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
 import { useAuthStore } from '@/store/authStore';
 import { fetchJournalEntries, createJournalEntry } from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
+import {
+  BOARD_FALLBACK_WIDTH,
+  BOARD_HEIGHT,
+  MAX_PHOTO_WIDTH,
+  MAX_NOTE_HEIGHT,
+  MAX_NOTE_WIDTH,
+  MIN_NOTE_HEIGHT,
+  MIN_NOTE_WIDTH,
+  MIN_PHOTO_WIDTH,
+  NOTE_HEIGHT,
+  NOTE_WIDTH,
+  PHOTO_HEIGHT,
+  PHOTO_WIDTH,
+  clamp,
+  createId,
+  createScrapbookPage,
+  decorationOptions,
+  drawingColors,
+  getPhotoHeight,
+  getNoteHeightForText,
+  normalizeScrapbookPage,
+  noteColors,
+  scrapbookThemes,
+  templateLabels,
+} from '@/lib/canvas/scrapbook';
 import type { JournalEntry } from '@/types';
+import type { TripImportResult } from '@/types/trips';
+import type {
+  DrawingPoint,
+  PhotoAsset,
+  ScrapbookDecorationItem,
+  ScrapbookDecorationKind,
+  ScrapbookItem,
+  ScrapbookNoteItem,
+  ScrapbookPageData,
+  ScrapbookPhotoItem,
+  ScrapbookTemplateId,
+  ScrapbookThemeId,
+} from '@/lib/canvas/scrapbook';
 
 type SavedEntry = JournalEntry & {
   country_id?: string;
   created_at?: string;
 };
 
-type ScrapbookBaseItem = {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation: number;
-  zIndex: number;
-};
-
-type ScrapbookPhotoItem = ScrapbookBaseItem & {
-  type: 'photo';
-  src: string;
-  alt: string;
-  caption: string;
-};
-
-type ScrapbookNoteItem = ScrapbookBaseItem & {
-  type: 'note';
-  text: string;
-  color: string;
-};
-
-type ScrapbookItem = ScrapbookPhotoItem | ScrapbookNoteItem;
-
 type DragState = {
   id: string;
   offsetX: number;
   offsetY: number;
+};
+
+type ResizeState = {
+  id: string;
+  startX: number;
+  startY: number;
+  startWidth: number;
+  startHeight: number;
+};
+
+type RotateState = {
+  id: string;
+  centerX: number;
+  centerY: number;
 };
 
 type DictationTarget =
@@ -99,14 +130,6 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
-const PHOTO_WIDTH = 190;
-const PHOTO_HEIGHT = 246;
-const NOTE_WIDTH = 190;
-const NOTE_HEIGHT = 178;
-const noteColors = ['#fff2a8', '#dcecff', '#ffd8d2', '#dff5d6'];
-
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
 const appendDictationText = (currentValue: string, transcript: string) => {
   const cleanTranscript = transcript.trim();
 
@@ -120,14 +143,6 @@ const appendDictationText = (currentValue: string, transcript: string) => {
 
   const separator = /\s$/.test(currentValue) ? '' : ' ';
   return `${currentValue}${separator}${cleanTranscript}`;
-};
-
-const createId = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
 const readPhotoFile = (file: File) =>
@@ -170,6 +185,8 @@ const isSameDictationTarget = (firstTarget: DictationTarget | null, secondTarget
 export default function JournalPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const activeTool = useJournalLayoutStore((state) => state.activeTool);
+  const setActiveTool = useJournalLayoutStore((state) => state.setActiveTool);
   const router = useRouter();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -178,12 +195,23 @@ export default function JournalPage() {
   const [entries, setEntries] = useState<SavedEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [scrapbookItems, setScrapbookItems] = useState<ScrapbookItem[]>([]);
+  const [scrapbookPages, setScrapbookPages] = useState<ScrapbookPageData[]>(() => [
+    createScrapbookPage(1, 'page-1'),
+  ]);
+  const [activePageId, setActivePageId] = useState('page-1');
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [resizeState, setResizeState] = useState<ResizeState | null>(null);
+  const [rotateState, setRotateState] = useState<RotateState | null>(null);
+  const [drawingStrokeId, setDrawingStrokeId] = useState<string | null>(null);
+  const [drawingMode, setDrawingMode] = useState(false);
+  const [drawingColor, setDrawingColor] = useState(drawingColors[0]);
+  const [boardWidth, setBoardWidth] = useState(BOARD_FALLBACK_WIDTH);
   const [dictationTarget, setDictationTarget] = useState<DictationTarget | null>(null);
   const [dictationError, setDictationError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importNotice, setImportNotice] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -197,10 +225,16 @@ export default function JournalPage() {
     () => placeholderCountries.find((country) => country.id === form.countryId),
     [form.countryId]
   );
+  const currentPage = useMemo(
+    () => scrapbookPages.find((page) => page.id === activePageId) || scrapbookPages[0],
+    [activePageId, scrapbookPages]
+  );
+  const scrapbookItems = useMemo(() => currentPage?.items ?? [], [currentPage]);
   const selectedItem = useMemo(
     () => scrapbookItems.find((item) => item.id === selectedItemId) || null,
     [scrapbookItems, selectedItemId]
   );
+  const currentTheme = scrapbookThemes.find((theme) => theme.id === currentPage?.theme) || scrapbookThemes[0];
   const scrapbookStorageKey = useMemo(
     () => (user ? `travel-journal-scrapbook:${user.id}` : null),
     [user]
@@ -246,16 +280,44 @@ export default function JournalPage() {
         const savedBoard = window.localStorage.getItem(scrapbookStorageKey);
 
         if (savedBoard) {
-          const parsed = JSON.parse(savedBoard) as { items?: ScrapbookItem[] };
-          setScrapbookItems(Array.isArray(parsed.items) ? parsed.items : []);
+          const parsed = JSON.parse(savedBoard) as {
+            activePageId?: string;
+            items?: ScrapbookItem[];
+            pages?: Array<Partial<ScrapbookPageData>>;
+          };
+
+          if (Array.isArray(parsed.pages) && parsed.pages.length > 0) {
+            const normalizedPages = parsed.pages.map((page, index) => normalizeScrapbookPage(page, index + 1));
+            setScrapbookPages(normalizedPages);
+            setActivePageId(
+              normalizedPages.some((page) => page.id === parsed.activePageId)
+                ? String(parsed.activePageId)
+                : normalizedPages[0].id
+            );
+          } else if (Array.isArray(parsed.items)) {
+            const migratedPage = {
+              ...createScrapbookPage(1, 'page-1'),
+              items: parsed.items,
+            };
+            setScrapbookPages([migratedPage]);
+            setActivePageId(migratedPage.id);
+          } else {
+            const firstPage = createScrapbookPage(1, 'page-1');
+            setScrapbookPages([firstPage]);
+            setActivePageId(firstPage.id);
+          }
         } else {
-          setScrapbookItems([]);
+          const firstPage = createScrapbookPage(1, 'page-1');
+          setScrapbookPages([firstPage]);
+          setActivePageId(firstPage.id);
         }
 
         setStorageWarning(null);
       } catch {
         setStorageWarning('This scrapbook could not be restored on this device.');
-        setScrapbookItems([]);
+        const firstPage = createScrapbookPage(1, 'page-1');
+        setScrapbookPages([firstPage]);
+        setActivePageId(firstPage.id);
       } finally {
         scrapbookLoadedRef.current = true;
       }
@@ -272,13 +334,13 @@ export default function JournalPage() {
     }
 
     try {
-      window.localStorage.setItem(scrapbookStorageKey, JSON.stringify({ items: scrapbookItems }));
+      window.localStorage.setItem(scrapbookStorageKey, JSON.stringify({ pages: scrapbookPages, activePageId }));
     } catch {
       queueMicrotask(() => {
         setStorageWarning('This board is full on this device. Remove a few large photos before adding more.');
       });
     }
-  }, [scrapbookItems, scrapbookStorageKey]);
+  }, [activePageId, scrapbookPages, scrapbookStorageKey]);
 
   useEffect(() => {
     return () => {
@@ -287,12 +349,207 @@ export default function JournalPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const board = boardRef.current;
+
+    if (!board) {
+      return;
+    }
+
+    const updateBoardWidth = () => {
+      setBoardWidth(board.clientWidth || BOARD_FALLBACK_WIDTH);
+    };
+    const observer = new ResizeObserver(updateBoardWidth);
+    observer.observe(board);
+    queueMicrotask(updateBoardWidth);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   if (isLoading || !user) {
     return null;
   }
 
+  const updateCurrentPage = (updater: (page: ScrapbookPageData) => ScrapbookPageData) => {
+    setScrapbookPages((current) =>
+      current.map((page) => (page.id === activePageId ? updater(page) : page))
+    );
+  };
+
+  const updateScrapbookItems = (updater: (items: ScrapbookItem[]) => ScrapbookItem[]) => {
+    updateCurrentPage((page) => ({
+      ...page,
+      items: updater(page.items),
+    }));
+  };
+
+  const addPage = () => {
+    const nextPage = createScrapbookPage(scrapbookPages.length + 1);
+    setScrapbookPages((current) => [...current, nextPage]);
+    setActivePageId(nextPage.id);
+    setSelectedItemId(null);
+    setStorageWarning(null);
+  };
+
+  const updatePageTheme = (theme: ScrapbookThemeId) => {
+    updateCurrentPage((page) => ({
+      ...page,
+      theme,
+    }));
+  };
+
+  const setPageTemplate = (template: ScrapbookTemplateId) => {
+    const boardWidth = boardRef.current?.clientWidth || BOARD_FALLBACK_WIDTH;
+
+    updateCurrentPage((page) => {
+      const photos = page.items.filter((item): item is ScrapbookPhotoItem => item.type === 'photo');
+      let photoIndex = 0;
+      let noteIndex = 0;
+
+      const nextItems = page.items.map((item) => {
+        if (item.type === 'photo') {
+          const index = photoIndex;
+          photoIndex += 1;
+
+          if (template === 'polaroid-wall') {
+            const width = 170;
+            const gap = 22;
+            const columns = Math.max(1, Math.floor((boardWidth - 56) / (width + gap)));
+
+            return {
+              ...item,
+              width,
+              height: getPhotoHeight(width),
+              x: 28 + (index % columns) * (width + gap),
+              y: 32 + Math.floor(index / columns) * 220,
+              rotation: [-3, 2, -2, 3][index % 4],
+            };
+          }
+
+          if (template === 'timeline') {
+            const width = 150;
+            const isLeft = index % 2 === 0;
+
+            return {
+              ...item,
+              width,
+              height: getPhotoHeight(width),
+              x: isLeft ? Math.max(24, boardWidth / 2 - width - 64) : Math.min(boardWidth - width - 24, boardWidth / 2 + 64),
+              y: 44 + index * 122,
+              rotation: isLeft ? -3 : 3,
+            };
+          }
+
+          if (template === 'collage') {
+            const width = [210, 180, 160, 190][index % 4];
+
+            return {
+              ...item,
+              width,
+              height: getPhotoHeight(width),
+              x: clamp(56 + (index % 5) * 74, 20, Math.max(20, boardWidth - width - 20)),
+              y: 48 + (index % 4) * 88,
+              rotation: [-8, 6, -4, 9, 2][index % 5],
+            };
+          }
+
+          if (template === 'postcard') {
+            const width = Math.min(290, boardWidth * 0.44);
+
+            return {
+              ...item,
+              width,
+              height: getPhotoHeight(width),
+              x: 34,
+              y: 44 + index * 34,
+              rotation: index === 0 ? -2 : 3,
+            };
+          }
+
+          if (template === 'diary') {
+            const width = 150;
+
+            return {
+              ...item,
+              width,
+              height: getPhotoHeight(width),
+              x: clamp(boardWidth - width - 48, 24, boardWidth - width - 24),
+              y: 42 + index * 166,
+              rotation: [-2, 2][index % 2],
+            };
+          }
+
+          return item;
+        }
+
+        if (item.type === 'note') {
+          const index = noteIndex;
+          noteIndex += 1;
+
+          if (template === 'timeline') {
+            return {
+              ...item,
+              x: clamp(boardWidth / 2 - item.width / 2, 20, boardWidth - item.width - 20),
+              y: 72 + index * 150,
+              rotation: 0,
+            };
+          }
+
+          if (template === 'postcard') {
+            return {
+              ...item,
+              x: clamp(boardWidth * 0.6, 24, boardWidth - item.width - 24),
+              y: 74 + index * 184,
+              rotation: 0,
+            };
+          }
+
+          if (template === 'diary') {
+            return {
+              ...item,
+              x: 38,
+              y: 48 + index * 188,
+              width: Math.max(160, Math.min(360, boardWidth - 96)),
+              rotation: -1,
+            };
+          }
+        }
+
+        return item;
+      });
+
+      const timelineLine: ScrapbookDecorationItem | null =
+        template === 'timeline'
+          ? {
+              id: `timeline-${page.id}`,
+              type: 'decoration',
+              kind: 'tape',
+              label: '',
+              color: '#8b6035',
+              x: boardWidth / 2 - 3,
+              y: 30,
+              width: 6,
+              height: Math.min(BOARD_HEIGHT - 60, Math.max(240, photos.length * 126)),
+              rotation: 0,
+              zIndex: 0,
+            }
+          : null;
+
+      return {
+        ...page,
+        template,
+        theme: template === 'postcard' ? 'postcard' : page.theme,
+        items: timelineLine
+          ? [timelineLine, ...nextItems.filter((item) => item.id !== timelineLine.id)]
+          : nextItems.filter((item) => !item.id.startsWith('timeline-')),
+      };
+    });
+  };
+
   const bringToFront = (itemId: string) => {
-    setScrapbookItems((current) => {
+    updateScrapbookItems((current) => {
       const nextZIndex = current.reduce((highest, item) => Math.max(highest, item.zIndex), 0) + 1;
 
       return current.map((item) => (item.id === itemId ? { ...item, zIndex: nextZIndex } : item));
@@ -300,13 +557,13 @@ export default function JournalPage() {
   };
 
   const updateScrapbookItem = (itemId: string, updates: Partial<ScrapbookItem>) => {
-    setScrapbookItems((current) =>
+    updateScrapbookItems((current) =>
       current.map((item) => (item.id === itemId ? ({ ...item, ...updates } as ScrapbookItem) : item))
     );
   };
 
   const deleteScrapbookItem = (itemId: string) => {
-    setScrapbookItems((current) => current.filter((item) => item.id !== itemId));
+    updateScrapbookItems((current) => current.filter((item) => item.id !== itemId));
     setSelectedItemId((current) => (current === itemId ? null : current));
     setDictationTarget((current) => (current?.type === 'note' && current.itemId === itemId ? null : current));
     setStorageWarning(null);
@@ -321,7 +578,7 @@ export default function JournalPage() {
       return;
     }
 
-    setScrapbookItems((current) =>
+    updateScrapbookItems((current) =>
       current.map((item) => {
         if (item.type !== 'note' || item.id !== target.itemId) {
           return item;
@@ -413,7 +670,7 @@ export default function JournalPage() {
   const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>, item: ScrapbookItem) => {
     const board = boardRef.current;
 
-    if (!board) {
+    if (!board || drawingMode) {
       return;
     }
 
@@ -429,16 +686,116 @@ export default function JournalPage() {
     board.setPointerCapture(event.pointerId);
   };
 
+  const getBoardPoint = (event: React.PointerEvent<HTMLDivElement> | React.DragEvent<HTMLDivElement>) => {
+    const board = boardRef.current;
+
+    if (!board) {
+      return { x: 24, y: 24 };
+    }
+
+    const boardRect = board.getBoundingClientRect();
+    return {
+      x: clamp(event.clientX - boardRect.left, 0, boardRect.width),
+      y: clamp(event.clientY - boardRect.top, 0, boardRect.height),
+    };
+  };
+
+  const handleBoardPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!drawingMode || event.currentTarget !== event.target) {
+      return;
+    }
+
+    const strokeId = createId();
+    const point = getBoardPoint(event);
+    setDrawingStrokeId(strokeId);
+    updateCurrentPage((page) => ({
+      ...page,
+      drawings: [
+        ...page.drawings,
+        {
+          id: strokeId,
+          color: drawingColor,
+          width: 3,
+          points: [point],
+        },
+      ],
+    }));
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
   const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const board = boardRef.current;
 
-    if (!board || !dragState) {
+    if (!board) {
+      return;
+    }
+
+    if (drawingStrokeId) {
+      const point = getBoardPoint(event);
+      updateCurrentPage((page) => ({
+        ...page,
+        drawings: page.drawings.map((stroke) =>
+          stroke.id === drawingStrokeId
+            ? {
+                ...stroke,
+                points: [...stroke.points, point],
+              }
+            : stroke
+        ),
+      }));
+      return;
+    }
+
+    if (resizeState) {
+      const boardRect = board.getBoundingClientRect();
+      const nextWidth = clamp(resizeState.startWidth + event.clientX - resizeState.startX, MIN_PHOTO_WIDTH, MAX_PHOTO_WIDTH);
+      const nextNoteWidth = clamp(resizeState.startWidth + event.clientX - resizeState.startX, MIN_NOTE_WIDTH, MAX_NOTE_WIDTH);
+      const nextNoteHeight = clamp(resizeState.startHeight + event.clientY - resizeState.startY, MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT);
+
+      updateScrapbookItems((current) =>
+        current.map((item) => {
+          if (item.id !== resizeState.id) {
+            return item;
+          }
+
+          if (item.type === 'note') {
+            return {
+              ...item,
+              width: Math.min(nextNoteWidth, Math.max(MIN_NOTE_WIDTH, boardRect.width - item.x)),
+              height: Math.min(nextNoteHeight, Math.max(MIN_NOTE_HEIGHT, boardRect.height - item.y)),
+            };
+          }
+
+          if (item.type !== 'photo') {
+            return item;
+          }
+
+          return {
+            ...item,
+            width: Math.min(nextWidth, Math.max(MIN_PHOTO_WIDTH, boardRect.width - item.x)),
+            height: getPhotoHeight(Math.min(nextWidth, Math.max(MIN_PHOTO_WIDTH, boardRect.width - item.x))),
+          };
+        })
+      );
+      return;
+    }
+
+    if (rotateState) {
+      const angle = Math.atan2(event.clientY - rotateState.centerY, event.clientX - rotateState.centerX) * (180 / Math.PI) + 90;
+
+      updateScrapbookItems((current) =>
+        current.map((item) => (item.id === rotateState.id ? { ...item, rotation: Math.round(angle) } : item))
+      );
+      return;
+    }
+
+    if (!dragState) {
       return;
     }
 
     const boardRect = board.getBoundingClientRect();
 
-    setScrapbookItems((current) =>
+    updateScrapbookItems((current) =>
       current.map((item) => {
         if (item.id !== dragState.id) {
           return item;
@@ -459,6 +816,9 @@ export default function JournalPage() {
     }
 
     setDragState(null);
+    setResizeState(null);
+    setRotateState(null);
+    setDrawingStrokeId(null);
   };
 
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -468,32 +828,19 @@ export default function JournalPage() {
       return;
     }
 
-    const currentLength = scrapbookItems.length;
-    const boardWidth = boardRef.current?.clientWidth || 720;
-
     try {
       const photoSources = await Promise.all(files.map(readPhotoFile));
-      const newItems = photoSources.map<ScrapbookPhotoItem>((src, index) => {
-        const itemNumber = currentLength + index;
-        const maxX = Math.max(24, boardWidth - PHOTO_WIDTH - 24);
+      const newAssets = photoSources.map<PhotoAsset>((src, index) => ({
+        id: createId(),
+        src,
+        alt: files[index].name,
+        caption: files[index].name.replace(/\.[^/.]+$/, ''),
+      }));
 
-        return {
-          id: createId(),
-          type: 'photo',
-          src,
-          alt: files[index].name,
-          caption: files[index].name.replace(/\.[^/.]+$/, ''),
-          x: clamp(28 + (itemNumber % 4) * 44, 16, maxX),
-          y: 34 + (itemNumber % 3) * 38,
-          width: PHOTO_WIDTH,
-          height: PHOTO_HEIGHT,
-          rotation: [-6, 4, -3, 5][itemNumber % 4],
-          zIndex: itemNumber + 1,
-        };
-      });
-
-      setScrapbookItems((current) => [...current, ...newItems]);
-      setSelectedItemId(newItems[newItems.length - 1]?.id || null);
+      updateCurrentPage((page) => ({
+        ...page,
+        photoTray: [...page.photoTray, ...newAssets],
+      }));
       setStorageWarning(null);
     } catch {
       setStorageWarning('One of those photos could not be added.');
@@ -504,7 +851,7 @@ export default function JournalPage() {
 
   const addNote = () => {
     const itemNumber = scrapbookItems.length;
-    const boardWidth = boardRef.current?.clientWidth || 720;
+    const boardWidth = boardRef.current?.clientWidth || BOARD_FALLBACK_WIDTH;
     const maxX = Math.max(24, boardWidth - NOTE_WIDTH - 24);
     const note: ScrapbookNoteItem = {
       id: createId(),
@@ -519,15 +866,159 @@ export default function JournalPage() {
       zIndex: itemNumber + 1,
     };
 
-    setScrapbookItems((current) => [...current, note]);
+    updateScrapbookItems((current) => [...current, note]);
     setSelectedItemId(note.id);
     setStorageWarning(null);
+  };
+
+  const addDecoration = (kind: ScrapbookDecorationKind) => {
+    setActiveTool('stickers');
+    const option = decorationOptions.find((item) => item.kind === kind) || decorationOptions[0];
+    const itemNumber = scrapbookItems.length;
+    const boardWidth = boardRef.current?.clientWidth || BOARD_FALLBACK_WIDTH;
+    const sizes: Record<ScrapbookDecorationKind, { width: number; height: number }> = {
+      tape: { width: 130, height: 32 },
+      pin: { width: 34, height: 34 },
+      paper: { width: 158, height: 128 },
+      ticket: { width: 170, height: 82 },
+      sticker: { width: 98, height: 68 },
+    };
+    const size = sizes[kind];
+    const decoration: ScrapbookDecorationItem = {
+      id: createId(),
+      type: 'decoration',
+      kind,
+      label: option.label,
+      color: option.color,
+      x: clamp(86 + (itemNumber % 5) * 36, 18, Math.max(18, boardWidth - size.width - 18)),
+      y: 74 + (itemNumber % 4) * 44,
+      width: size.width,
+      height: size.height,
+      rotation: [-8, 6, -3, 5][itemNumber % 4],
+      zIndex: itemNumber + 1,
+    };
+
+    updateScrapbookItems((current) => [...current, decoration]);
+    setSelectedItemId(decoration.id);
+    setStorageWarning(null);
+  };
+
+  const placePhotoFromTray = (asset: PhotoAsset, point?: DrawingPoint) => {
+    const boardWidth = boardRef.current?.clientWidth || BOARD_FALLBACK_WIDTH;
+    const itemNumber = scrapbookItems.length;
+    const maxX = Math.max(24, boardWidth - PHOTO_WIDTH - 24);
+    const photo: ScrapbookPhotoItem = {
+      id: createId(),
+      type: 'photo',
+      src: asset.src,
+      alt: asset.alt,
+      caption: asset.caption,
+      x: point ? clamp(point.x - PHOTO_WIDTH / 2, 16, maxX) : clamp(28 + (itemNumber % 4) * 44, 16, maxX),
+      y: point ? clamp(point.y - PHOTO_HEIGHT / 2, 16, BOARD_HEIGHT - PHOTO_HEIGHT - 16) : 34 + (itemNumber % 3) * 38,
+      width: PHOTO_WIDTH,
+      height: PHOTO_HEIGHT,
+      rotation: [-6, 4, -3, 5][itemNumber % 4],
+      zIndex: itemNumber + 1,
+    };
+
+    updateScrapbookItems((current) => [...current, photo]);
+    setSelectedItemId(photo.id);
+    setStorageWarning(null);
+  };
+
+  const handlePhotoDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const assetId = event.dataTransfer.getData('text/scrapbook-photo');
+    const asset = currentPage?.photoTray.find((photo) => photo.id === assetId);
+
+    if (!asset) {
+      return;
+    }
+
+    placePhotoFromTray(asset, getBoardPoint(event));
+  };
+
+  const handleDndDragEnd = (event: DragEndEvent) => {
+    if (event.over?.id !== 'scrapbook-canvas-dropzone') {
+      return;
+    }
+
+    const assetId = event.active.data.current?.assetId;
+
+    if (typeof assetId !== 'string') {
+      return;
+    }
+
+    const asset = currentPage?.photoTray.find((photo) => photo.id === assetId);
+
+    if (asset) {
+      placePhotoFromTray(asset);
+    }
+  };
+
+  const clearCurrentPage = () => {
+    updateCurrentPage((page) => ({
+      ...page,
+      items: [],
+      drawings: [],
+    }));
+    setSelectedItemId(null);
+    setDrawingStrokeId(null);
+    setStorageWarning(null);
+  };
+
+  const undoLastDrawing = () => {
+    updateCurrentPage((page) => ({
+      ...page,
+      drawings: page.drawings.slice(0, -1),
+    }));
+  };
+
+  const startItemResize = (event: React.PointerEvent<HTMLButtonElement>, item: ScrapbookPhotoItem | ScrapbookNoteItem) => {
+    const board = boardRef.current;
+
+    if (!board) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setSelectedItemId(item.id);
+    bringToFront(item.id);
+    setResizeState({
+      id: item.id,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: item.width,
+      startHeight: item.height,
+    });
+    board.setPointerCapture(event.pointerId);
+  };
+
+  const startItemRotate = (event: React.PointerEvent<HTMLButtonElement>, item: ScrapbookItem) => {
+    const board = boardRef.current;
+
+    if (!board) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    const boardRect = board.getBoundingClientRect();
+    setSelectedItemId(item.id);
+    bringToFront(item.id);
+    setRotateState({
+      id: item.id,
+      centerX: boardRect.left + item.x + item.width / 2,
+      centerY: boardRect.top + item.y + item.height / 2,
+    });
+    board.setPointerCapture(event.pointerId);
   };
 
   const nudgeSelectedItem = (deltaX: number, deltaY: number) => {
     const boardRect = boardRef.current?.getBoundingClientRect();
 
-    setScrapbookItems((current) =>
+    updateScrapbookItems((current) =>
       current.map((item) => {
         if (item.id !== selectedItemId) {
           return item;
@@ -535,8 +1026,8 @@ export default function JournalPage() {
 
         return {
           ...item,
-          x: clamp(item.x + deltaX, 0, Math.max(0, (boardRect?.width || 720) - item.width)),
-          y: clamp(item.y + deltaY, 0, Math.max(0, (boardRect?.height || 620) - item.height)),
+          x: clamp(item.x + deltaX, 0, Math.max(0, (boardRect?.width || BOARD_FALLBACK_WIDTH) - item.width)),
+          y: clamp(item.y + deltaY, 0, Math.max(0, (boardRect?.height || BOARD_HEIGHT) - item.height)),
         };
       })
     );
@@ -574,6 +1065,86 @@ export default function JournalPage() {
     }
   };
 
+  const resizeItemFromMoveable = (itemId: string, width: number, height: number) => {
+    updateScrapbookItems((current) =>
+      current.map((item) => {
+        if (item.id !== itemId) {
+          return item;
+        }
+
+        if (item.type === 'note') {
+          return {
+            ...item,
+            width: clamp(width, MIN_NOTE_WIDTH, MAX_NOTE_WIDTH),
+            height: clamp(height, MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT),
+          };
+        }
+
+        if (item.type === 'photo') {
+          return {
+            ...item,
+            width,
+            height: getPhotoHeight(width),
+          };
+        }
+
+        return item;
+      })
+    );
+  };
+
+  const updateNoteText = (itemId: string, text: string) => {
+    updateScrapbookItems((current) =>
+      current.map((item) => {
+        if (item.id !== itemId || item.type !== 'note') {
+          return item;
+        }
+
+        return {
+          ...item,
+          text,
+          height: Math.max(item.height, getNoteHeightForText(text, item.width)),
+        };
+      })
+    );
+  };
+
+  const rotateItemFromMoveable = (itemId: string, rotation: number) => {
+    updateScrapbookItem(itemId, { rotation });
+  };
+
+  const handleTripImported = (result: TripImportResult) => {
+    if (!result.scrapbookPages.length) {
+      return;
+    }
+
+    setScrapbookPages((current) => [...current, ...result.scrapbookPages]);
+    setActivePageId(result.scrapbookPages[0].id);
+    setSelectedItemId(null);
+    setDrawingMode(false);
+    setActiveTool('select');
+    setForm({
+      title: result.journalDraft.title,
+      content: result.journalDraft.content,
+      countryId: result.journalDraft.countryId,
+      mood: result.journalDraft.mood,
+      tags: result.journalDraft.tags.join(', '),
+    });
+    setImportNotice(
+      `Imported ${result.scrapbookPages.length} draft page${
+        result.scrapbookPages.length === 1 ? '' : 's'
+      }${
+        result.passportStampIds.length
+          ? ` with ${result.passportStampIds.length} passport stamp link${
+              result.passportStampIds.length === 1 ? '' : 's'
+            }`
+          : ''
+      }.`
+    );
+    setError(null);
+    setStorageWarning(null);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -609,6 +1180,8 @@ export default function JournalPage() {
     selectedItem?.type === 'note' &&
     dictationTarget?.type === 'note' &&
     dictationTarget.itemId === selectedItem.id;
+  const visibleBoardWidth = boardWidth || BOARD_FALLBACK_WIDTH;
+  const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
 
   return (
     <div className="min-h-screen bg-cream">
@@ -616,13 +1189,21 @@ export default function JournalPage() {
       <PageShell
         title="Travel Journal"
         description="Build each trip as a scrapbook page with photos, notes, and saved memories."
+        actions={
+          <Button type="button" onClick={() => setImportModalOpen(true)}>
+            Import Trip
+          </Button>
+        }
       >
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <DndContext onDragEnd={handleDndDragEnd}>
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
           <section className="rounded-lg border border-gold/25 bg-[#fff8ea] p-4 shadow-soft">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-semibold text-ink">Scrapbook Page</h2>
-                <p className="text-sm text-ink/65">{currentCountry?.name || form.countryId}</p>
+                <h2 className="text-2xl font-semibold text-ink">{currentPage?.title || 'Page 1'}</h2>
+                <p className="text-sm text-ink/65">
+                  {currentCountry?.name || form.countryId} / {currentTheme.label}
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <input
@@ -633,7 +1214,14 @@ export default function JournalPage() {
                   className="sr-only"
                   onChange={handlePhotoUpload}
                 />
-                <Button type="button" variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setActiveTool('photos');
+                    fileInputRef.current?.click();
+                  }}
+                >
                   Add Photos
                 </Button>
                 <Button type="button" variant="outline" onClick={addNote}>
@@ -641,15 +1229,72 @@ export default function JournalPage() {
                 </Button>
                 <Button
                   type="button"
-                  variant="ghost"
-                  disabled={scrapbookItems.length === 0}
+                  variant={drawingMode ? 'secondary' : 'outline'}
                   onClick={() => {
-                    setScrapbookItems([]);
-                    setSelectedItemId(null);
-                    setStorageWarning(null);
+                    setDrawingMode((current) => {
+                      const nextDrawingMode = !current;
+                      setActiveTool(nextDrawingMode ? 'draw' : 'select');
+                      return nextDrawingMode;
+                    });
                   }}
                 >
+                  {activeTool === 'draw' ? 'Drawing' : 'Draw'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!hasPageContent}
+                  onClick={clearCurrentPage}
+                >
                   Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              {scrapbookPages.map((page, index) => (
+                <Button
+                  key={page.id}
+                  type="button"
+                  size="sm"
+                  variant={page.id === activePageId ? 'secondary' : 'ghost'}
+                  onClick={() => {
+                    setActivePageId(page.id);
+                    setSelectedItemId(null);
+                  }}
+                >
+                  {page.title || `Page ${index + 1}`}
+                </Button>
+              ))}
+              <Button type="button" size="sm" variant="outline" onClick={addPage}>
+                Add Page
+              </Button>
+            </div>
+
+            <div className="mb-4 grid gap-3 lg:grid-cols-2">
+              <div className="flex flex-wrap gap-2">
+                {decorationOptions.map((option) => (
+                  <Button key={option.kind} type="button" size="sm" variant="ghost" onClick={() => addDecoration(option.kind)}>
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                {drawingColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={`Ink ${color}`}
+                    className={[
+                      'h-7 w-7 rounded-full border-2 transition-transform',
+                      drawingColor === color ? 'scale-110 border-ink' : 'border-white',
+                    ].join(' ')}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setDrawingColor(color)}
+                  />
+                ))}
+                <Button type="button" size="sm" variant="ghost" disabled={!currentPage?.drawings.length} onClick={undoLastDrawing}>
+                  Undo Ink
                 </Button>
               </div>
             </div>
@@ -660,94 +1305,86 @@ export default function JournalPage() {
               </p>
             ) : null}
 
-            <div
-              ref={boardRef}
-              className="relative h-[620px] overflow-hidden rounded-lg border border-gold/30 bg-[#f4e5bd] shadow-inner touch-none"
-              style={{
-                backgroundImage:
-                  'linear-gradient(rgba(61, 43, 14, 0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(61, 43, 14, 0.07) 1px, transparent 1px)',
-                backgroundSize: '34px 34px',
+            {importNotice ? (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gold/25 bg-white px-3 py-2 text-sm text-ink/75 shadow-soft">
+                <span>{importNotice}</span>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setImportNotice(null)}>
+                  Dismiss
+                </Button>
+              </div>
+            ) : null}
+
+            <ScrapbookCanvas
+              boardWidth={visibleBoardWidth}
+              currentTheme={currentTheme}
+              drawingMode={drawingMode}
+              drawings={currentPage?.drawings || []}
+              hasPageContent={hasPageContent}
+              items={scrapbookItems}
+              selectedItemId={selectedItemId}
+              draggingItemId={dragState?.id || null}
+              setBoardNode={(node) => {
+                boardRef.current = node;
               }}
+              onBoardPointerDown={handleBoardPointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={stopDragging}
-              onPointerCancel={stopDragging}
-            >
-              {scrapbookItems.length === 0 ? (
-                <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-ink/45">
-                  <p className="max-w-sm text-lg">No photos or notes yet.</p>
-                </div>
-              ) : null}
-
-              {scrapbookItems.map((item) => (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={item.type === 'photo' ? `Photo ${item.caption}` : 'Scrapbook note'}
-                  className={[
-                    'absolute select-none outline-none transition-shadow',
-                    dragState?.id === item.id ? 'cursor-grabbing' : 'cursor-grab',
-                    selectedItemId === item.id ? 'drop-shadow-2xl' : 'drop-shadow-md',
-                  ].join(' ')}
-                  style={{
-                    left: item.x,
-                    top: item.y,
-                    width: item.width,
-                    minHeight: item.height,
-                    transform: `rotate(${item.rotation}deg)`,
-                    zIndex: item.zIndex,
-                  }}
-                  onPointerDown={(event) => handlePointerDown(event, item)}
-                  onKeyDown={(event) => handleItemKeyDown(event, item.id)}
-                >
-                  {item.type === 'photo' ? (
-                    <div
-                      className={[
-                        'border bg-white p-2 pb-9',
-                        selectedItemId === item.id ? 'border-gold-deep' : 'border-ink/10',
-                      ].join(' ')}
-                    >
-                      <Image
-                        src={item.src}
-                        alt={item.alt}
-                        width={PHOTO_WIDTH - 16}
-                        height={150}
-                        unoptimized
-                        className="h-[150px] w-full bg-cream object-cover"
-                      />
-                      <input
-                        aria-label="Photo caption"
-                        value={item.caption}
-                        onChange={(event) => updateScrapbookItem(item.id, { caption: event.target.value })}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        className="absolute inset-x-3 bottom-2 bg-transparent text-center font-script text-lg text-ink outline-none"
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className={[
-                        'h-full border p-3 shadow-soft',
-                        selectedItemId === item.id ? 'border-gold-deep' : 'border-ink/10',
-                      ].join(' ')}
-                      style={{ backgroundColor: item.color }}
-                    >
-                      <div className="mb-2 h-3 w-12 bg-white/55" />
-                      <textarea
-                        aria-label="Note text"
-                        value={item.text}
-                        onChange={(event) => updateScrapbookItem(item.id, { text: event.target.value })}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        placeholder="Memory..."
-                        className="h-[128px] w-full resize-none bg-transparent font-script text-2xl leading-7 text-ink outline-none placeholder:text-ink/35"
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+              onPhotoDrop={handlePhotoDrop}
+              onItemPointerDown={handlePointerDown}
+              onItemKeyDown={handleItemKeyDown}
+              onCaptionChange={(itemId, caption) => updateScrapbookItem(itemId, { caption })}
+              onNoteChange={updateNoteText}
+              onResizeStart={startItemResize}
+              onRotateStart={startItemRotate}
+              onMoveableResize={resizeItemFromMoveable}
+              onMoveableRotate={rotateItemFromMoveable}
+            />
           </section>
 
           <aside className="space-y-4">
+            <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
+              <h3 className="mb-4 text-xl font-semibold text-ink">Themes</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {scrapbookThemes.map((theme) => (
+                  <Button
+                    key={theme.id}
+                    type="button"
+                    size="sm"
+                    variant={currentPage?.theme === theme.id ? 'secondary' : 'ghost'}
+                    onClick={() => updatePageTheme(theme.id)}
+                  >
+                    {theme.label}
+                  </Button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
+              <h3 className="mb-4 text-xl font-semibold text-ink">Templates</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {templateLabels.map((template) => (
+                  <Button
+                    key={template.id}
+                    type="button"
+                    size="sm"
+                    variant={currentPage?.template === template.id ? 'secondary' : 'ghost'}
+                    onClick={() => setPageTemplate(template.id)}
+                  >
+                    {template.label}
+                  </Button>
+                ))}
+              </div>
+            </section>
+
+            <PhotoTray
+              assets={currentPage?.photoTray || []}
+              onUpload={() => {
+                setActiveTool('photos');
+                fileInputRef.current?.click();
+              }}
+              onPlacePhoto={placePhotoFromTray}
+            />
+
             <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
               <h3 className="mb-4 text-xl font-semibold text-ink">Entry Details</h3>
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -883,6 +1520,14 @@ export default function JournalPage() {
             </section>
           </aside>
         </div>
+        </DndContext>
+        <ImportTripModal
+          open={importModalOpen}
+          startPageNumber={scrapbookPages.length + 1}
+          boardWidth={visibleBoardWidth}
+          onClose={() => setImportModalOpen(false)}
+          onImport={handleTripImported}
+        />
       </PageShell>
     </div>
   );
