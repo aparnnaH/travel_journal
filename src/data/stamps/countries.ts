@@ -129,7 +129,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'France',
     region: 'Europe',
     emoji: '🇫🇷',
-    shape: 'hexagon',
+    shape: 'rounded-square',
     colors: {
       primary: '#1f4f8f',
       secondary: '#a67c2d',
@@ -167,7 +167,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Canada',
     region: 'North America',
     emoji: '🇨🇦',
-    shape: 'diamond',
+    shape: 'rounded-square',
     colors: {
       primary: '#b3212d',
       secondary: '#2f604d',
@@ -205,7 +205,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Egypt',
     region: 'Africa',
     emoji: '🇪🇬',
-    shape: 'organic',
+    shape: 'rounded-square',
     colors: {
       primary: '#8f3a21',
       secondary: '#c59b42',
@@ -281,7 +281,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Italy',
     region: 'Europe',
     emoji: '🇮🇹',
-    shape: 'circle',
+    shape: 'rounded-square',
     colors: {
       primary: '#2b6f4a',
       secondary: '#a83a32',
@@ -319,7 +319,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Greece',
     region: 'Europe',
     emoji: '🇬🇷',
-    shape: 'hexagon',
+    shape: 'rounded-square',
     colors: {
       primary: '#245d8f',
       secondary: '#b48a3c',
@@ -357,7 +357,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Mexico',
     region: 'North America',
     emoji: '🇲🇽',
-    shape: 'diamond',
+    shape: 'rounded-square',
     colors: {
       primary: '#a43d2d',
       secondary: '#2f7255',
@@ -433,7 +433,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     country_name: 'Iceland',
     region: 'Europe',
     emoji: '🇮🇸',
-    shape: 'circle',
+    shape: 'rounded-square',
     colors: {
       primary: '#1f6677',
       secondary: '#7a3f82',

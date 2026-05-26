@@ -1,6 +1,6 @@
 .renderer {
   width: 190px;
-  aspect-ratio: 1;
+  aspect-ratio: 0.86;
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -15,10 +15,7 @@
     0 -8px 18px rgba(44, 31, 18, 0.08) inset;
 }
 
-.square {
-  border-radius: 3px;
-}
-
+.rectangle,
 .roundedSquare {
   border-radius: 8px;
 }

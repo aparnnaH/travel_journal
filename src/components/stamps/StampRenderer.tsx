@@ -3,8 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Image from 'next/image';
-import { CountryStamp, StampShape, StampTextureLayer } from '@/types/stamps';
-import { getStampClipPath } from '@/lib/stamps/utils';
+import { CountryStamp, StampTextureLayer } from '@/types/stamps';
 import {
   getStampAssetPath,
   getStampCssVariables,
@@ -17,15 +16,6 @@ interface StampRendererProps {
   isLocked?: boolean;
   isHovered?: boolean;
 }
-
-const shapeClasses: Record<StampShape, string> = {
-  square: styles.square,
-  circle: styles.circle,
-  hexagon: styles.hexagon,
-  diamond: styles.diamond,
-  'rounded-square': styles.roundedSquare,
-  organic: styles.organic,
-};
 
 const isLayerVisible = (layer: StampTextureLayer, isLocked: boolean): boolean => {
   if (isLocked) {
@@ -45,15 +35,11 @@ export const StampRenderer: React.FC<StampRendererProps> = ({
   const countryCode = stamp.id.slice(0, 2).toUpperCase();
   const displayName = isLocked ? 'Undiscovered' : stamp.country_name;
   const editionName = isLocked ? `${stamp.region} archive` : stamp.visual.edition_name;
-  const clipPath = getStampClipPath(stamp.shape);
 
   return (
     <div
-      className={`${styles.renderer} ${shapeClasses[stamp.shape]} ${isLocked ? styles.locked : ''}`}
-      style={{
-        ...getStampCssVariables(stamp, isLocked),
-        clipPath: clipPath === 'none' ? undefined : clipPath,
-      }}
+      className={`${styles.renderer} ${styles.rectangle} ${isLocked ? styles.locked : ''}`}
+      style={getStampCssVariables(stamp, isLocked)}
     >
       <div className={styles.paperBase} />
       <div className={styles.inkBloom} />
