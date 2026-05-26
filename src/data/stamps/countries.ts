@@ -1,4 +1,11 @@
-import { CountryStamp, StampColor, StampRarity, StampShape, StampVisualConfig } from '@/types/stamps';
+import {
+  CountryStamp,
+  StampAssetFormat,
+  StampColor,
+  StampRarity,
+  StampShape,
+  StampVisualConfig,
+} from '@/types/stamps';
 import {
   createCountryArtworkAsset,
   createStampLayer,
@@ -62,16 +69,18 @@ interface StampInput {
   cultural_elements: string[];
   border_style: CountryStamp['border_style'];
   rotation_angle: number;
+  artwork_format?: StampAssetFormat;
   visual: StampVisualConfig;
   prompt_hint: string;
 }
 
 const createCountryStamp = ({
   prompt_hint,
+  artwork_format = 'png',
   ...stamp
 }: StampInput): CountryStamp => ({
   ...stamp,
-  asset: createCountryArtworkAsset(stamp.id, stamp.country_name, prompt_hint),
+  asset: createCountryArtworkAsset(stamp.id, stamp.country_name, prompt_hint, artwork_format),
   texture_layers: baseTextureLayers,
   overlay_layers: baseOverlayLayers,
 });
@@ -435,6 +444,7 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
     cultural_elements: ['aurora', 'glaciers', 'volcanic ridge'],
     border_style: 'simple',
     rotation_angle: -0.4,
+    artwork_format: 'svg',
     prompt_hint:
       'Transparent SVG or PNG, Iceland legendary passport stamp, aurora bands, glacier peaks, volcanic ridge, teal ink, premium worn collectible.',
     visual: {

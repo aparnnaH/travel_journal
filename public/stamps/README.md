@@ -11,3 +11,5 @@ Recommended country asset settings:
 - Metadata: update `src/data/stamps/countries.ts` if the asset path, prompt hint, or visual treatment changes
 
 Shared overlay textures live in `public/stamps/textures` and are composed by the stamp renderer.
+
+Use `AI_ART_PROMPTS.md` for country-by-country prompts when generating replacement center artwork with an external art model.

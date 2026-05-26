@@ -51,11 +51,12 @@ export const createCountryArtworkAsset = (
   stampId: string,
   countryName: string,
   promptHint: string,
+  format: StampAssetFormat = 'png',
 ): StampAsset =>
   createStampAsset({
     id: `${stampId}-artwork`,
-    src: `${STAMP_PUBLIC_ROOT}/countries/${stampId}.svg`,
-    format: 'svg',
+    src: `${STAMP_PUBLIC_ROOT}/countries/${stampId}.${format}`,
+    format,
     role: 'artwork',
     alt: `${countryName} collectible passport stamp artwork`,
     width: 1024,
