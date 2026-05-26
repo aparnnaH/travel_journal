@@ -27,6 +27,19 @@ type RawJournalEntry = Partial<JournalEntry> & {
   created_at?: string;
 };
 
+type TopologyGeometry = {
+  type?: string;
+  id?: string | number;
+  properties?: {
+    name?: unknown;
+  } | null;
+  geometries?: TopologyGeometry[];
+};
+
+type TopologyRoot = {
+  objects?: Record<string, { geometries?: TopologyGeometry[] }>;
+};
+
 type CompanionDataState = {
   journalEntries: RawJournalEntry[];
   importedTrips: ImportedTripSnapshot[];
@@ -39,15 +52,38 @@ const initialDataState: CompanionDataState = {
   scrapbookPagesLoaded: [],
 };
 
+const worldAtlasGeoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
+
+const collectTopologyCountryNames = (geometry: TopologyGeometry, map: Record<string, string>) => {
+  if (geometry.type === 'GeometryCollection' && Array.isArray(geometry.geometries)) {
+    geometry.geometries.forEach((child) => collectTopologyCountryNames(child, map));
+    return;
+  }
+
+  if (geometry.id === undefined || geometry.id === null) {
+    return;
+  }
+
+  const name = geometry.properties?.name;
+
+  if (typeof name !== 'string' || !name.trim()) {
+    return;
+  }
+
+  map[String(geometry.id).toUpperCase()] = name;
+};
+
 export default function TravelCompanionPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const visitedCountryIds = useMapStore((state) => state.visitedCountries);
+  const countryLabels = useMapStore((state) => state.countryLabels);
   const router = useRouter();
 
   const [dataState, setDataState] = useState<CompanionDataState>(initialDataState);
   const [loadingState, setLoadingState] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [atlasCountryLabels, setAtlasCountryLabels] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -94,6 +130,46 @@ export default function TravelCompanionPage() {
     };
   }, [user]);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const loadAtlasCountryLabels = async () => {
+      try {
+        const response = await fetch(worldAtlasGeoUrl);
+        if (!response.ok) {
+          return;
+        }
+
+        const topology = (await response.json()) as TopologyRoot;
+        const objects = topology.objects ? Object.values(topology.objects) : [];
+        const nextLabels: Record<string, string> = {};
+
+        objects.forEach((collection) => {
+          collection.geometries?.forEach((geometry) => collectTopologyCountryNames(geometry, nextLabels));
+        });
+
+        if (isActive) {
+          setAtlasCountryLabels(nextLabels);
+        }
+      } catch {
+        if (isActive) {
+          setAtlasCountryLabels({});
+        }
+      }
+    };
+
+    void loadAtlasCountryLabels();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const resolvedCountryLabels = useMemo(
+    () => ({ ...atlasCountryLabels, ...countryLabels }),
+    [atlasCountryLabels, countryLabels]
+  );
+
   const context = useMemo(() => {
     if (!user) {
       return null;
@@ -104,8 +180,9 @@ export default function TravelCompanionPage() {
       importedTrips: dataState.importedTrips,
       scrapbookPages: dataState.scrapbookPagesLoaded,
       visitedCountryIds,
+      countryLabels: resolvedCountryLabels,
     });
-  }, [dataState, user, visitedCountryIds]);
+  }, [dataState, resolvedCountryLabels, user, visitedCountryIds]);
 
   const insights = useMemo(() => (context ? buildCompanionInsights(context) : null), [context]);
   const recentMemories = useMemo(() => context?.memoryPool.slice(0, 5) ?? [], [context]);

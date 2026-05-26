@@ -29,6 +29,7 @@ type BuildCompanionContextInput = {
   scrapbookPages: ScrapbookPageData[];
   importedTrips: ImportedTripSnapshot[];
   visitedCountryIds: string[];
+  countryLabels?: Record<string, string>;
 };
 
 const stampById = new Map(COUNTRY_STAMPS.map((stamp) => [stamp.id, stamp]));
@@ -38,6 +39,8 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'n
 
 const intentKeywords: Record<TravelCompanionIntent, string[]> = {
   general: [],
+  'country-stats': ['country count', 'countries visited', 'how many countries', 'visited countries', 'places visited'],
+  'next-destination': ['where next', 'go next', 'visit next', 'next destination', 'travel next'],
   'journal-suggestions': ['journal', 'prompt', 'write', 'entry', 'story', 'draft'],
   'memory-reflections': ['reflect', 'memory', 'remember', 'nostalgia', 'reflection'],
   'trip-recap': ['recap', 'summary', 'summarize', 'trip', 'itinerary'],
@@ -68,7 +71,13 @@ const snippet = (text: string, maxLength = 160) => {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 };
 
-const getCountryName = (countryId: string) => {
+const getCountryName = (countryId: string, countryLabels?: Record<string, string>) => {
+  const explicitLabel = countryLabels?.[countryId];
+
+  if (explicitLabel) {
+    return explicitLabel;
+  }
+
   const knownCountry = countryById.get(countryId) || countryByCode.get(countryId);
 
   if (knownCountry) {
@@ -101,10 +110,32 @@ const normalizeJournalEntry = (entry: RawJournalEntry): CompanionJournalEntry =>
 });
 
 const toTimestamp = (value?: string) => (value ? new Date(value).getTime() || 0 : 0);
+const countryTokenPattern = '(?:countries?|countr(?:y|ies)|countires|coutires|places)';
+const isNumericCountryCode = (value: string) => /^\d{3}$/.test(value.trim());
 
-const buildPassportStamps = (visitedCountryIds: string[]): CompanionPassportStamp[] =>
+const hasCountryStatsQuestion = (message: string) => {
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    new RegExp(`\\b(?:how\\s+many|number\\s+of|count\\s+of)\\b[^?]*\\b${countryTokenPattern}\\b`).test(lowerMessage) ||
+    new RegExp(`\\b(?:what|which)\\b[^?]*\\b${countryTokenPattern}\\b[^?]*\\b(?:visited|been\\s+to)\\b`).test(lowerMessage) ||
+    new RegExp(`\\b${countryTokenPattern}\\b[^?]*\\b(?:i\\s+visited|ive\\s+visited|i\\'ve\\s+visited|visited)\\b`).test(lowerMessage)
+  );
+};
+
+const hasNextDestinationQuestion = (message: string) => {
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    /\b(?:where|what|which)\b[^?]*\b(?:go|travel|visit)\b[^?]*\bnext\b/.test(lowerMessage) ||
+    /\bnext\s+(?:trip|destination|country|place)\b/.test(lowerMessage) ||
+    /\bbased on\b[^?]*\b(?:visited|countries|country|countires|coutires)\b[^?]*\b(?:where|what)\b/.test(lowerMessage)
+  );
+};
+
+const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record<string, string>): CompanionPassportStamp[] =>
   visitedCountryIds.map((countryId) => {
-    const countryName = getCountryName(countryId);
+    const countryName = getCountryName(countryId, countryLabels);
     const normalizedStampId = normalizeCountryToStampId(countryName);
     const stamp = stampById.get(normalizedStampId);
 
@@ -322,17 +353,142 @@ const getStampRecommendationsText = (passportStamps: CompanionPassportStamp[]) =
   return `Next collectible target: ${target.country_name} (${target.region}, ${target.rarity}).`;
 };
 
+type DestinationRecommendation = {
+  countryName: string;
+  region: string;
+  rarity: string;
+  reason: string;
+};
+
+const rarityWeight: Record<string, number> = {
+  common: 1,
+  uncommon: 2,
+  rare: 3,
+  epic: 4,
+  legendary: 5,
+};
+
+const getVisitedStampIds = (context: CompanionTravelContext) => {
+  const collected = new Set<string>();
+
+  context.passportStamps.forEach((stamp) => collected.add(stamp.stampId));
+  context.passportStamps.forEach((stamp) => collected.add(normalizeCountryToStampId(stamp.countryName)));
+  context.visitedCountryNames.forEach((countryName) => collected.add(normalizeCountryToStampId(countryName)));
+
+  return collected;
+};
+
+const createNextDestinationReason = (
+  slot: number,
+  countryName: string,
+  region: string,
+  topRegion: string | null,
+  context: CompanionTravelContext
+) => {
+  if (slot === 0 && topRegion && topRegion === region) {
+    return `You already have momentum in ${region}; ${countryName} builds naturally on that route.`;
+  }
+
+  if (slot === 1 && topRegion !== region) {
+    return `${region} is less represented in your archive, so this adds range to your map story.`;
+  }
+
+  const personality = context.personality.label;
+  if (personality.includes('Cultural')) {
+    return `${countryName} fits your culture-first travel pattern and would feed stronger story entries.`;
+  }
+  if (personality.includes('Wanderflow')) {
+    return `${countryName} supports your move-through-the-day style with strong route potential.`;
+  }
+
+  return `${countryName} complements your current travel pattern while adding fresh memory texture.`;
+};
+
+const buildNextDestinationRecommendations = (context: CompanionTravelContext): DestinationRecommendation[] => {
+  const visitedStampIds = getVisitedStampIds(context);
+  const visitedRegionCount = new Map<string, number>();
+
+  context.passportStamps.forEach((stamp) => {
+    if (stamp.region === 'Unmapped') {
+      return;
+    }
+    visitedRegionCount.set(stamp.region, (visitedRegionCount.get(stamp.region) ?? 0) + 1);
+  });
+
+  const sortedRegions = [...visitedRegionCount.entries()].sort((first, second) => second[1] - first[1]);
+  const topRegion = sortedRegions[0]?.[0] ?? null;
+  const availableStamps = COUNTRY_STAMPS.filter((stamp) => !visitedStampIds.has(stamp.id));
+  const usedIds = new Set<string>();
+  const picked: DestinationRecommendation[] = [];
+
+  const pickCandidate = (candidates: typeof COUNTRY_STAMPS) =>
+    [...candidates]
+      .sort((first, second) => {
+        const rarityDelta = (rarityWeight[second.rarity] ?? 0) - (rarityWeight[first.rarity] ?? 0);
+        if (rarityDelta !== 0) {
+          return rarityDelta;
+        }
+
+        return first.country_name.localeCompare(second.country_name);
+      })
+      .find((candidate) => !usedIds.has(candidate.id));
+
+  if (topRegion) {
+    const regionalCandidate = pickCandidate(availableStamps.filter((stamp) => stamp.region === topRegion));
+    if (regionalCandidate) {
+      usedIds.add(regionalCandidate.id);
+      picked.push({
+        countryName: regionalCandidate.country_name,
+        region: regionalCandidate.region,
+        rarity: regionalCandidate.rarity,
+        reason: createNextDestinationReason(0, regionalCandidate.country_name, regionalCandidate.region, topRegion, context),
+      });
+    }
+  }
+
+  const unseenRegionCandidate = pickCandidate(
+    availableStamps.filter((stamp) => !visitedRegionCount.has(stamp.region))
+  );
+  if (unseenRegionCandidate) {
+    usedIds.add(unseenRegionCandidate.id);
+    picked.push({
+      countryName: unseenRegionCandidate.country_name,
+      region: unseenRegionCandidate.region,
+      rarity: unseenRegionCandidate.rarity,
+      reason: createNextDestinationReason(1, unseenRegionCandidate.country_name, unseenRegionCandidate.region, topRegion, context),
+    });
+  }
+
+  while (picked.length < 3) {
+    const wildcard = pickCandidate(availableStamps);
+    if (!wildcard) {
+      break;
+    }
+
+    usedIds.add(wildcard.id);
+    picked.push({
+      countryName: wildcard.country_name,
+      region: wildcard.region,
+      rarity: wildcard.rarity,
+      reason: createNextDestinationReason(picked.length, wildcard.country_name, wildcard.region, topRegion, context),
+    });
+  }
+
+  return picked;
+};
+
 export const buildTravelCompanionContext = ({
   journalEntries,
   scrapbookPages,
   importedTrips,
   visitedCountryIds,
+  countryLabels,
 }: BuildCompanionContextInput): CompanionTravelContext => {
   const normalizedEntries = journalEntries
     .map(normalizeJournalEntry)
     .sort((first, second) => toTimestamp(second.createdAt) - toTimestamp(first.createdAt));
-  const visitedCountryNames = visitedCountryIds.map((countryId) => getCountryName(countryId));
-  const passportStamps = buildPassportStamps(visitedCountryIds);
+  const visitedCountryNames = visitedCountryIds.map((countryId) => getCountryName(countryId, countryLabels));
+  const passportStamps = buildPassportStamps(visitedCountryIds, countryLabels);
   const memoryPool = buildMemoryPool(normalizedEntries, scrapbookPages, importedTrips);
   const topTags = buildTagFrequency(normalizedEntries, importedTrips).slice(0, 6);
   const topMoods = buildMoodFrequency(normalizedEntries, importedTrips).slice(0, 4);
@@ -420,6 +576,18 @@ export const buildSuggestedPrompts = (context: CompanionTravelContext): Suggeste
       intent: 'trip-recap',
     },
     {
+      id: 'prompt-country-count',
+      title: 'Visited Count',
+      prompt: 'How many countries have I visited so far, and which ones are they?',
+      intent: 'country-stats',
+    },
+    {
+      id: 'prompt-next-country',
+      title: 'Where Next',
+      prompt: 'Based on my visited countries, where should I go next?',
+      intent: 'next-destination',
+    },
+    {
       id: 'prompt-journal',
       title: 'Journal Draft',
       prompt: `Generate 3 journal follow-up prompts based on "${leadEntry}".`,
@@ -472,6 +640,14 @@ export const buildCompanionInsights = (context: CompanionTravelContext): Compani
 });
 
 const resolveIntent = (message: string): TravelCompanionIntent => {
+  if (hasNextDestinationQuestion(message)) {
+    return 'next-destination';
+  }
+
+  if (hasCountryStatsQuestion(message)) {
+    return 'country-stats';
+  }
+
   const lowerMessage = message.toLowerCase();
 
   const matchedIntent = (Object.keys(intentKeywords) as TravelCompanionIntent[]).find((intent) => {
@@ -483,6 +659,58 @@ const resolveIntent = (message: string): TravelCompanionIntent => {
   });
 
   return matchedIntent ?? 'general';
+};
+
+const formatCountryStatsReply = (context: CompanionTravelContext) => {
+  const uniqueCountryIds = Array.from(new Set(context.visitedCountryIds.map((countryId) => countryId.trim()).filter(Boolean)));
+  const uniqueCountries = Array.from(new Set(context.visitedCountryNames.map((countryName) => countryName.trim()).filter(Boolean)));
+  const namedCountries = uniqueCountries.filter((countryName) => !isNumericCountryCode(countryName));
+  const unresolvedCount = Math.max(0, uniqueCountryIds.length - namedCountries.length);
+
+  if (!uniqueCountryIds.length) {
+    return [
+      'You have visited 0 countries so far.',
+      'Start by scratching one country on the map, then I can track and compare your route history.',
+    ].join('\n');
+  }
+
+  const countryList = namedCountries.map((countryName) => `- ${countryName}`).join('\n');
+  const regions = Array.from(new Set(context.passportStamps.map((stamp) => stamp.region).filter((region) => region !== 'Unmapped')));
+
+  return [
+    `You have visited ${uniqueCountryIds.length} countr${uniqueCountryIds.length === 1 ? 'y' : 'ies'} so far.`,
+    namedCountries.length ? 'Visited countries:' : 'Visited countries (named):',
+    namedCountries.length ? countryList : '- I am still resolving names for your current map IDs.',
+    unresolvedCount ? `${unresolvedCount} entr${unresolvedCount === 1 ? 'y is' : 'ies are'} still stored as map IDs and need name resolution.` : '',
+    regions.length ? `Regions represented: ${regions.join(', ')}.` : 'No mapped stamp regions yet.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+const formatNextDestinationReply = (context: CompanionTravelContext) => {
+  const recommendations = buildNextDestinationRecommendations(context);
+
+  if (!recommendations.length) {
+    return [
+      'I could not find an unvisited country recommendation from the current catalog.',
+      'Try adding more visited countries or imported trips so I can refine the route strategy.',
+    ].join('\n');
+  }
+
+  const recommendationLines = recommendations
+    .map((item, index) => `${index + 1}. ${item.countryName} (${item.region}, ${item.rarity}) — ${item.reason}`)
+    .join('\n');
+
+  const anchor = context.visitedCountryNames.length
+    ? `I used your ${context.visitedCountryNames.length} visited countries as the baseline.`
+    : 'I used your current journal and stamp context as the baseline.';
+
+  return [
+    'Here are smart next-trip ideas based on your visited-country history:',
+    recommendationLines,
+    anchor,
+  ].join('\n');
 };
 
 const formatPassportReply = (context: CompanionTravelContext) => {
@@ -550,7 +778,7 @@ const formatGeneralReply = (context: CompanionTravelContext) => {
   return [
     `I am tracking ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.passportStamps.length} stamp links.`,
     memoryLine,
-    'Try asking for a trip recap, journal prompts, captions, or stamp strategy.',
+    'Try asking: "How many countries have I visited?" or "Where should I go next based on my visited countries?"',
   ].join('\n');
 };
 
@@ -563,7 +791,11 @@ export const buildWelcomeMessage = (context: CompanionTravelContext) => {
 export const generateCompanionReply = (message: string, context: CompanionTravelContext): CompanionChatMessage => {
   const intent = resolveIntent(message);
   const content =
-    intent === 'journal-suggestions'
+    intent === 'country-stats'
+      ? formatCountryStatsReply(context)
+      : intent === 'next-destination'
+        ? formatNextDestinationReply(context)
+        : intent === 'journal-suggestions'
       ? formatJournalReply(context)
       : intent === 'memory-reflections'
         ? formatReflectionReply(context)
