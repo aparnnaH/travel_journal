@@ -13,7 +13,6 @@ import { findCountryStamp } from '@/lib/stamps/matching';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
-import { signOut } from '@/lib/supabase';
 import type { Country } from '@/types';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -120,6 +119,13 @@ interface CountryRemovalConfirmation {
   name: string;
 }
 
+interface QuickActionCountry {
+  id: string;
+  name: string;
+  flag: string | null;
+  initials: string;
+}
+
 type VisitedCountrySort = 'name-asc' | 'name-desc' | 'recent';
 
 export default function MapPage() {
@@ -138,9 +144,7 @@ export default function MapPage() {
 
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
-  const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
-  const [signingOut, setSigningOut] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
   const [atlasCountries, setAtlasCountries] = useState<AtlasCountryReference[]>([]);
@@ -160,44 +164,38 @@ export default function MapPage() {
 
   const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
   const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
-
-  useEffect(() => {
-    if (!isLoading && user === null) {
-      router.replace('/login');
-    }
-  }, [user, router, isLoading]);
-
-  useEffect(() => {
-    if (atlasCountries.length === 0) return;
-
-    const atlasCountryIds = new Set(atlasCountries.map((country) => country.id));
-    const atlasCountryNames = new Map(
+  const atlasCountryLookup = useMemo(() => {
+    const ids = new Set(atlasCountries.map((country) => country.id));
+    const names = new Map(
       atlasCountries.map((country) => [normalizeCountryName(country.name), country.id])
     );
-    const atlasCountryAlpha2Codes = new Map(
+    const alpha2Codes = new Map(
       atlasCountries
         .map((country) => {
-          const alpha2Code =
-            countryNameAliases[normalizeCountryName(country.name)] ??
-            alpha2CountryLookup.get(normalizeCountryName(country.name));
+          const normalizedName = normalizeCountryName(country.name);
+          const alpha2Code = countryNameAliases[normalizedName] ?? alpha2CountryLookup.get(normalizedName);
 
           return alpha2Code ? [alpha2Code, country.id] : null;
         })
         .filter((entry): entry is [string, string] => entry !== null)
     );
-    const visitedAtlasCountryIds = new Set<string>();
+
+    return { alpha2Codes, ids, names };
+  }, [alpha2CountryLookup, atlasCountries]);
+  const visitedAtlasCountryIds = useMemo(() => {
+    const resolvedAtlasCountryIds = new Set<string>();
 
     visitedCountries.forEach((countryId) => {
       const normalizedCountryId = countryId.toUpperCase();
 
-      if (atlasCountryIds.has(normalizedCountryId)) {
-        visitedAtlasCountryIds.add(normalizedCountryId);
+      if (atlasCountryLookup.ids.has(normalizedCountryId)) {
+        resolvedAtlasCountryIds.add(normalizedCountryId);
         return;
       }
 
-      const alpha2Match = atlasCountryAlpha2Codes.get(normalizedCountryId);
+      const alpha2Match = atlasCountryLookup.alpha2Codes.get(normalizedCountryId);
       if (alpha2Match) {
-        visitedAtlasCountryIds.add(alpha2Match);
+        resolvedAtlasCountryIds.add(alpha2Match);
         return;
       }
 
@@ -212,17 +210,29 @@ export default function MapPage() {
       for (const countryName of countryNameCandidates) {
         if (!countryName) continue;
 
-        const nameMatch = atlasCountryNames.get(normalizeCountryName(countryName));
+        const nameMatch = atlasCountryLookup.names.get(normalizeCountryName(countryName));
         if (nameMatch) {
-          visitedAtlasCountryIds.add(nameMatch);
+          resolvedAtlasCountryIds.add(nameMatch);
           return;
         }
       }
     });
 
+    return resolvedAtlasCountryIds;
+  }, [atlasCountryLookup, countryLabels, regionNames, visitedCountries]);
+
+  useEffect(() => {
+    if (!isLoading && user === null) {
+      router.replace('/login');
+    }
+  }, [user, router, isLoading]);
+
+  useEffect(() => {
+    if (atlasCountries.length === 0) return;
+
     const percent = Math.round((visitedAtlasCountryIds.size / atlasCountries.length) * 100);
     setScratchPercentage(percent);
-  }, [alpha2CountryLookup, atlasCountries, countryLabels, regionNames, setScratchPercentage, visitedCountries]);
+  }, [atlasCountries.length, setScratchPercentage, visitedAtlasCountryIds]);
 
   useEffect(() => {
     if (Object.keys(countryNeighborIds).length === 0) return;
@@ -252,7 +262,37 @@ export default function MapPage() {
     colorChanges.forEach(([countryId, color]) => setCountryColor(countryId, color));
   }, [countryColors, countryNeighborIds, setCountryColor, visitedCountries]);
 
-  const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
+  const quickActionCountries = useMemo<QuickActionCountry[]>(() => {
+    if (atlasCountries.length === 0) {
+      return placeholderCountries
+        .filter((country) => !visitedCountries.includes(country.id))
+        .slice(0, 3)
+        .map((country) => ({
+          id: country.id,
+          name: country.name,
+          flag: getFlagEmoji(country.code),
+          initials: getCountryInitials(country.name),
+        }));
+    }
+
+    return atlasCountries
+      .filter((country) => !visitedAtlasCountryIds.has(country.id))
+      .sort((firstCountry, secondCountry) =>
+        firstCountry.name.localeCompare(secondCountry.name, undefined, { sensitivity: 'base' })
+      )
+      .slice(0, 3)
+      .map((country) => {
+        const normalizedName = normalizeCountryName(country.name);
+        const alpha2Code = countryNameAliases[normalizedName] ?? alpha2CountryLookup.get(normalizedName);
+
+        return {
+          id: country.id,
+          name: country.name,
+          flag: alpha2Code ? getFlagEmoji(alpha2Code) : null,
+          initials: getCountryInitials(country.name),
+        };
+      });
+  }, [alpha2CountryLookup, atlasCountries, visitedAtlasCountryIds, visitedCountries]);
 
   const selectedCountry = useMemo<Country | null>(() => {
     if (!selectedCountryId) return null;
@@ -331,25 +371,25 @@ export default function MapPage() {
     return null;
   }
 
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    await signOut();
-    logout();
-    setSigningOut(false);
-    router.push('/login');
-  };
-
-  const handleQuickVisit = (countryId: string) => {
+  const handleQuickVisit = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
     const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+    const resolvedCountryName = countryName ?? knownCountry?.name;
     const wasVisited = visitedCountries.includes(countryId);
+    const currentColor = countryColors[countryId];
+    const hasNeighborColorConflict =
+      currentColor !== undefined &&
+      neighboringCountryIds.some((neighborId) => countryColors[neighborId] === currentColor);
 
-    if (!countryColors[countryId]) {
-      setCountryColor(countryId, pickVisitedColor(countryId, countryColors));
+    if (!currentColor || hasNeighborColorConflict) {
+      setCountryColor(countryId, pickVisitedColor(countryId, countryColors, neighboringCountryIds));
+    }
+    if (resolvedCountryName) {
+      setCountryLabel(countryId, resolvedCountryName);
     }
     addVisitedCountry(countryId);
 
     if (!wasVisited) {
-      const stamp = findCountryStamp(countryId, knownCountry?.name);
+      const stamp = findCountryStamp(countryId, resolvedCountryName, knownCountry?.code);
 
       if (stamp) {
         setRevealedStamp({
@@ -436,11 +476,6 @@ export default function MapPage() {
       <PageShell
         title="World Atlas"
         description="Track your globe-trotting story with a world atlas, country discovery, and city-level exploration."
-        actions={
-          <Button variant="secondary" isLoading={signingOut} onClick={handleSignOut}>
-            Sign Out
-          </Button>
-        }
       >
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <Card>
@@ -473,24 +508,35 @@ export default function MapPage() {
           <div className="space-y-6">
             <Card>
               <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
-              <div className="space-y-3">
-                {availableCountries.slice(0, 3).map((country) => (
-                  <div key={country.id} className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-cream text-xl">
-                        {getFlagEmoji(country.code)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-medium text-ink">{country.name}</p>
-                        <p className="text-sm text-ink/60">Tap to mark as visited.</p>
+              {quickActionCountries.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gold/30 bg-cream/60 p-4 text-sm text-ink/60">
+                  Every atlas country is marked visited.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {quickActionCountries.map((country) => (
+                    <div key={country.id} className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-cream text-xl">
+                          {country.flag ?? (
+                            <span className="text-xs font-semibold text-ink/65">{country.initials}</span>
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-medium text-ink">{country.name}</p>
+                          <p className="text-sm text-ink/60">Recommended next visit.</p>
+                        </div>
                       </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleQuickVisit(country.id, country.name, countryNeighborIds[country.id] ?? [])}
+                      >
+                        Visit
+                      </Button>
                     </div>
-                    <Button size="sm" onClick={() => handleQuickVisit(country.id)}>
-                      Visit
-                    </Button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </Card>
 
             <Card>
