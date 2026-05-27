@@ -2,11 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Card, Button, Badge } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import WorldAtlas from '@/components/maps/world/WorldAtlas';
 import CityExplorer from '@/components/maps/city/CityExplorer';
+import { COUNTRY_STAMPS } from '@/data/stamps/countries';
+import { normalizeCountryToStampId } from '@/lib/stamps/assets';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
@@ -104,6 +107,44 @@ function pickVisitedColor(
   return leastUsedColors[randomIndex];
 }
 
+function getRevealedStamp(countryId: string, countryName?: string) {
+  const visitedStampKeys = new Set([
+    countryId.toUpperCase(),
+    normalizeCountryToStampId(countryId),
+  ]);
+
+  if (countryName) {
+    visitedStampKeys.add(countryName.toUpperCase());
+    visitedStampKeys.add(normalizeCountryToStampId(countryName));
+  }
+
+  return COUNTRY_STAMPS.find((stamp) => {
+    if (visitedStampKeys.has(stamp.id) || visitedStampKeys.has(normalizeCountryToStampId(stamp.country_name))) {
+      return true;
+    }
+
+    const atlasMatch = stamp.atlas_ids?.some(
+      (atlasId) =>
+        visitedStampKeys.has(atlasId.toUpperCase()) ||
+        visitedStampKeys.has(normalizeCountryToStampId(atlasId)),
+    );
+    if (atlasMatch) return true;
+
+    return stamp.aliases?.some(
+      (alias) =>
+        visitedStampKeys.has(alias.toUpperCase()) ||
+        visitedStampKeys.has(normalizeCountryToStampId(alias)),
+    );
+  });
+}
+
+interface RevealedStampBanner {
+  stampId: string;
+  countryName: string;
+  region: string;
+  editionName: string;
+}
+
 export default function MapPage() {
   const {
     visitedCountries,
@@ -125,6 +166,7 @@ export default function MapPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
+  const [revealedStamp, setRevealedStamp] = useState<RevealedStampBanner | null>(null);
 
   const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
     setCountryNeighborIds(neighborIds);
@@ -218,13 +260,30 @@ export default function MapPage() {
   };
 
   const handleQuickVisit = (countryId: string) => {
+    const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+    const wasVisited = visitedCountries.includes(countryId);
+
     if (!countryColors[countryId]) {
       setCountryColor(countryId, pickVisitedColor(countryId, countryColors));
     }
     addVisitedCountry(countryId);
+
+    if (!wasVisited) {
+      const stamp = getRevealedStamp(countryId, knownCountry?.name);
+
+      if (stamp) {
+        setRevealedStamp({
+          stampId: stamp.id,
+          countryName: stamp.country_name,
+          region: stamp.region,
+          editionName: stamp.visual.edition_name,
+        });
+      }
+    }
   };
 
   const handleMapCountryClick = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
+    const wasVisited = visitedCountries.includes(countryId);
     const currentColor = countryColors[countryId];
     const hasNeighborColorConflict =
       currentColor !== undefined &&
@@ -237,6 +296,25 @@ export default function MapPage() {
       setCountryLabel(countryId, countryName);
     }
     addVisitedCountry(countryId);
+
+    if (!wasVisited) {
+      const stamp = getRevealedStamp(countryId, countryName);
+
+      if (stamp) {
+        setRevealedStamp({
+          stampId: stamp.id,
+          countryName: stamp.country_name,
+          region: stamp.region,
+          editionName: stamp.visual.edition_name,
+        });
+      }
+    }
+  };
+
+  const handleShowRevealedStamp = () => {
+    if (!revealedStamp) return;
+
+    router.push(`/passport?stamp=${encodeURIComponent(revealedStamp.stampId)}`);
   };
 
   return (
@@ -346,6 +424,53 @@ export default function MapPage() {
       </PageShell>
 
       <CityExplorer country={selectedCountry} onClose={() => setSelectedCountryId(null)} />
+
+      <AnimatePresence>
+        {revealedStamp && (
+          <motion.div
+            className="fixed bottom-5 left-4 right-4 z-50 mx-auto max-w-md overflow-hidden rounded-2xl border border-gold/35 bg-white/95 p-4 text-ink shadow-soft backdrop-blur md:left-auto md:right-6 md:mx-0"
+            initial={{ opacity: 0, y: 24, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 18, scale: 0.98 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/30 bg-cream text-sm font-black text-gold">
+                STP
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/80">
+                  Stamp revealed
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-ink">
+                  {revealedStamp.countryName}
+                </h3>
+                <p className="mt-1 text-sm text-ink/65">
+                  {revealedStamp.editionName} has been added to your {revealedStamp.region} folio.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button size="sm" onClick={handleShowRevealedStamp}>
+                    Show me the stamp
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setRevealedStamp(null)}>
+                    Later
+                  </Button>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-black text-ink/45 transition hover:bg-cream hover:text-ink focus:outline-none focus:ring-2 focus:ring-gold"
+                aria-label="Dismiss stamp revealed message"
+                onClick={() => setRevealedStamp(null)}
+              >
+                X
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

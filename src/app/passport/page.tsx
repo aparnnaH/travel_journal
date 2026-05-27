@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PassportPageComponent from '@/components/passport/PassportPage';
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
@@ -9,12 +9,13 @@ import { normalizeCountryToStampId } from '@/lib/stamps/assets';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 
-export default function PassportPage() {
+function PassportRouteContent() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const visitedCountries = useMapStore((state) => state.visitedCountries);
   const countryLabels = useMapStore((state) => state.countryLabels);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -57,11 +58,25 @@ export default function PassportPage() {
         visitedStampKeys.has(normalizeCountryToStampId(alias)),
     );
   }).map((stamp) => stamp.id);
+  const requestedStampId = searchParams.get('stamp');
+  const targetStampId = COUNTRY_STAMPS.some((stamp) => stamp.id === requestedStampId) ? requestedStampId : null;
 
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
-      <PassportPageComponent initialUnlockedStamps={unlockedStampIds} />
+      <PassportPageComponent
+        key={targetStampId ?? 'passport'}
+        initialUnlockedStamps={unlockedStampIds}
+        initialTargetStampId={targetStampId}
+      />
     </div>
+  );
+}
+
+export default function PassportPage() {
+  return (
+    <Suspense fallback={null}>
+      <PassportRouteContent />
+    </Suspense>
   );
 }

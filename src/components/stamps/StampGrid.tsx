@@ -12,6 +12,7 @@ interface StampGridProps {
   stamps: CountryStamp[];
   unlockedStamps?: string[];
   selectedRegion?: string | null;
+  targetStampId?: string | null;
 }
 
 const REGION_ORDER = [
@@ -117,10 +118,11 @@ interface PassportBookPageProps {
   stampIndexOffset: number;
   unlockedStamps: string[];
   side: 'left' | 'right';
+  targetStampId?: string | null;
 }
 
 const PassportBookPage = React.forwardRef<HTMLDivElement, PassportBookPageProps>(
-  ({ label, pageNumber, stamps, stampIndexOffset, unlockedStamps, side }, ref) => (
+  ({ label, pageNumber, stamps, stampIndexOffset, unlockedStamps, side, targetStampId }, ref) => (
     <div
       ref={ref}
       className={`${styles.passportPage} ${side === 'left' ? styles.leftPage : styles.rightPage} ${
@@ -138,7 +140,10 @@ const PassportBookPage = React.forwardRef<HTMLDivElement, PassportBookPageProps>
             const stampIndex = stampIndexOffset + index;
 
             return (
-              <div key={stamp.id} className={styles.stampWrapper}>
+              <div
+                key={stamp.id}
+                className={`${styles.stampWrapper} ${targetStampId === stamp.id ? styles.targetStamp : ''}`}
+              >
                 {isUnlocked ? (
                   <PassportStamp stamp={stamp} isLocked={false} index={stampIndex} />
                 ) : (
@@ -162,6 +167,7 @@ interface RegionFlipBookProps {
   unlockedStamps: string[];
   pages?: StampBookPage[];
   eyebrow?: string;
+  targetStampId?: string | null;
 }
 
 const getEventPage = (event: PageFlipEvent) => {
@@ -197,16 +203,20 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
   unlockedStamps,
   pages: providedPages,
   eyebrow = 'Regional folio',
+  targetStampId,
 }) => {
-  const [currentPage, setCurrentPage] = useState(0);
-  const [orientation, setOrientation] = useState<PageFlipOrientation>('landscape');
-
   const pages = useMemo(
     () => providedPages ?? chunkStampsForPages(regionStamps, region),
     [providedPages, region, regionStamps],
   );
   const unlockedInRegion = regionStamps.filter((stamp) => unlockedStamps.includes(stamp.id)).length;
   const totalPages = pages.length;
+  const targetPageIndex = targetStampId
+    ? pages.findIndex((page) => page.stamps.some((stamp) => stamp.id === targetStampId))
+    : -1;
+  const initialPageIndex = targetPageIndex >= 0 ? targetPageIndex : 0;
+  const [currentPage, setCurrentPage] = useState(initialPageIndex);
+  const [orientation, setOrientation] = useState<PageFlipOrientation>('landscape');
   const regionId = getRegionId(region);
   const isPortrait = orientation === 'portrait';
   const spreadStartPage = isPortrait ? currentPage + 1 : Math.floor(currentPage / 2) * 2 + 1;
@@ -265,9 +275,10 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
 
       <div className={styles.bookStack} aria-label={`${region} passport book`}>
         <HTMLFlipBook
+          key={`${region}-${targetStampId ?? 'default'}-${initialPageIndex}`}
           className={styles.flipBook}
           style={{}}
-          startPage={0}
+          startPage={initialPageIndex}
           size="stretch"
           width={500}
           height={620}
@@ -302,6 +313,7 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
               stampIndexOffset={pageStamps.stampIndexOffset}
               unlockedStamps={unlockedStamps}
               side={pageIndex % 2 === 0 ? 'left' : 'right'}
+              targetStampId={targetStampId}
             />
           ))}
         </HTMLFlipBook>
@@ -314,6 +326,7 @@ export const StampGrid: React.FC<StampGridProps> = ({
   stamps,
   unlockedStamps = [],
   selectedRegion,
+  targetStampId,
 }) => {
   const displayStamps = useMemo(() => {
     if (selectedRegion) {
@@ -358,6 +371,7 @@ export const StampGrid: React.FC<StampGridProps> = ({
           unlockedStamps={unlockedStamps}
           pages={combinedBookPages}
           eyebrow="Complete passport"
+          targetStampId={targetStampId}
         />
       ) : (
         regionEntries.map(([region, regionStamps]) => (
@@ -366,6 +380,7 @@ export const StampGrid: React.FC<StampGridProps> = ({
             region={region}
             regionStamps={regionStamps}
             unlockedStamps={unlockedStamps}
+            targetStampId={targetStampId}
           />
         ))
       )}

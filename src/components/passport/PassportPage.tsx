@@ -10,12 +10,19 @@ import styles from './PassportPage.module.css';
 
 interface PassportPageComponentProps {
   initialUnlockedStamps?: string[];
+  initialTargetStampId?: string | null;
 }
 
 export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
   initialUnlockedStamps = [],
+  initialTargetStampId = null,
 }) => {
-  const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
+  const initialTargetStamp = useMemo(
+    () => COUNTRY_STAMPS.find((stamp) => stamp.id === initialTargetStampId) ?? null,
+    [initialTargetStampId],
+  );
+  const [selectedRegion, setSelectedRegion] = useState<string | null>(() => initialTargetStamp?.region ?? null);
+  const [targetStampId, setTargetStampId] = useState<string | null>(() => initialTargetStamp?.id ?? null);
 
   const unlockedStamps = useMemo(
     () => Array.from(new Set(initialUnlockedStamps)),
@@ -155,7 +162,10 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
           <motion.button
             type="button"
             className={`${styles.filterButton} ${!selectedRegion ? styles.active : ''}`}
-            onClick={() => setSelectedRegion(null)}
+            onClick={() => {
+              setSelectedRegion(null);
+              setTargetStampId(null);
+            }}
             whileHover={{ y: -2 }}
             whileTap={{ scale: 0.98 }}
           >
@@ -166,7 +176,10 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
               type="button"
               key={region}
               className={`${styles.filterButton} ${selectedRegion === region ? styles.active : ''}`}
-              onClick={() => setSelectedRegion(region)}
+              onClick={() => {
+                setSelectedRegion(region);
+                setTargetStampId(null);
+              }}
               whileHover={{ y: -2 }}
               whileTap={{ scale: 0.98 }}
             >
@@ -187,6 +200,7 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
           stamps={COUNTRY_STAMPS}
           unlockedStamps={unlockedStamps}
           selectedRegion={selectedRegion}
+          targetStampId={targetStampId}
         />
       </motion.section>
     </motion.main>
