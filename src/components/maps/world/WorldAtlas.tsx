@@ -2,28 +2,20 @@
 
 import React, { useEffect, useState } from 'react';
 import type { ExtendedFeature } from 'd3-geo';
-import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
-import { placeholderCountries } from '@/lib/placeholderData';
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
 interface WorldAtlasProps {
   visitedCountries: string[];
   countryColors: Record<string, string>;
   onToggleCountry: (countryId: string, countryName?: string, neighboringCountryIds?: string[]) => void;
-  onSelectCountry: (countryId: string) => void;
   onCountryNeighborsReady?: (countryNeighborIds: Record<string, string[]>) => void;
 }
 
 const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
-const trackedCountryIds = new Set(placeholderCountries.map((country) => country.id));
-
-const markerCoordinates: Record<string, [number, number]> = {
-  US: [-95.7129, 37.0902],
-  FR: [2.2137, 46.2276],
-  JP: [138.2529, 36.2048],
-  BR: [-51.9253, -14.2350],
-  IT: [12.5674, 41.8719],
-  AU: [134.491, -25.734],
-};
+const normalMapPosition = { coordinates: [0, 15] as [number, number], zoom: 1 };
+const minMapZoom = 1;
+const maxMapZoom = 4;
+const mapZoomStep = 0.5;
 
 const slantedGrid = [
   { d: 'M20 30 L740 30', opacity: 0.1 },
@@ -65,6 +57,11 @@ type TopoGeometryCollection = {
 type Topology = {
   type: 'Topology';
   objects: Record<string, TopoGeometryCollection>;
+};
+
+type MapPosition = {
+  coordinates: [number, number];
+  zoom: number;
 };
 
 function getCountryIso(geo: AtlasGeography) {
@@ -148,17 +145,19 @@ function buildCountryNeighborMap(topology: Topology) {
   );
 }
 
+function clampMapZoom(zoom: number) {
+  return Math.min(maxMapZoom, Math.max(minMapZoom, zoom));
+}
+
 export default function WorldAtlas({
   visitedCountries,
   countryColors,
   onToggleCountry,
-  onSelectCountry,
   onCountryNeighborsReady,
 }: WorldAtlasProps) {
-  const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
   const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
-  const [animatingCountry, setAnimatingCountry] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
+  const [mapPosition, setMapPosition] = useState<MapPosition>(normalMapPosition);
 
   useEffect(() => {
     let isMounted = true;
@@ -187,15 +186,40 @@ export default function WorldAtlas({
   }, [onCountryNeighborsReady]);
 
   function handleCountryToggle(id: string, countryName?: string) {
-    setAnimatingCountry(id);
     onToggleCountry(id, countryName, countryNeighborIds[id] ?? []);
-    window.setTimeout(() => setAnimatingCountry(null), 900);
   }
 
   function clearHoveredCountry() {
-    setHoveredCountryId(null);
     setHoveredCountryName(null);
   }
+
+  function handleZoomIn() {
+    setMapPosition((currentPosition) => ({
+      ...currentPosition,
+      zoom: clampMapZoom(currentPosition.zoom + mapZoomStep),
+    }));
+  }
+
+  function handleZoomOut() {
+    setMapPosition((currentPosition) => ({
+      ...currentPosition,
+      zoom: clampMapZoom(currentPosition.zoom - mapZoomStep),
+    }));
+  }
+
+  function handleResetView() {
+    setMapPosition(normalMapPosition);
+  }
+
+  function handleMapMoveEnd(nextPosition: MapPosition) {
+    setMapPosition({
+      coordinates: nextPosition.coordinates,
+      zoom: clampMapZoom(nextPosition.zoom),
+    });
+  }
+
+  const isMinZoom = mapPosition.zoom <= minMapZoom;
+  const isMaxZoom = mapPosition.zoom >= maxMapZoom;
 
   return (
     <div className="rounded-[2rem] border border-ink/10 bg-cream p-4 shadow-soft">
@@ -225,97 +249,88 @@ export default function WorldAtlas({
           height={380}
           className="relative h-[380px] w-full rounded-[1.5rem] bg-[#F4E6CC]"
         >
-          <Geographies geography={geoUrl}>
-            {({ geographies }) => {
-              const atlasGeographies = geographies as AtlasGeography[];
+          <ZoomableGroup
+            center={mapPosition.coordinates}
+            zoom={mapPosition.zoom}
+            minZoom={minMapZoom}
+            maxZoom={maxMapZoom}
+            onMoveEnd={handleMapMoveEnd}
+          >
+            <Geographies geography={geoUrl}>
+              {({ geographies }) => {
+                const atlasGeographies = geographies as AtlasGeography[];
 
-              return (
-                <>
-                  {atlasGeographies.map((geo) => {
-                    const iso = getCountryIso(geo);
-                    const isTracked = trackedCountryIds.has(iso);
-                    const isVisited = visitedCountries.includes(iso);
-                    const visitedColor = countryColors[iso] ?? '#4ECFFF';
-                    const countryName = getCountryName(geo);
+                return (
+                  <>
+                    {atlasGeographies.map((geo) => {
+                      const iso = getCountryIso(geo);
+                      const isVisited = visitedCountries.includes(iso);
+                      const visitedColor = countryColors[iso] ?? '#4ECFFF';
+                      const countryName = getCountryName(geo);
 
-                    return (
-                      <Geography
-                        key={geo.rsmKey}
-                        geography={geo}
-                        fill={isVisited ? visitedColor : '#E6D5B8'}
-                        stroke="#9D7B4A"
-                        strokeWidth={0.35}
-                        onMouseEnter={() => {
-                          setHoveredCountryId(isTracked ? iso : null);
-                          setHoveredCountryName(countryName ?? (iso || null));
-                        }}
-                        onMouseLeave={clearHoveredCountry}
-                        onClick={() => {
-                          if (iso) handleCountryToggle(iso, countryName);
-                        }}
-                        style={{
-                          default: { outline: 'none', transition: 'fill 450ms ease' },
-                          hover: { fill: isVisited ? visitedColor : '#DCC9A8', cursor: iso ? 'pointer' : 'default' },
-                          pressed: { fill: isVisited ? visitedColor : '#D6C19D', outline: 'none' },
-                        }}
-                      />
-                    );
-                  })}
-
-                  {placeholderCountries.map((country) => {
-                    const coordinates = markerCoordinates[country.id];
-                    if (!coordinates) return null;
-                    const isVisited = visitedCountries.includes(country.id);
-                    const isHovered = hoveredCountryId === country.id;
-                    const isAnimating = animatingCountry === country.id;
-                    const markerColor = countryColors[country.id] ?? '#4ECFFF';
-
-                    return (
-                      <Marker key={country.id} coordinates={coordinates}>
-                        <g
-                          data-marker-id={country.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => onSelectCountry(country.id)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              onSelectCountry(country.id);
-                            }
-                          }}
+                      return (
+                        <Geography
+                          key={geo.rsmKey}
+                          geography={geo}
+                          fill={isVisited ? visitedColor : '#E6D5B8'}
+                          stroke="#9D7B4A"
+                          strokeWidth={0.35}
                           onMouseEnter={() => {
-                            setHoveredCountryId(country.id);
-                            setHoveredCountryName(country.name);
+                            setHoveredCountryName(countryName ?? (iso || null));
                           }}
                           onMouseLeave={clearHoveredCountry}
-                          className="cursor-pointer"
-                          transform={isAnimating ? 'scale(1.18)' : 'scale(1)'}
-                          style={{ transition: 'transform 350ms ease' }}
-                        >
-                          <circle cx="0" cy="0" r={isHovered ? 14 : 12} fill={isVisited ? markerColor : '#F7F1DE'} stroke="#7C6A46" strokeWidth="2" />
-                          <circle cx="0" cy="0" r={isHovered ? 20 : 18} fill="none" stroke="#7C6A46" strokeWidth="1" opacity="0.3" />
-                          <text
-                            x="0"
-                            y="4"
-                            textAnchor="middle"
-                            fontFamily="Playfair Display, serif"
-                            fontSize="10"
-                            fill="#3D2B0E"
-                          >
-                            {country.code}
-                          </text>
-                        </g>
-                      </Marker>
-                    );
-                  })}
-                </>
-              );
-            }}
-          </Geographies>
+                          onClick={() => {
+                            if (iso) handleCountryToggle(iso, countryName);
+                          }}
+                          style={{
+                            default: { outline: 'none', transition: 'fill 450ms ease' },
+                            hover: { fill: isVisited ? visitedColor : '#DCC9A8', cursor: iso ? 'pointer' : 'default' },
+                            pressed: { fill: isVisited ? visitedColor : '#D6C19D', outline: 'none' },
+                          }}
+                        />
+                      );
+                    })}
+                  </>
+                );
+              }}
+            </Geographies>
+          </ZoomableGroup>
         </ComposableMap>
 
+        <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-xl border border-ink/10 bg-white/85 p-1 shadow-soft backdrop-blur">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out"
+            onClick={handleZoomOut}
+            disabled={isMinZoom}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            -
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in"
+            onClick={handleZoomIn}
+            disabled={isMaxZoom}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Reset map view"
+            title="Reset map view"
+            onClick={handleResetView}
+            className="flex h-9 min-w-16 items-center justify-center rounded-lg px-3 text-sm font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
+          >
+            Reset
+          </button>
+        </div>
+
         <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-3xl border border-ink/10 bg-white/75 px-4 py-3 text-xs text-ink/70 shadow-inner">
-          Click a country to mark it visited with a random color, then click a marker to open the city explorer.
+          Click a country to mark it visited with a random color.
         </div>
       </div>
 
@@ -335,7 +350,7 @@ export default function WorldAtlas({
         </div>
         <div className="rounded-3xl border border-ink/10 bg-white p-4 text-ink/80">
           <p className="text-sm uppercase tracking-[0.26em] text-gold/70">Action</p>
-          <p className="text-sm">Click a country geography to assign a random visited color. Click a marker to open the detailed country explorer.</p>
+          <p className="text-sm">Click a country geography to assign a random visited color.</p>
         </div>
       </div>
     </div>

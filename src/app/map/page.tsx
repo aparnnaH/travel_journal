@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Card, Button, Badge } from '@/components/ui';
+import { Card, Button, Badge, Input } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import WorldAtlas from '@/components/maps/world/WorldAtlas';
@@ -14,6 +14,7 @@ import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
+import type { Country } from '@/types';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const visitedColorPalette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
@@ -145,6 +146,13 @@ interface RevealedStampBanner {
   editionName: string;
 }
 
+interface CountryRemovalConfirmation {
+  id: string;
+  name: string;
+}
+
+type VisitedCountrySort = 'name-asc' | 'name-desc' | 'recent';
+
 export default function MapPage() {
   const {
     visitedCountries,
@@ -167,6 +175,9 @@ export default function MapPage() {
   const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
   const [revealedStamp, setRevealedStamp] = useState<RevealedStampBanner | null>(null);
+  const [countryPendingRemoval, setCountryPendingRemoval] = useState<CountryRemovalConfirmation | null>(null);
+  const [visitedCountrySearch, setVisitedCountrySearch] = useState('');
+  const [visitedCountrySort, setVisitedCountrySort] = useState<VisitedCountrySort>('name-asc');
 
   const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
     setCountryNeighborIds(neighborIds);
@@ -213,15 +224,37 @@ export default function MapPage() {
     colorChanges.forEach(([countryId, color]) => setCountryColor(countryId, color));
   }, [countryColors, countryNeighborIds, setCountryColor, visitedCountries]);
 
-  const selectedCountry = useMemo(
-    () => placeholderCountries.find((country) => country.id === selectedCountryId) ?? null,
-    [selectedCountryId]
-  );
-
   const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
 
   const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
   const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
+
+  const selectedCountry = useMemo<Country | null>(() => {
+    if (!selectedCountryId) return null;
+
+    const knownCountry = placeholderCountries.find((country) => country.id === selectedCountryId);
+    if (knownCountry) return knownCountry;
+
+    const displayName = getRegionDisplayName(regionNames, selectedCountryId) ?? selectedCountryId;
+    const name = countryLabels[selectedCountryId] ?? displayName;
+    const normalizedName = normalizeCountryName(name);
+    const alpha2Code =
+      (/^[A-Z]{2}$/.test(selectedCountryId) ? selectedCountryId : undefined) ??
+      countryNameAliases[normalizedName] ??
+      alpha2CountryLookup.get(normalizedName) ??
+      selectedCountryId;
+
+    return {
+      id: selectedCountryId,
+      name,
+      code: alpha2Code,
+      pathData: '',
+      visited: visitedCountries.includes(selectedCountryId),
+      journalEntries: [],
+      cities: [],
+      highlights: [],
+    };
+  }, [alpha2CountryLookup, countryLabels, regionNames, selectedCountryId, visitedCountries]);
 
   const recentlyVisited = useMemo(
     () =>
@@ -246,6 +279,28 @@ export default function MapPage() {
       }),
     [visitedCountries, countryColors, countryLabels, regionNames, alpha2CountryLookup]
   );
+
+  const visibleVisitedCountries = useMemo(() => {
+    const searchQuery = normalizeCountryName(visitedCountrySearch);
+    const filteredCountries = searchQuery
+      ? recentlyVisited.filter((country) =>
+          normalizeCountryName(`${country.name} ${country.id}`).includes(searchQuery)
+        )
+      : recentlyVisited;
+
+    return [...filteredCountries].sort((firstCountry, secondCountry) => {
+      if (visitedCountrySort === 'recent') {
+        return visitedCountries.indexOf(secondCountry.id) - visitedCountries.indexOf(firstCountry.id);
+      }
+
+      const nameComparison = firstCountry.name.localeCompare(secondCountry.name, undefined, { sensitivity: 'base' });
+      return visitedCountrySort === 'name-desc' ? -nameComparison : nameComparison;
+    });
+  }, [recentlyVisited, visitedCountries, visitedCountrySearch, visitedCountrySort]);
+
+  const visitedCountryCountLabel = visitedCountrySearch.trim()
+    ? `${visibleVisitedCountries.length}/${recentlyVisited.length}`
+    : recentlyVisited.length;
 
   if (isLoading || !user) {
     return null;
@@ -311,6 +366,26 @@ export default function MapPage() {
     }
   };
 
+  const handleVisitedCountrySelect = (countryId: string, countryName: string) => {
+    handleMapCountryClick(countryId, countryName, countryNeighborIds[countryId] ?? []);
+    setSelectedCountryId(countryId);
+  };
+
+  const handleRequestCountryRemoval = (country: CountryRemovalConfirmation) => {
+    setCountryPendingRemoval(country);
+  };
+
+  const handleCancelCountryRemoval = () => {
+    setCountryPendingRemoval(null);
+  };
+
+  const handleConfirmCountryRemoval = () => {
+    if (!countryPendingRemoval) return;
+
+    removeVisitedCountry(countryPendingRemoval.id);
+    setCountryPendingRemoval(null);
+  };
+
   const handleShowRevealedStamp = () => {
     if (!revealedStamp) return;
 
@@ -336,7 +411,6 @@ export default function MapPage() {
                 visitedCountries={visitedCountries}
                 countryColors={countryColors}
                 onToggleCountry={handleMapCountryClick}
-                onSelectCountry={(id) => setSelectedCountryId(id)}
                 onCountryNeighborsReady={handleCountryNeighborsReady}
               />
 
@@ -346,7 +420,7 @@ export default function MapPage() {
                   <Badge>{visitedCountries.length} countries visited</Badge>
                 </div>
                 <p className="text-ink/70">
-                  Click a country to unlock the detailed country explorer and start building your city memory map.
+                  Click a country to mark it visited, then open Country Explorer from the visited list.
                 </p>
                 <Button variant="outline" onClick={() => reset()}>
                   Reset Atlas Progress
@@ -379,36 +453,79 @@ export default function MapPage() {
             </Card>
 
             <Card>
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-xl font-semibold">Visited Countries</h3>
-                <Badge variant="outline">{recentlyVisited.length}</Badge>
+              <div className="mb-4 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-xl font-semibold">Visited Countries</h3>
+                  <Badge variant="outline">{visitedCountryCountLabel}</Badge>
+                </div>
+                <p className="text-sm text-ink/60">
+                  Click a country flag or name to open Country Explorer.
+                </p>
+                {recentlyVisited.length > 0 && (
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem]">
+                    <Input
+                      id="visited-country-search"
+                      aria-label="Search visited countries"
+                      placeholder="Search countries"
+                      value={visitedCountrySearch}
+                      onChange={(event) => setVisitedCountrySearch(event.target.value)}
+                      className="h-10 px-3 py-2 text-sm"
+                    />
+                    <div>
+                      <label htmlFor="visited-country-sort" className="sr-only">
+                        Sort visited countries
+                      </label>
+                      <select
+                        id="visited-country-sort"
+                        value={visitedCountrySort}
+                        onChange={(event) => setVisitedCountrySort(event.target.value as VisitedCountrySort)}
+                        className="h-10 w-full rounded-lg border-2 border-gold/30 bg-white px-3 text-sm text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
+                      >
+                        <option value="name-asc">A-Z</option>
+                        <option value="name-desc">Z-A</option>
+                        <option value="recent">Newest</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
               {recentlyVisited.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gold/30 bg-cream/60 p-4 text-sm text-ink/60">
                   No countries visited yet.
                 </div>
+              ) : visibleVisitedCountries.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gold/30 bg-cream/60 p-4 text-sm text-ink/60">
+                  No visited countries match that search.
+                </div>
               ) : (
                 <div className="max-h-[22rem] overflow-y-auto pr-1">
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                    {recentlyVisited.map((country) => (
+                    {visibleVisitedCountries.map((country) => (
                       <div
                         key={country.id}
                         className="group flex min-w-0 items-center gap-2 rounded-2xl border border-gold/15 bg-cream/70 p-2"
                       >
-                        <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-white text-lg shadow-sm">
-                          {country.flag ?? (
-                            <span className="text-xs font-semibold text-ink/65">{country.initials}</span>
-                          )}
-                          <span
-                            className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-white"
-                            style={{ backgroundColor: country.color }}
-                          />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{country.name}</span>
+                        <button
+                          type="button"
+                          aria-label={`Select ${country.name}`}
+                          onClick={() => handleVisitedCountrySelect(country.id, country.name)}
+                          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left focus:outline-none focus:ring-2 focus:ring-gold"
+                        >
+                          <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/20 bg-white text-lg shadow-sm">
+                            {country.flag ?? (
+                              <span className="text-xs font-semibold text-ink/65">{country.initials}</span>
+                            )}
+                            <span
+                              className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border border-white"
+                              style={{ backgroundColor: country.color }}
+                            />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">{country.name}</span>
+                        </button>
                         <button
                           type="button"
                           aria-label={`Remove ${country.name}`}
-                          onClick={() => removeVisitedCountry(country.id)}
+                          onClick={() => handleRequestCountryRemoval({ id: country.id, name: country.name })}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-ink/45 transition hover:bg-white hover:text-ink focus:outline-none focus:ring-2 focus:ring-gold"
                         >
                           X
@@ -426,6 +543,46 @@ export default function MapPage() {
       <CityExplorer country={selectedCountry} onClose={() => setSelectedCountryId(null)} />
 
       <AnimatePresence>
+        {countryPendingRemoval && (
+          <motion.div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-country-title"
+            onClick={handleCancelCountryRemoval}
+          >
+            <motion.div
+              className="w-full max-w-sm rounded-2xl border border-gold/30 bg-white p-5 text-ink shadow-lg-soft"
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/80">
+                Confirm removal
+              </p>
+              <h3 id="remove-country-title" className="mt-2 text-xl font-semibold text-ink">
+                Remove {countryPendingRemoval.name}?
+              </h3>
+              <p className="mt-2 text-sm text-ink/65">
+                This will remove the country from your visited list and clear its atlas color.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={handleCancelCountryRemoval}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleConfirmCountryRemoval}>
+                  Remove
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {revealedStamp && (
           <motion.div
             className="fixed bottom-5 left-4 right-4 z-50 mx-auto max-w-md overflow-hidden rounded-2xl border border-gold/35 bg-white/95 p-4 text-ink shadow-soft backdrop-blur md:left-auto md:right-6 md:mx-0"
