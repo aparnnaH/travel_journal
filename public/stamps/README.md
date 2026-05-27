@@ -13,3 +13,5 @@ Recommended country asset settings:
 Shared overlay textures live in `public/stamps/textures` and are composed by the stamp renderer.
 
 Use `AI_ART_PROMPTS.md` for country-by-country prompts when generating replacement center artwork with an external art model.
+
+Countries without custom artwork use `public/stamps/countries/_placeholder.svg` until a matching transparent PNG is added and referenced in stamp metadata.

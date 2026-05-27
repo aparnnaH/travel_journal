@@ -1,4 +1,4 @@
-import {
+import type {
   CountryStamp,
   StampAssetFormat,
   StampColor,
@@ -8,9 +8,13 @@ import {
 } from '@/types/stamps';
 import {
   createCountryArtworkAsset,
+  createPlaceholderArtworkAsset,
   createStampLayer,
   createTextureAsset,
+  normalizeCountryToStampId,
 } from '@/lib/stamps/assets';
+import { ATLAS_STAMP_COUNTRIES } from './atlasCountries';
+import type { AtlasStampCountry } from './atlasCountries';
 
 const paperFiber = createTextureAsset('paper-fiber', 'paper-fiber.svg', 'Subtle archival paper fiber');
 const inkBleed = createTextureAsset('ink-bleed', 'ink-bleed.svg', 'Soft uneven ink bleed texture');
@@ -72,20 +76,107 @@ interface StampInput {
   artwork_format?: StampAssetFormat;
   visual: StampVisualConfig;
   prompt_hint: string;
+  atlas_ids?: string[];
+  aliases?: string[];
 }
+
+const atlasCountryByName = new Map(
+  ATLAS_STAMP_COUNTRIES.map((country) => [normalizeCountryToStampId(country.name), country]),
+);
+
+const getAtlasStampMetadata = (countryName: string) => {
+  const atlasCountry = atlasCountryByName.get(normalizeCountryToStampId(countryName));
+
+  return {
+    atlas_ids: atlasCountry ? [atlasCountry.atlas_id] : undefined,
+    aliases: atlasCountry?.aliases,
+  };
+};
 
 const createCountryStamp = ({
   prompt_hint,
   artwork_format = 'png',
   ...stamp
-}: StampInput): CountryStamp => ({
-  ...stamp,
-  asset: createCountryArtworkAsset(stamp.id, stamp.country_name, prompt_hint, artwork_format),
-  texture_layers: baseTextureLayers,
-  overlay_layers: baseOverlayLayers,
-});
+}: StampInput): CountryStamp => {
+  const atlasMetadata = getAtlasStampMetadata(stamp.country_name);
+  const aliases = Array.from(new Set([...(atlasMetadata.aliases ?? []), ...(stamp.aliases ?? [])]));
 
-export const COUNTRY_STAMPS: CountryStamp[] = [
+  return {
+    ...stamp,
+    asset: createCountryArtworkAsset(stamp.id, stamp.country_name, prompt_hint, artwork_format),
+    texture_layers: baseTextureLayers,
+    overlay_layers: baseOverlayLayers,
+    atlas_ids: stamp.atlas_ids ?? atlasMetadata.atlas_ids,
+    aliases: aliases.length > 0 ? aliases : undefined,
+  };
+};
+
+const placeholderPalettes: StampColor[] = [
+  { primary: '#4d4a45', secondary: '#9b7a3f', background: '#f1e6d2', border: '#3b3128' },
+  { primary: '#1f6677', secondary: '#b68d32', background: '#eef1e9', border: '#253842' },
+  { primary: '#7d3654', secondary: '#9b7a3f', background: '#f3e5db', border: '#3c2830' },
+  { primary: '#2f604d', secondary: '#b68d32', background: '#edf0df', border: '#263a32' },
+  { primary: '#8f3a21', secondary: '#1f6677', background: '#f5e6ce', border: '#3d2b1f' },
+];
+
+const getPlaceholderCode = (countryName: string) => {
+  const initials = countryName
+    .replace(/[^a-zA-Z\s-]/g, ' ')
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 3)
+    .toUpperCase();
+
+  return initials.padEnd(3, 'X');
+};
+
+const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number): CountryStamp => {
+  const id = normalizeCountryToStampId(country.name);
+  const colors = placeholderPalettes[index % placeholderPalettes.length];
+  const code = getPlaceholderCode(country.name);
+
+  return {
+    id,
+    country_name: country.name,
+    region: 'Global Archive',
+    emoji: '',
+    shape: 'rounded-square',
+    colors,
+    rarity: 'common',
+    cultural_elements: ['country seal', 'artwork pending', 'passport archive'],
+    border_style: 'simple',
+    rotation_angle: ((index % 9) - 4) * 0.28,
+    asset: createPlaceholderArtworkAsset(id, country.name),
+    texture_layers: baseTextureLayers,
+    overlay_layers: baseOverlayLayers,
+    visual: {
+      edition_name: 'Artwork Pending',
+      serial: `GL-${String(index + 1).padStart(4, '0')}`,
+      issued_by: 'Global Registry',
+      paper_tone: colors.background,
+      finish: 'archival-paper',
+      ink_level: 'faded',
+      ink_bleed: 0.42,
+      wear: 0.36,
+      emboss: 0.38,
+      rotation_jitter: 0.22,
+      cancellation: {
+        label: 'Archive',
+        code,
+        date_label: 'Pending',
+        rotation: ((index % 7) - 3) * 3,
+        opacity: 0.28,
+      },
+    },
+    atlas_ids: [country.atlas_id],
+    aliases: country.aliases,
+    is_placeholder: true,
+  };
+};
+
+const CURATED_COUNTRY_STAMPS: CountryStamp[] = [
   createCountryStamp({
     id: 'japan',
     country_name: 'Japan',
@@ -469,7 +560,24 @@ export const COUNTRY_STAMPS: CountryStamp[] = [
   }),
 ];
 
-export const STAMP_REGIONS = ['Africa', 'Asia', 'Europe', 'North America', 'South America'];
+const curatedCountryKeys = new Set(
+  CURATED_COUNTRY_STAMPS.flatMap((stamp) => [
+    stamp.id,
+    normalizeCountryToStampId(stamp.country_name),
+    ...(stamp.aliases ?? []).map((alias) => normalizeCountryToStampId(alias)),
+  ]),
+);
+
+const PLACEHOLDER_COUNTRY_STAMPS = ATLAS_STAMP_COUNTRIES.filter(
+  (country) => !curatedCountryKeys.has(normalizeCountryToStampId(country.name)),
+).map(createAtlasPlaceholderStamp);
+
+export const COUNTRY_STAMPS: CountryStamp[] = [
+  ...CURATED_COUNTRY_STAMPS,
+  ...PLACEHOLDER_COUNTRY_STAMPS,
+];
+
+export const STAMP_REGIONS = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Global Archive'];
 
 export const RARITY_COLORS: Record<StampRarity, string> = {
   common: '#6f675c',

@@ -278,6 +278,11 @@
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.38);
 }
 
+.placeholder .countryName {
+  font-size: 0.82rem;
+  line-height: 1.08;
+}
+
 .editionName {
   color: color-mix(in srgb, var(--stamp-primary) 76%, #2b2116);
 }

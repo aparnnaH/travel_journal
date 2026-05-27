@@ -82,6 +82,9 @@ export interface CountryStamp {
   texture_layers: StampTextureLayer[];
   overlay_layers: StampTextureLayer[];
   visual: StampVisualConfig;
+  atlas_ids?: string[];
+  aliases?: string[];
+  is_placeholder?: boolean;
   unlocked_date?: Date | null;
 }
 

@@ -38,7 +38,7 @@ export const StampRenderer: React.FC<StampRendererProps> = ({
 
   return (
     <div
-      className={`${styles.renderer} ${styles.rectangle} ${isLocked ? styles.locked : ''}`}
+      className={`${styles.renderer} ${styles.rectangle} ${stamp.is_placeholder ? styles.placeholder : ''} ${isLocked ? styles.locked : ''}`}
       style={getStampCssVariables(stamp, isLocked)}
     >
       <div className={styles.paperBase} />

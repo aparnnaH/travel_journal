@@ -64,6 +64,19 @@ export const createCountryArtworkAsset = (
     prompt_hint: promptHint,
   });
 
+export const createPlaceholderArtworkAsset = (stampId: string, countryName: string): StampAsset =>
+  createStampAsset({
+    id: `${stampId}-placeholder-artwork`,
+    src: `${STAMP_PUBLIC_ROOT}/countries/_placeholder.svg`,
+    format: 'svg',
+    role: 'artwork',
+    alt: `${countryName} placeholder passport stamp artwork`,
+    width: 1024,
+    height: 1024,
+    ai_ready: false,
+    prompt_hint: `Generate transparent country stamp centerpiece artwork for ${countryName}.`,
+  });
+
 export const createTextureAsset = (id: string, fileName: string, alt: string): StampAsset =>
   createStampAsset({
     id,
