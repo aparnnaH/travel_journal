@@ -9,8 +9,10 @@ import type {
 import {
   createCountryArtworkAsset,
   createPlaceholderArtworkAsset,
+  createStampAsset,
   createStampLayer,
   createTextureAsset,
+  STAMP_PUBLIC_ROOT,
   normalizeCountryToStampId,
 } from '@/lib/stamps/assets';
 import { ATLAS_STAMP_COUNTRIES } from './atlasCountries';
@@ -118,6 +120,31 @@ const placeholderPalettes: StampColor[] = [
   { primary: '#2f604d', secondary: '#b68d32', background: '#edf0df', border: '#263a32' },
   { primary: '#8f3a21', secondary: '#1f6677', background: '#f5e6ce', border: '#3d2b1f' },
 ];
+
+const importedPlaceholderArtworkFiles: Record<string, string> = {
+  afghanistan: 'Afghanistan.png',
+  albania: 'Albania.png',
+  algeria: 'Algeria.png',
+  antarctica: 'Antarctica.png',
+  argentina: 'Argentina.png',
+  armenia: 'Armenia.png',
+};
+
+const createImportedPlaceholderArtworkAsset = (
+  stampId: string,
+  countryName: string,
+  fileName: string,
+) =>
+  createStampAsset({
+    id: `${stampId}-imported-artwork`,
+    src: `${STAMP_PUBLIC_ROOT}/countries/${fileName}`,
+    format: 'png',
+    role: 'artwork',
+    alt: `${countryName} imported collectible passport stamp artwork`,
+    width: 1024,
+    height: 1024,
+    prompt_hint: `Imported transparent country stamp centerpiece artwork for ${countryName}.`,
+  });
 
 const atlasRegionGroups: Record<string, string[]> = {
   Africa: [
@@ -327,6 +354,8 @@ const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number):
   const id = normalizeCountryToStampId(country.name);
   const colors = placeholderPalettes[index % placeholderPalettes.length];
   const code = getPlaceholderCode(country.name);
+  const importedArtworkFile = importedPlaceholderArtworkFiles[id];
+  const hasImportedArtwork = Boolean(importedArtworkFile);
 
   return {
     id,
@@ -336,19 +365,23 @@ const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number):
     shape: 'rounded-square',
     colors,
     rarity: 'common',
-    cultural_elements: ['country seal', 'artwork pending', 'passport archive'],
+    cultural_elements: hasImportedArtwork
+      ? ['country seal', 'imported artwork', 'passport archive']
+      : ['country seal', 'artwork pending', 'passport archive'],
     border_style: 'simple',
     rotation_angle: ((index % 9) - 4) * 0.28,
-    asset: createPlaceholderArtworkAsset(id, country.name),
+    asset: importedArtworkFile
+      ? createImportedPlaceholderArtworkAsset(id, country.name, importedArtworkFile)
+      : createPlaceholderArtworkAsset(id, country.name),
     texture_layers: baseTextureLayers,
     overlay_layers: baseOverlayLayers,
     visual: {
-      edition_name: 'Artwork Pending',
+      edition_name: hasImportedArtwork ? 'Imported Country Seal' : 'Artwork Pending',
       serial: `GL-${String(index + 1).padStart(4, '0')}`,
       issued_by: 'Global Registry',
       paper_tone: colors.background,
       finish: 'archival-paper',
-      ink_level: 'faded',
+      ink_level: hasImportedArtwork ? 'balanced' : 'faded',
       ink_bleed: 0.42,
       wear: 0.36,
       emboss: 0.38,
@@ -356,14 +389,14 @@ const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number):
       cancellation: {
         label: 'Archive',
         code,
-        date_label: 'Pending',
+        date_label: hasImportedArtwork ? 'Filed' : 'Pending',
         rotation: ((index % 7) - 3) * 3,
         opacity: 0.28,
       },
     },
     atlas_ids: [country.atlas_id],
     aliases: country.aliases,
-    is_placeholder: true,
+    is_placeholder: !hasImportedArtwork,
   };
 };
 
