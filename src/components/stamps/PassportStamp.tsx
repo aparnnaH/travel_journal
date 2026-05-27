@@ -9,7 +9,6 @@ import styles from './PassportStamp.module.css';
 interface PassportStampProps {
   stamp: CountryStamp;
   isLocked?: boolean;
-  onUnlock?: () => void;
   index?: number;
 }
 
@@ -27,21 +26,13 @@ const burstParticles = [
 export const PassportStamp: React.FC<PassportStampProps> = ({
   stamp,
   isLocked = false,
-  onUnlock,
   index = 0,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isPressed, setIsPressed] = useState(false);
-  const canUnlock = isLocked && Boolean(onUnlock);
   const rotation = isLocked
     ? stamp.rotation_angle * 0.35
     : stamp.rotation_angle + stamp.visual.rotation_jitter * 0.24;
-
-  const handleClick = () => {
-    if (canUnlock) {
-      onUnlock?.();
-    }
-  };
 
   return (
     <motion.button
@@ -52,7 +43,7 @@ export const PassportStamp: React.FC<PassportStampProps> = ({
       onTapStart={() => setIsPressed(true)}
       onTapCancel={() => setIsPressed(false)}
       onTap={() => setIsPressed(false)}
-      onClick={handleClick}
+      aria-disabled={isLocked}
       aria-label={
         isLocked
           ? `Locked ${stamp.region} passport stamp`
@@ -99,20 +90,6 @@ export const PassportStamp: React.FC<PassportStampProps> = ({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.42, ease: 'easeOut' }}
           />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {canUnlock && isHovered && (
-          <motion.span
-            className={styles.lockHint}
-            aria-hidden="true"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-          >
-            Pending
-          </motion.span>
         )}
       </AnimatePresence>
 

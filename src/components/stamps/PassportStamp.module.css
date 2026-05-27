@@ -13,12 +13,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.stampButton[aria-disabled='true'] {
+  cursor: default;
+}
+
 .stampButton:focus-visible {
   outline: 2px solid #1f6677;
 }
 
 .locked {
-  cursor: pointer;
+  cursor: default;
 }
 
 .shadowMat {
@@ -65,24 +69,6 @@
   border: 1px solid rgba(182, 141, 50, 0.72);
   border-radius: 50%;
   pointer-events: none;
-}
-
-.lockHint {
-  position: absolute;
-  z-index: 22;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 5px 9px;
-  border: 1px solid rgba(70, 61, 51, 0.28);
-  border-radius: 6px;
-  color: #443b30;
-  background: rgba(246, 238, 224, 0.94);
-  box-shadow: 0 8px 18px rgba(43, 32, 21, 0.14);
-  font-size: 0.62rem;
-  font-weight: 900;
-  line-height: 1;
-  text-transform: uppercase;
 }
 
 .rewardBurst {

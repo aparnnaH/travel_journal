@@ -72,28 +72,6 @@
   place-items: center;
 }
 
-.unlockCelebration {
-  position: absolute;
-  top: 46%;
-  left: 50%;
-  width: 1px;
-  height: 1px;
-  pointer-events: none;
-  z-index: 30;
-}
-
-.celebrationParticle {
-  position: absolute;
-  width: 9px;
-  height: 9px;
-  border: 1px solid rgba(152, 93, 49, 0.82);
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.62), transparent),
-    #d9a441;
-  box-shadow: 0 0 12px rgba(217, 164, 65, 0.5);
-  transform: rotate(45deg);
-}
-
 .emptyState {
   display: grid;
   place-items: center;

@@ -15,12 +15,11 @@ interface PassportPageComponentProps {
 export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
   initialUnlockedStamps = [],
 }) => {
-  const [locallyUnlockedStamps, setLocallyUnlockedStamps] = useState<string[]>([]);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
 
   const unlockedStamps = useMemo(
-    () => Array.from(new Set([...initialUnlockedStamps, ...locallyUnlockedStamps])),
-    [initialUnlockedStamps, locallyUnlockedStamps],
+    () => Array.from(new Set(initialUnlockedStamps)),
+    [initialUnlockedStamps],
   );
 
   const stats: PassportStats = useMemo(() => {
@@ -49,15 +48,11 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
     [unlockedStamps],
   );
 
-  const handleStampUnlock = (stampId: string) => {
-    setLocallyUnlockedStamps((current) => {
-      if (current.includes(stampId)) {
-        return current;
-      }
+  const availableRegions = useMemo(() => {
+    const usedRegions = new Set(COUNTRY_STAMPS.map((stamp) => stamp.region));
 
-      return [...current, stampId];
-    });
-  };
+    return STAMP_REGIONS.filter((region) => usedRegions.has(region));
+  }, []);
 
   return (
     <motion.main
@@ -166,7 +161,7 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
           >
             All
           </motion.button>
-          {STAMP_REGIONS.map((region) => (
+          {availableRegions.map((region) => (
             <motion.button
               type="button"
               key={region}
@@ -191,7 +186,6 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
         <StampGrid
           stamps={COUNTRY_STAMPS}
           unlockedStamps={unlockedStamps}
-          onStampUnlock={handleStampUnlock}
           selectedRegion={selectedRegion}
         />
       </motion.section>

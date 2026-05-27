@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useMemo } from 'react';
 import { CountryStamp } from '@/types/stamps';
 import { sortStampsByRegion } from '@/lib/stamps/utils';
 import PassportStamp from './PassportStamp';
@@ -11,29 +10,25 @@ import styles from './StampGrid.module.css';
 interface StampGridProps {
   stamps: CountryStamp[];
   unlockedStamps?: string[];
-  onStampUnlock?: (stampId: string) => void;
   selectedRegion?: string | null;
 }
 
-const celebrationParticles = [
-  { x: -84, y: -34 },
-  { x: -46, y: -82 },
-  { x: 22, y: -92 },
-  { x: 82, y: -42 },
-  { x: 90, y: 28 },
-  { x: 38, y: 86 },
-  { x: -34, y: 82 },
-  { x: -86, y: 22 },
+const REGION_ORDER = [
+  'Africa',
+  'Asia',
+  'Europe',
+  'North America',
+  'South America',
+  'Oceania',
+  'Antarctica',
+  'Global Archive',
 ];
 
 export const StampGrid: React.FC<StampGridProps> = ({
   stamps,
   unlockedStamps = [],
-  onStampUnlock,
   selectedRegion,
 }) => {
-  const [animateUnlock, setAnimateUnlock] = useState<string | null>(null);
-
   const displayStamps = useMemo(() => {
     if (selectedRegion) {
       return stamps.filter((stamp) => stamp.region === selectedRegion);
@@ -42,21 +37,27 @@ export const StampGrid: React.FC<StampGridProps> = ({
     return stamps;
   }, [stamps, selectedRegion]);
 
-  const stampsByRegion = useMemo(() => sortStampsByRegion(displayStamps), [displayStamps]);
+  const regionEntries = useMemo(() => {
+    const stampsByRegion = sortStampsByRegion(displayStamps);
 
-  const handleStampUnlock = (stampId: string) => {
-    if (unlockedStamps.includes(stampId)) {
-      return;
-    }
+    return Object.entries(stampsByRegion).sort(([firstRegion], [secondRegion]) => {
+      const firstIndex = REGION_ORDER.indexOf(firstRegion);
+      const secondIndex = REGION_ORDER.indexOf(secondRegion);
 
-    setAnimateUnlock(stampId);
-    onStampUnlock?.(stampId);
-    window.setTimeout(() => setAnimateUnlock(null), 900);
-  };
+      if (firstIndex === -1 && secondIndex === -1) {
+        return firstRegion.localeCompare(secondRegion);
+      }
+
+      if (firstIndex === -1) return 1;
+      if (secondIndex === -1) return -1;
+
+      return firstIndex - secondIndex;
+    });
+  }, [displayStamps]);
 
   return (
     <div className={styles.stampGridWrapper}>
-      {Object.entries(stampsByRegion).map(([region, regionStamps]) => {
+      {regionEntries.map(([region, regionStamps]) => {
         const unlockedInRegion = regionStamps.filter((stamp) =>
           unlockedStamps.includes(stamp.id),
         ).length;
@@ -81,7 +82,6 @@ export const StampGrid: React.FC<StampGridProps> = ({
             <div className={styles.grid}>
               {regionStamps.map((stamp, index) => {
                 const isUnlocked = unlockedStamps.includes(stamp.id);
-                const isAnimating = animateUnlock === stamp.id;
 
                 return (
                   <div key={stamp.id} className={styles.stampWrapper}>
@@ -90,43 +90,9 @@ export const StampGrid: React.FC<StampGridProps> = ({
                     ) : (
                       <LockedStamp
                         stamp={stamp}
-                        onUnlockClick={() => handleStampUnlock(stamp.id)}
                         index={index}
                       />
                     )}
-
-                    <AnimatePresence>
-                      {isAnimating && (
-                        <motion.div
-                          className={styles.unlockCelebration}
-                          aria-hidden="true"
-                          initial={{ opacity: 1, scale: 0.84 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 1.1 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          {celebrationParticles.map((particle, particleIndex) => (
-                            <motion.span
-                              key={`${particle.x}-${particle.y}`}
-                              className={styles.celebrationParticle}
-                              initial={{ opacity: 0, x: 0, y: 0, scale: 0.5 }}
-                              animate={{
-                                opacity: [0, 1, 0],
-                                x: particle.x,
-                                y: particle.y,
-                                scale: [0.5, 1, 0.7],
-                              }}
-                              exit={{ opacity: 0 }}
-                              transition={{
-                                duration: 0.92,
-                                delay: particleIndex * 0.035,
-                                ease: 'easeOut',
-                              }}
-                            />
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
                   </div>
                 );
               })}
