@@ -9,10 +9,20 @@ import { formatTimestamp } from '@/services/ai/travelCompanionService';
 type ChatPanelProps = {
   messages: CompanionChatMessage[];
   isThinking: boolean;
+  canSaveJournalDraft?: boolean;
+  isSavingJournalDraft?: boolean;
   onSendMessage: (message: string) => void;
+  onSaveJournalDraft?: () => void | Promise<void>;
 };
 
-export default function ChatPanel({ messages, isThinking, onSendMessage }: ChatPanelProps) {
+export default function ChatPanel({
+  messages,
+  isThinking,
+  canSaveJournalDraft = false,
+  isSavingJournalDraft = false,
+  onSendMessage,
+  onSaveJournalDraft,
+}: ChatPanelProps) {
   const [draft, setDraft] = useState('');
   const feedRef = useRef<HTMLDivElement | null>(null);
 
@@ -94,6 +104,21 @@ export default function ChatPanel({ messages, isThinking, onSendMessage }: ChatP
       </div>
 
       <form onSubmit={handleSubmit} className="border-t border-gold/20 bg-cream/60 p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              void onSaveJournalDraft?.();
+            }}
+            disabled={!canSaveJournalDraft || isSavingJournalDraft || isThinking}
+          >
+            {isSavingJournalDraft ? 'Saving...' : 'Save Draft to Journal'}
+          </Button>
+          {canSaveJournalDraft ? (
+            <p className="text-xs text-ink/62">Saves the current AI journal draft as a real journal entry.</p>
+          ) : null}
+        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-end">
           <label htmlFor="companion-message" className="sr-only">
             Message your travel companion
@@ -114,4 +139,3 @@ export default function ChatPanel({ messages, isThinking, onSendMessage }: ChatP
     </section>
   );
 }
-

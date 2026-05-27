@@ -188,7 +188,11 @@ export default function TravelCompanionPage() {
   const recentMemories = useMemo(() => context?.memoryPool.slice(0, 5) ?? [], [context]);
   const passportSnapshot = useMemo(() => context?.passportStamps.slice(0, 6) ?? [], [context]);
 
-  const { messages, isThinking, sendMessage, sendPrompt } = useTravelCompanionChat({ context });
+  const { messages, isThinking, isSavingJournalDraft, canSaveJournalDraft, sendMessage, sendPrompt, saveJournalDraft } =
+    useTravelCompanionChat({
+      context,
+      userId: user?.id,
+    });
 
   if (isLoading || !user) {
     return null;
@@ -231,7 +235,14 @@ export default function TravelCompanionPage() {
 
           <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-5">
-              <ChatPanel messages={messages} isThinking={isThinking} onSendMessage={sendMessage} />
+              <ChatPanel
+                messages={messages}
+                isThinking={isThinking}
+                canSaveJournalDraft={canSaveJournalDraft}
+                isSavingJournalDraft={isSavingJournalDraft}
+                onSendMessage={sendMessage}
+                onSaveJournalDraft={saveJournalDraft}
+              />
 
               {insights ? (
                 <section className="rounded-lg border border-gold/20 bg-[#fffaf0] px-4 py-4 shadow-soft">

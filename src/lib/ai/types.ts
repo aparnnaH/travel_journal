@@ -8,6 +8,7 @@ export type TravelCompanionIntent =
   | 'general'
   | 'country-stats'
   | 'next-destination'
+  | 'journal-entry'
   | 'journal-suggestions'
   | 'memory-reflections'
   | 'trip-recap'

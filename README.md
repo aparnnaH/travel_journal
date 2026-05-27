@@ -205,6 +205,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=     # Your Supabase anonymous key
 
 # Optional (Server-side only)
 SUPABASE_SERVICE_ROLE_KEY=         # For server-side operations
+OPENAI_API_KEY=                    # Enables AI draft polishing in /companion
+OPENAI_POLISH_MODEL=gpt-5.2        # Optional override
 ```
 
 ## 📚 Resources

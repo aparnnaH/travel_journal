@@ -32,6 +32,25 @@ type BuildCompanionContextInput = {
   countryLabels?: Record<string, string>;
 };
 
+export type JournalDraftSession = {
+  countryName: string;
+  places: string[];
+  lastDraft: string;
+  personalDetails?: {
+    mood?: string;
+    highlight?: string;
+    sensory?: string;
+    reflection?: string;
+    futurePlan?: string;
+  };
+};
+
+export type JournalEntryInteractionResult = {
+  handled: boolean;
+  response?: CompanionChatMessage;
+  nextSession?: JournalDraftSession | null;
+};
+
 const stampById = new Map(COUNTRY_STAMPS.map((stamp) => [stamp.id, stamp]));
 const countryById = new Map(placeholderCountries.map((country) => [country.id, country]));
 const countryByCode = new Map(placeholderCountries.map((country) => [country.code, country]));
@@ -44,6 +63,7 @@ const intentKeywords: Record<TravelCompanionIntent, string[]> = {
   general: [],
   'country-stats': ['country count', 'countries visited', 'how many countries', 'visited countries', 'places visited'],
   'next-destination': ['where next', 'go next', 'visit next', 'next destination', 'travel next'],
+  'journal-entry': ['journal entry', 'write entry', 'make entry', 'draft entry', 'jounral enrty'],
   'journal-suggestions': ['journal', 'prompt', 'write', 'entry', 'story', 'draft'],
   'memory-reflections': ['reflect', 'memory', 'remember', 'nostalgia', 'reflection'],
   'trip-recap': ['recap', 'summary', 'summarize', 'trip', 'itinerary'],
@@ -213,6 +233,450 @@ const hasNextDestinationQuestion = (message: string) => {
     /\bbased on\b[^?]*\b(?:visited|countries|country|countires|coutires)\b[^?]*\b(?:where|what)\b/.test(lowerMessage)
   );
 };
+
+const hasJournalEntryRequest = (message: string) => {
+  const lowerMessage = message.toLowerCase();
+  const journalSignal = /\b(journal|jounral|jornal|joural)\b/.test(lowerMessage);
+  const entrySignal = /\b(entry|enrty|draft|write|create|compose|make)\b/.test(lowerMessage);
+  return journalSignal && entrySignal;
+};
+
+const getRefinementMode = (message: string): 'shorter' | 'poetic' | 'factual' | null => {
+  const lowerMessage = message.toLowerCase();
+
+  if (/\b(shorter|short|concise|brief)\b/.test(lowerMessage)) {
+    return 'shorter';
+  }
+
+  if (/\b(poetic|poem|lyrical|more emotional)\b/.test(lowerMessage)) {
+    return 'poetic';
+  }
+
+  if (/\b(factual|fact|direct|plain|straightforward)\b/.test(lowerMessage)) {
+    return 'factual';
+  }
+
+  return null;
+};
+
+const hasDraftAugmentSignal = (message: string) => /^\s*(include|add|also include|also add)\b/i.test(message.trim());
+const futurePlanSignalPattern =
+  /\b(go back|return|come back|visit again|next time|following time|would love|want to|plan to|hope to|universal studios)\b/i;
+
+const hasPersonalizationSignal = (message: string) => {
+  const lowerMessage = message.toLowerCase();
+  return (
+    /\b(mood|felt|feeling|favorite|favourite|highlight|moment|detail|sound|smell|taste|lesson|reflection|realized|realised|surprised)\b/.test(
+      lowerMessage
+    ) ||
+    /^\s*[1-4][\).:-]\s+/m.test(lowerMessage) ||
+    /\b1[\).:-]\s*[\s\S]*\b2[\).:-]/.test(lowerMessage) ||
+    /:\s*\w+/.test(lowerMessage)
+  );
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const extractCountryFromMessage = (message: string, context: CompanionTravelContext) => {
+  const visitedCountries = Array.from(new Set(context.visitedCountryNames)).sort(
+    (first, second) => second.length - first.length
+  );
+
+  for (const countryName of visitedCountries) {
+    const pattern = new RegExp(`\\b${escapeRegExp(countryName)}\\b`, 'i');
+    if (pattern.test(message)) {
+      return countryName;
+    }
+  }
+
+  const worldCatalog = buildWorldCountryCatalog().sort((first, second) => second.length - first.length);
+  for (const countryName of worldCatalog) {
+    const pattern = new RegExp(`\\b${escapeRegExp(countryName)}\\b`, 'i');
+    if (pattern.test(message)) {
+      return countryName;
+    }
+  }
+
+  return context.visitedCountryNames.at(-1) ?? context.visitedCountryNames[0] ?? null;
+};
+
+const splitPlaces = (value: string) =>
+  value
+    .split(/,| and |;/i)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+const extractPlacesFromMessage = (message: string) => {
+  const explicitPlacesMatch = message.match(/\bplaces?\b[^:]*[:\-]\s*([^\n.]+)/i);
+  if (explicitPlacesMatch?.[1]) {
+    return splitPlaces(explicitPlacesMatch[1]);
+  }
+
+  const visitedPhraseMatch = message.match(/\bvisited\b\s+([^\n.]+)/i);
+  if (visitedPhraseMatch?.[1]) {
+    const candidate = visitedPhraseMatch[1]
+      .replace(/\bin\s+[A-Za-z\s]+$/i, '')
+      .replace(/\bthis country\b/i, '')
+      .trim();
+
+    if (candidate) {
+      return splitPlaces(candidate);
+    }
+  }
+
+  return [];
+};
+
+const buildCountryPlaceHints = (countryName: string, context: CompanionTravelContext) => {
+  const countryKey = canonicalCountryKey(countryName);
+
+  const importedPlaces = context.importedTrips
+    .filter((trip) => {
+      const primaryNameKey = trip.primaryCountryName ? canonicalCountryKey(trip.primaryCountryName) : '';
+      const primaryIdKey = trip.primaryCountryId ? canonicalCountryKey(String(trip.primaryCountryId)) : '';
+      return countryKey === primaryNameKey || countryKey === primaryIdKey;
+    })
+    .flatMap((trip) => trip.locationNames);
+
+  const memoryPlaces = context.memoryPool
+    .filter((memory) => memory.countryHint && canonicalCountryKey(memory.countryHint) === countryKey)
+    .map((memory) => memory.title.replace(/\s+(note|photo)$/i, '').trim());
+
+  const combined = [...importedPlaces, ...memoryPlaces]
+    .map((place) => place.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(combined)).slice(0, 6);
+};
+
+const parsePersonalizationInput = (message: string) => {
+  const cleanMessage = message.trim();
+  const moodMatch = cleanMessage.match(/\b(?:mood|feeling|felt)\b[:\-]?\s*([^\n.]+)/i);
+  const highlightMatch = cleanMessage.match(/\b(?:highlight|favorite moment|favourite moment|best moment)\b[:\-]?\s*([^\n.]+)/i);
+  const sensoryMatch = cleanMessage.match(/\b(?:detail|sound|smell|taste|food)\b[:\-]?\s*([^\n.]+)/i);
+  const reflectionMatch = cleanMessage.match(/\b(?:reflection|lesson|realized|realised|surprised)\b[:\-]?\s*([^\n.]+)/i);
+
+  const numberedSegments = new Map<number, string>();
+  const numberedPattern = /(?:^|\s)([1-4])[\).:-]\s*([\s\S]*?)(?=(?:\s[1-4][\).:-]\s*)|$)/g;
+  const numberedMatches = Array.from(cleanMessage.matchAll(numberedPattern));
+
+  numberedMatches.forEach((match) => {
+    const index = Number(match[1]);
+    const value = String(match[2] ?? '').replace(/\s+/g, ' ').trim();
+    if (value) {
+      numberedSegments.set(index, value);
+    }
+  });
+
+  return {
+    mood: moodMatch?.[1]?.trim() || numberedSegments.get(1) || '',
+    highlight: highlightMatch?.[1]?.trim() || numberedSegments.get(2) || '',
+    sensory: sensoryMatch?.[1]?.trim() || numberedSegments.get(3) || '',
+    reflection: reflectionMatch?.[1]?.trim() || numberedSegments.get(4) || '',
+  };
+};
+
+const cleanDetailValue = (value: string) =>
+  value
+    .replace(/\b[1-4][\).:-]\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[;,:\-]+$/g, '')
+    .trim();
+
+const trimToClause = (value: string, maxWords: number) => {
+  const firstClause = value.split(/[.?!]/)[0]?.trim() ?? value.trim();
+  const words = firstClause.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) {
+    return firstClause;
+  }
+
+  return words.slice(0, maxWords).join(' ');
+};
+
+const formatPlaceList = (places: string[]) => {
+  const cleanPlaces = places.map((place) => place.trim()).filter(Boolean);
+
+  if (!cleanPlaces.length) {
+    return '';
+  }
+
+  try {
+    return new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(cleanPlaces);
+  } catch {
+    if (cleanPlaces.length === 1) {
+      return cleanPlaces[0];
+    }
+
+    if (cleanPlaces.length === 2) {
+      return `${cleanPlaces[0]} and ${cleanPlaces[1]}`;
+    }
+
+    return `${cleanPlaces.slice(0, -1).join(', ')}, and ${cleanPlaces.at(-1)}`;
+  }
+};
+
+const lowercaseFirstLetter = (value: string) => {
+  if (!value) {
+    return value;
+  }
+
+  return `${value.charAt(0).toLowerCase()}${value.slice(1)}`;
+};
+
+const removeTrailingJoiners = (value: string) => value.replace(/\b(and|or|but)\s*$/i, '').trim();
+
+const normalizeMoodPhrase = (value: string) => {
+  let phrase = cleanDetailValue(value)
+    .replace(/^(?:i\s+(?:felt|was)\s+|it\s+(?:felt|was)\s+)/i, '')
+    .replace(/\bto\s+.+$/i, '')
+    .trim();
+
+  phrase = removeTrailingJoiners(trimToClause(phrase, 5));
+  phrase = lowercaseFirstLetter(phrase);
+
+  return phrase || 'reflective';
+};
+
+const normalizeHighlightPhrase = (value: string) => {
+  let phrase = cleanDetailValue(value)
+    .replace(/^(?:it\s+was|my\s+highlight\s+was|highlight\s+was)\s+/i, '')
+    .replace(/\bfunny to feed\b/gi, 'feeding')
+    .replace(/\bsee\s+the\s+culture\s+of\s+the\s+in\s+([A-Za-z]+)/gi, 'experience the culture in $1')
+    .replace(/\bsee\s+the\s+culture\s+of\s+the\b/gi, 'experience the culture')
+    .replace(/\band\s+see\s+/gi, ' and ')
+    .replace(/\bhead butted\b/gi, 'head-butted')
+    .replace(/\band\s+people\s+get\s+/gi, ', watching people get ')
+    .replace(/\band\s+experience\s+the\s+culture\b/gi, ', and experiencing the culture')
+    .trim();
+
+  phrase = trimToClause(phrase, 34);
+  phrase = lowercaseFirstLetter(phrase);
+
+  return phrase || 'wandering between places and following local rhythms';
+};
+
+const normalizeSensoryPhrase = (value: string) => {
+  let phrase = cleanDetailValue(value).trim();
+  phrase = trimToClause(phrase, 14);
+  phrase = lowercaseFirstLetter(phrase);
+
+  if (!phrase) {
+    return 'the mix of street sounds and late-evening light';
+  }
+
+  const shortNounLike = phrase.split(/\s+/).length <= 3 && !/\b(?:sound|smell|taste|feeling|noise|wind|forest|air)\b/i.test(phrase);
+  if (shortNounLike) {
+    return `the feeling around ${phrase}`;
+  }
+
+  if (!/^(?:the|a|an|my|this|that)\b/i.test(phrase) && /^[a-z][a-z\s-]{1,40}$/i.test(phrase)) {
+    const hasVerbLikeToken = /\b(?:is|are|was|were|be|being|been|feel|felt|smell|smells|sound|sounds|taste|tastes|watch|watching|moving|walk|walking|experience|experiencing)\b/i.test(
+      phrase
+    );
+    if (!hasVerbLikeToken) {
+      return `the ${phrase}`;
+    }
+  }
+
+  return phrase;
+};
+
+const normalizeReflectionPhrase = (value: string) => {
+  let phrase = cleanDetailValue(value)
+    .replace(/^(?:i\s+(?:realized|realised|learned|noticed|felt|knew)\s+|it\s+made\s+me\s+)/i, '')
+    .trim();
+
+  phrase = trimToClause(phrase, 20);
+  phrase = lowercaseFirstLetter(phrase).replace(/^that\s+/i, '');
+
+  return phrase || 'I knew this was a place I wanted to come back to';
+};
+
+const normalizeCountryCapitalization = (text: string, countryName: string) => {
+  if (!text || !countryName) {
+    return text;
+  }
+
+  const pattern = new RegExp(`\\b${escapeRegExp(countryName)}\\b`, 'i');
+  return text.replace(pattern, countryName);
+};
+
+const normalizeKnownPlaceCapitalization = (text: string, places: string[]) => {
+  let normalized = text;
+
+  places.forEach((place) => {
+    const cleanPlace = place.trim();
+    if (!cleanPlace) {
+      return;
+    }
+
+    const pattern = new RegExp(`\\b${escapeRegExp(cleanPlace)}\\b`, 'ig');
+    normalized = normalized.replace(pattern, cleanPlace);
+  });
+
+  return normalized;
+};
+
+const normalizeFutureDestinationText = (text: string, places: string[]) =>
+  normalizeKnownPlaceCapitalization(text, places)
+    .replace(/\buniversal studios\b/gi, 'Universal Studios')
+    .replace(
+      /\b(go to|go back to|return to|come back to|visit)\s+([a-z][a-z'-]*(?:\s+[a-z][a-z'-]*){0,2})/gi,
+      (_match, verb: string, destination: string) =>
+        `${verb} ${destination
+          .split(/\s+/)
+          .filter(Boolean)
+          .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+          .join(' ')}`
+    );
+
+const normalizeFuturePlanPhrase = (value: string, countryName: string, places: string[]) => {
+  let phrase = cleanDetailValue(value)
+    .replace(/^(?:that\s+)?/i, '')
+    .replace(/^(?:how\s+)?i\s+(?:want|would\s+love|plan|hope)\s+to\s+/i, 'to ')
+    .replace(/^(?:include|add)\s+/i, '')
+    .trim();
+
+  phrase = trimToClause(phrase, 24);
+  phrase = lowercaseFirstLetter(phrase);
+  phrase = normalizeCountryCapitalization(phrase, countryName);
+  phrase = normalizeKnownPlaceCapitalization(phrase, places);
+
+  if (!phrase) {
+    return '';
+  }
+
+  const nextVisitIntent = phrase.match(
+    /(?:the\s+)?(?:next|following)\s+time\s+i\s+visit\s+([A-Za-z][A-Za-z\s'-]*?)\s+(?:i\s+)?(?:would\s+love|want|plan|hope)\s+to\s+(.+)/i
+  );
+  if (nextVisitIntent?.[1] && nextVisitIntent?.[2]) {
+    const visitCountry = normalizeCountryCapitalization(nextVisitIntent[1].trim(), countryName);
+    const visitAction = normalizeFutureDestinationText(nextVisitIntent[2].trim().replace(/[.?!]+$/g, ''), places);
+    return `The next time I visit ${visitCountry}, I would love to ${visitAction}.`;
+  }
+
+  if (/\b(?:next|following)\s+time\b/i.test(phrase)) {
+    const cleanedAction = phrase
+      .replace(/^(?:the\s+)?(?:next|following)\s+time\s+/i, '')
+      .replace(/^i\s+visit\s+[A-Za-z][A-Za-z\s'-]*\s*/i, '')
+      .replace(/^(?:i\s+)?(?:would\s+love|want|plan|hope)\s+to\s+/i, '')
+      .trim()
+      .replace(/[.?!]+$/g, '');
+    if (cleanedAction) {
+      return `The next time I visit ${countryName}, I would love to ${normalizeFutureDestinationText(cleanedAction, places)}.`;
+    }
+  }
+
+  if (/\b(?:go back|return|come back)\b/i.test(phrase)) {
+    const revisitAction = normalizeFutureDestinationText(phrase.replace(/[.?!]+$/g, ''), places);
+    return `The next time I visit ${countryName}, I would love to ${revisitAction}.`;
+  }
+
+  const startsWithVerbLike = /^(?:to\s+|go\s+|return\s+|visit\s+|come\s+back\s+)/i.test(phrase);
+  if (startsWithVerbLike) {
+    return `I already know I want ${phrase.replace(/[.?!]+$/g, '')}.`;
+  }
+
+  return `I already know I want to ${phrase.replace(/[.?!]+$/g, '')}.`;
+};
+
+const splitDraftHeadingAndBody = (draft: string) => {
+  const lines = draft.split('\n');
+  const headingIndex = lines.findIndex((line) => /^###\s+/i.test(line.trim()));
+
+  if (headingIndex === -1) {
+    return { heading: '', body: draft.trim() };
+  }
+
+  return {
+    heading: lines[headingIndex].trim(),
+    body: lines.slice(headingIndex + 1).join('\n').trim(),
+  };
+};
+
+const refineJournalDraft = (draft: string, mode: 'shorter' | 'poetic' | 'factual') => {
+  const { heading, body } = splitDraftHeadingAndBody(draft);
+  const sentences = body
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const first = sentences[0] || '';
+  const second = sentences[1] || '';
+  const third = sentences[2] || '';
+  const fourth = sentences[3] || '';
+
+  if (mode === 'shorter') {
+    const condensed = [first, second, fourth || third].filter(Boolean).join('\n');
+    return [heading, '', condensed].filter(Boolean).join('\n');
+  }
+
+  if (mode === 'poetic') {
+    const poeticLines = [
+      first.replace(/\btraveled through\b/i, 'wandered through'),
+      second.replace(/\bstayed with me most\b/i, 'lingered with me'),
+      third.replace(/\bWhat I keep replaying most is\b/i, 'What still echoes in me is'),
+      fourth.replace(/\bBy the end of the day, I knew\b/i, 'By nightfall, I knew'),
+    ].filter(Boolean);
+
+    return [heading, '', poeticLines.join('\n')].filter(Boolean).join('\n');
+  }
+
+  const factualLines = [
+    first.replace(/\bin such a\b/i, 'in a'),
+    second.replace(/\bOne of the moments that stayed with me most was\b/i, 'A highlight was'),
+    third.replace(/\bWhat I keep replaying most is\b/i, 'A strong memory was'),
+    fourth.replace(/\bBy the end of the day, I knew\b/i, 'By the end of the day, I concluded'),
+  ].filter(Boolean);
+
+  return [heading, '', factualLines.join('\n')].filter(Boolean).join('\n');
+};
+
+const buildJournalEntryDraft = (
+  countryName: string,
+  places: string[],
+  context: CompanionTravelContext,
+  personalization?: ReturnType<typeof parsePersonalizationInput> & { futurePlan?: string }
+) => {
+  const activePlaces = places.length ? places : ['the city center', 'a local cafe', 'a quiet street'];
+  const placeList = formatPlaceList(activePlaces);
+  const mood = normalizeMoodPhrase(personalization?.mood || context.topMoods[0] || 'reflective');
+  const highlight = normalizeHighlightPhrase(
+    personalization?.highlight || `wandering between ${activePlaces.slice(0, 2).join(' and ')}`
+  );
+  const sensory = normalizeSensoryPhrase(personalization?.sensory || 'the mix of street sounds and late-evening light');
+  const reflection = normalizeReflectionPhrase(
+    personalization?.reflection || 'I noticed how travel slows me down just enough to pay attention.'
+  );
+  const reflectionWithCountry = normalizeCountryCapitalization(reflection, countryName);
+  const reflectionWithPlaces = normalizeKnownPlaceCapitalization(reflectionWithCountry, activePlaces);
+  const futurePlanLine = normalizeFuturePlanPhrase(personalization?.futurePlan || '', countryName, activePlaces);
+
+  return [
+    `### ${countryName} Journal Draft`,
+    ``,
+    `Today in ${countryName}, I traveled through ${placeList} in such a ${mood} mood.`,
+    `One of the moments that stayed with me most was ${highlight}.`,
+    `What I keep replaying most is ${sensory}, because it made the whole day feel peaceful and real.`,
+    `By the end of the day, I knew ${reflectionWithPlaces}.`,
+    futurePlanLine,
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
+const hasFuturePlanLine = (draft: string) =>
+  draft
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .some(
+      (line) =>
+        !/^One of the moments that stayed with me most was\b/i.test(line) &&
+        /\b(?:next time i visit|i would love to|i already know i want to)\b/i.test(line)
+    );
 
 const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record<string, string>): CompanionPassportStamp[] =>
   visitedCountryIds.map((countryId) => {
@@ -744,6 +1208,12 @@ export const buildSuggestedPrompts = (context: CompanionTravelContext): Suggeste
       intent: 'journal-suggestions',
     },
     {
+      id: 'prompt-journal-entry',
+      title: 'Write Entry',
+      prompt: `Write a journal entry for my places in ${leadCountry}, then ask me for details to personalize it.`,
+      intent: 'journal-entry',
+    },
+    {
       id: 'prompt-captions',
       title: 'Scrapbook Captions',
       prompt: 'Suggest scrapbook captions from my recent photos and notes.',
@@ -928,7 +1398,7 @@ const formatGeneralReply = (context: CompanionTravelContext) => {
   return [
     `I am tracking ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.passportStamps.length} stamp links.`,
     memoryLine,
-    'Try asking: "How many countries have I visited?" or "Where should I go next based on my visited countries?"',
+    'Try asking: "How many countries have I visited?", "Where should I go next?", or "Write a journal entry for places I visited in [country]."',
   ].join('\n');
 };
 
@@ -938,6 +1408,149 @@ export const buildWelcomeMessage = (context: CompanionTravelContext) => {
   return `I have synced with your travel archive: ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.importedTrips.length} imported trips. I am ready to help you turn ${countries} into richer stories.`;
 };
 
+export const handleJournalEntryInteraction = (
+  message: string,
+  context: CompanionTravelContext,
+  activeSession: JournalDraftSession | null
+): JournalEntryInteractionResult => {
+  if (activeSession) {
+    const refinementMode = getRefinementMode(message);
+
+    if (refinementMode) {
+      const refinedDraft = refineJournalDraft(activeSession.lastDraft, refinementMode);
+
+      return {
+        handled: true,
+        response: {
+          id: createCompanionId(),
+          role: 'assistant',
+          createdAt: new Date().toISOString(),
+          intent: 'journal-entry',
+          content: [
+            `Great call. Here is a ${refinementMode} version:`,
+            '',
+            refinedDraft,
+            '',
+            'You can keep iterating with: "shorter", "more poetic", "more factual", or "include ...".',
+          ].join('\n'),
+        },
+        nextSession: {
+          ...activeSession,
+          lastDraft: refinedDraft,
+        },
+      };
+    }
+  }
+
+  if (activeSession && (hasPersonalizationSignal(message) || hasDraftAugmentSignal(message))) {
+    const parsedDetails = parsePersonalizationInput(message);
+    const includeText = hasDraftAugmentSignal(message)
+      ? message.replace(/^\s*(?:include|add|also include|also add)\s*/i, '').trim()
+      : '';
+    const includeLooksFuturePlan = futurePlanSignalPattern.test(includeText);
+
+    const mergedDetails = {
+      mood: parsedDetails.mood || activeSession.personalDetails?.mood || '',
+      highlight:
+        parsedDetails.highlight ||
+        (!includeLooksFuturePlan ? includeText : '') ||
+        activeSession.personalDetails?.highlight ||
+        '',
+      sensory: parsedDetails.sensory || activeSession.personalDetails?.sensory || '',
+      reflection: parsedDetails.reflection || activeSession.personalDetails?.reflection || '',
+      futurePlan:
+        (includeLooksFuturePlan ? includeText : '') ||
+        activeSession.personalDetails?.futurePlan ||
+        '',
+    };
+
+    let revisedDraft = buildJournalEntryDraft(activeSession.countryName, activeSession.places, context, mergedDetails);
+
+    if (includeText && includeLooksFuturePlan && !hasFuturePlanLine(revisedDraft)) {
+      revisedDraft = buildJournalEntryDraft(activeSession.countryName, activeSession.places, context, {
+        ...mergedDetails,
+        futurePlan: includeText,
+      });
+    }
+
+    return {
+      handled: true,
+      response: {
+        id: createCompanionId(),
+        role: 'assistant',
+        createdAt: new Date().toISOString(),
+        intent: 'journal-entry',
+        content: [
+          'Love that detail set. Here is a more personal version:',
+          '',
+          revisedDraft,
+          '',
+          'If you want another pass, tell me whether you want it shorter, more poetic, or more factual.',
+        ].join('\n'),
+      },
+      nextSession: {
+        ...activeSession,
+        lastDraft: revisedDraft,
+        personalDetails: mergedDetails,
+      },
+    };
+  }
+
+  if (!hasJournalEntryRequest(message)) {
+    return { handled: false, nextSession: activeSession };
+  }
+
+  const countryName = extractCountryFromMessage(message, context);
+
+  if (!countryName) {
+    return {
+      handled: true,
+      response: {
+        id: createCompanionId(),
+        role: 'assistant',
+        createdAt: new Date().toISOString(),
+        intent: 'journal-entry',
+        content:
+          'I can draft that. Tell me the country first, then list the places you visited, and I will create the entry.',
+      },
+      nextSession: activeSession,
+    };
+  }
+
+  const explicitPlaces = extractPlacesFromMessage(message);
+  const hintedPlaces = buildCountryPlaceHints(countryName, context);
+  const places = explicitPlaces.length ? explicitPlaces : hintedPlaces;
+  const draft = buildJournalEntryDraft(countryName, places, context);
+  const placeLine = places.length ? places.join(', ') : 'no specific places detected yet';
+
+  return {
+    handled: true,
+    response: {
+      id: createCompanionId(),
+      role: 'assistant',
+      createdAt: new Date().toISOString(),
+      intent: 'journal-entry',
+      content: [
+        `Here is a first draft based on ${countryName} (${placeLine}):`,
+        '',
+        draft,
+        '',
+        'To make it more personal, send 3-4 quick details:',
+        '1) mood you felt',
+        '2) your standout moment',
+        '3) one sensory detail (sound/smell/taste)',
+        '4) one reflection you had',
+      ].join('\n'),
+    },
+    nextSession: {
+      countryName,
+      places,
+      lastDraft: draft,
+      personalDetails: {},
+    },
+  };
+};
+
 export const generateCompanionReply = (message: string, context: CompanionTravelContext): CompanionChatMessage => {
   const intent = resolveIntent(message);
   const content =
@@ -945,6 +1558,8 @@ export const generateCompanionReply = (message: string, context: CompanionTravel
       ? formatCountryStatsReply(context)
       : intent === 'next-destination'
         ? formatNextDestinationReply(context)
+        : intent === 'journal-entry'
+          ? 'Tell me the country and places you visited, and I will draft a journal entry and then personalize it with your input.'
         : intent === 'journal-suggestions'
       ? formatJournalReply(context)
       : intent === 'memory-reflections'
