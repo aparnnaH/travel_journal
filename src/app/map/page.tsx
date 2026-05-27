@@ -477,43 +477,42 @@ export default function MapPage() {
         title="World Atlas"
         description="Track your globe-trotting story with a world atlas, country discovery, and city-level exploration."
       >
-        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
-          <Card>
-            <div className="flex flex-col gap-6">
-              <WorldAtlas
-                visitedCountries={visitedCountries}
-                countryColors={countryColors}
-                onToggleCountry={handleMapCountryClick}
-                onCountryNeighborsReady={handleCountryNeighborsReady}
-                onAtlasCountriesReady={handleAtlasCountriesReady}
-              />
-
-              <Card className="space-y-4">
+        <div className="space-y-6">
+          <WorldAtlas
+            visitedCountries={visitedCountries}
+            countryColors={countryColors}
+            onToggleCountry={handleMapCountryClick}
+            onCountryNeighborsReady={handleCountryNeighborsReady}
+            onAtlasCountriesReady={handleAtlasCountriesReady}
+            atlasSummary={
+              <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="gold">
                     {atlasCountries.length > 0 ? `Atlas ${scratchPercentage}% revealed` : 'Atlas reveal loading'}
                   </Badge>
                   <Badge>{visitedCountries.length} countries visited</Badge>
                 </div>
-                <p className="text-ink/70">
+                <p className="max-w-2xl text-sm text-ink/65">
                   Click a country to mark it visited, then open Country Explorer from the visited list.
                 </p>
-                <Button variant="outline" onClick={handleRequestAtlasReset}>
-                  Reset Atlas Progress
-                </Button>
-              </Card>
-            </div>
-          </Card>
+              </div>
+            }
+          />
 
-          <div className="space-y-6">
+          <div className="grid gap-6 xl:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.6fr)]">
             <Card>
-              <h3 className="text-xl font-semibold mb-4">Quick Actions</h3>
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-xl font-semibold">Quick Actions</h3>
+                <Button size="sm" variant="outline" onClick={handleRequestAtlasReset}>
+                  Reset Atlas
+                </Button>
+              </div>
               {quickActionCountries.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-gold/30 bg-cream/60 p-4 text-sm text-ink/60">
                   Every atlas country is marked visited.
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1">
                   {quickActionCountries.map((country) => (
                     <div key={country.id} className="flex items-center justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
@@ -585,8 +584,8 @@ export default function MapPage() {
                   No visited countries match that search.
                 </div>
               ) : (
-                <div className="max-h-[22rem] overflow-y-auto pr-1">
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <div className="max-h-[26rem] overflow-y-auto pr-1">
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                     {visibleVisitedCountries.map((country) => (
                       <div
                         key={country.id}

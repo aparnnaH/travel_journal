@@ -10,10 +10,11 @@ interface WorldAtlasProps {
   onToggleCountry: (countryId: string, countryName?: string, neighboringCountryIds?: string[]) => void;
   onCountryNeighborsReady?: (countryNeighborIds: Record<string, string[]>) => void;
   onAtlasCountriesReady?: (countries: AtlasCountryReference[]) => void;
+  atlasSummary?: React.ReactNode;
 }
 
 const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
-const normalMapPosition = { coordinates: [0, 15] as [number, number], zoom: 1 };
+const normalMapPosition = { coordinates: [0, 0] as [number, number], zoom: 1 };
 const minMapZoom = 1;
 const maxMapZoom = 4;
 const mapZoomStep = 0.5;
@@ -182,6 +183,7 @@ export default function WorldAtlas({
   onToggleCountry,
   onCountryNeighborsReady,
   onAtlasCountriesReady,
+  atlasSummary,
 }: WorldAtlasProps) {
   const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
@@ -257,6 +259,7 @@ export default function WorldAtlas({
         <div>
           <p className="text-sm uppercase tracking-[0.36em] text-gold/70">World Atlas</p>
           <h2 className="text-2xl font-semibold text-ink">Scratch the globe, then explore the story.</h2>
+          {atlasSummary ? <div className="mt-3">{atlasSummary}</div> : null}
         </div>
         <div className="rounded-full border border-ink/15 bg-white/80 px-4 py-2 text-xs uppercase tracking-[0.22em] text-ink/75">
           {hoveredCountryName ?? 'Hover a country to reveal the atlas flow'}
@@ -274,10 +277,10 @@ export default function WorldAtlas({
 
         <ComposableMap
           projection="geoEqualEarth"
-          projectionConfig={{ scale: 150, center: [0, 15] }}
+          projectionConfig={{ scale: 140, center: [0, 0] }}
           width={760}
           height={380}
-          className="relative h-[380px] w-full rounded-[1.5rem] bg-[#F4E6CC]"
+          className="relative h-[360px] w-full rounded-[1.5rem] bg-[#F4E6CC] sm:h-[420px] lg:h-[500px] xl:h-[560px]"
         >
           <ZoomableGroup
             center={mapPosition.coordinates}
@@ -327,14 +330,14 @@ export default function WorldAtlas({
           </ZoomableGroup>
         </ComposableMap>
 
-        <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-xl border border-ink/10 bg-white/85 p-1 shadow-soft backdrop-blur">
+        <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-xl border border-ink/5 bg-white/25 p-1 shadow-soft backdrop-blur-sm">
           <button
             type="button"
             aria-label="Zoom out"
             title="Zoom out"
             onClick={handleZoomOut}
             disabled={isMinZoom}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 text-lg font-semibold text-ink transition hover:bg-cream/70 focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
           >
             -
           </button>
@@ -344,7 +347,7 @@ export default function WorldAtlas({
             title="Zoom in"
             onClick={handleZoomIn}
             disabled={isMaxZoom}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/20 text-lg font-semibold text-ink transition hover:bg-cream/70 focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
           >
             +
           </button>
@@ -353,34 +356,41 @@ export default function WorldAtlas({
             aria-label="Reset map view"
             title="Reset map view"
             onClick={handleResetView}
-            className="flex h-9 min-w-16 items-center justify-center rounded-lg px-3 text-sm font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
+            className="flex h-9 min-w-16 items-center justify-center rounded-lg bg-white/20 px-3 text-sm font-semibold text-ink transition hover:bg-cream/70 focus:outline-none focus:ring-2 focus:ring-gold"
           >
             Reset
           </button>
         </div>
-
-        <div className="pointer-events-none absolute inset-x-4 bottom-4 rounded-3xl border border-ink/10 bg-white/75 px-4 py-3 text-xs text-ink/70 shadow-inner">
-          Click a country to mark it visited with a random color.
-        </div>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
-        <div className="space-y-3 rounded-3xl border border-ink/10 bg-white p-4 text-ink/80">
-          <p className="text-sm uppercase tracking-[0.26em] text-gold/70">Legend</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-[#4ECFFF]" />
-              <span>Visited country</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-[#F7F1DE] border border-[#7C6A46]" />
-              <span>Locked country</span>
+      <div className="mt-5 rounded-2xl border border-gold/25 bg-white/80 p-4 text-ink shadow-sm-soft">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 grid-cols-2 overflow-hidden rounded-xl border border-gold/20 bg-cream shadow-inner">
+              <span className="bg-[#4ECFFF]" />
+              <span className="bg-[#59D98E]" />
+              <span className="bg-[#FFD166]" />
+              <span className="bg-[#E6D5B8]" />
+            </span>
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/75">Atlas key</p>
+              <p className="mt-1 text-sm text-ink/60">Color states at a glance</p>
             </div>
           </div>
-        </div>
-        <div className="rounded-3xl border border-ink/10 bg-white p-4 text-ink/80">
-          <p className="text-sm uppercase tracking-[0.26em] text-gold/70">Action</p>
-          <p className="text-sm">Click a country geography to assign a random visited color.</p>
+          <div className="flex flex-wrap gap-2">
+            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-cream/75 px-3 py-2 text-sm font-medium shadow-inner">
+              <span className="flex -space-x-1">
+                <span className="h-4 w-4 rounded-full border border-white bg-[#4ECFFF]" />
+                <span className="h-4 w-4 rounded-full border border-white bg-[#59D98E]" />
+                <span className="h-4 w-4 rounded-full border border-white bg-[#FFD166]" />
+              </span>
+              <span>Visited</span>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-cream/75 px-3 py-2 text-sm font-medium shadow-inner">
+              <span className="h-4 w-4 rounded-full border border-[#7C6A46]/60 bg-[#E6D5B8]" />
+              <span>Not visited</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
