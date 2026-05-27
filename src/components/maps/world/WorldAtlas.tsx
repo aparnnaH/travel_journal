@@ -252,17 +252,37 @@ export default function WorldAtlas({
 
   const isMinZoom = mapPosition.zoom <= minMapZoom;
   const isMaxZoom = mapPosition.zoom >= maxMapZoom;
+  const isNormalMapView =
+    mapPosition.zoom === normalMapPosition.zoom &&
+    mapPosition.coordinates[0] === normalMapPosition.coordinates[0] &&
+    mapPosition.coordinates[1] === normalMapPosition.coordinates[1];
 
   return (
     <div className="rounded-[2rem] border border-ink/10 bg-cream p-4 shadow-soft">
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.36em] text-gold/70">World Atlas</p>
           <h2 className="text-2xl font-semibold text-ink">Scratch the globe, then explore the story.</h2>
           {atlasSummary ? <div className="mt-3">{atlasSummary}</div> : null}
         </div>
-        <div className="rounded-full border border-ink/15 bg-white/80 px-4 py-2 text-xs uppercase tracking-[0.22em] text-ink/75">
-          {hoveredCountryName ?? 'Hover a country to reveal the atlas flow'}
+        <div className="flex flex-col gap-2 sm:mt-14 sm:items-end">
+          <div className="rounded-full border border-ink/15 bg-white/80 px-4 py-2 text-xs uppercase tracking-[0.22em] text-ink/75">
+            {hoveredCountryName ?? 'Hover a country to reveal the atlas flow'}
+          </div>
+          <div aria-label="Map legend" className="flex flex-wrap gap-2 sm:justify-end">
+            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-white/70 px-3 py-2 text-sm font-medium text-ink shadow-sm-soft">
+              <span className="flex -space-x-1">
+                <span className="h-4 w-4 rounded-full border border-white bg-[#4ECFFF]" />
+                <span className="h-4 w-4 rounded-full border border-white bg-[#59D98E]" />
+                <span className="h-4 w-4 rounded-full border border-white bg-[#FFD166]" />
+              </span>
+              <span>Visited</span>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-white/70 px-3 py-2 text-sm font-medium text-ink shadow-sm-soft">
+              <span className="h-4 w-4 rounded-full border border-[#7C6A46]/60 bg-[#E6D5B8]" />
+              <span>Not visited</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -356,43 +376,14 @@ export default function WorldAtlas({
             aria-label="Reset map view"
             title="Reset map view"
             onClick={handleResetView}
-            className="flex h-9 min-w-16 items-center justify-center rounded-lg bg-white/20 px-3 text-sm font-semibold text-ink transition hover:bg-cream/70 focus:outline-none focus:ring-2 focus:ring-gold"
+            disabled={isNormalMapView}
+            className="flex h-9 min-w-16 items-center justify-center rounded-lg bg-white/20 px-3 text-sm font-semibold text-ink transition hover:bg-cream/70 focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
           >
             Reset
           </button>
         </div>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-gold/25 bg-white/80 p-4 text-ink shadow-sm-soft">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 grid-cols-2 overflow-hidden rounded-xl border border-gold/20 bg-cream shadow-inner">
-              <span className="bg-[#4ECFFF]" />
-              <span className="bg-[#59D98E]" />
-              <span className="bg-[#FFD166]" />
-              <span className="bg-[#E6D5B8]" />
-            </span>
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/75">Atlas key</p>
-              <p className="mt-1 text-sm text-ink/60">Color states at a glance</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-cream/75 px-3 py-2 text-sm font-medium shadow-inner">
-              <span className="flex -space-x-1">
-                <span className="h-4 w-4 rounded-full border border-white bg-[#4ECFFF]" />
-                <span className="h-4 w-4 rounded-full border border-white bg-[#59D98E]" />
-                <span className="h-4 w-4 rounded-full border border-white bg-[#FFD166]" />
-              </span>
-              <span>Visited</span>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-xl border border-gold/15 bg-cream/75 px-3 py-2 text-sm font-medium shadow-inner">
-              <span className="h-4 w-4 rounded-full border border-[#7C6A46]/60 bg-[#E6D5B8]" />
-              <span>Not visited</span>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

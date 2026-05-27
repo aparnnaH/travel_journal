@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Card, Button, Badge, Input } from '@/components/ui';
@@ -17,19 +17,48 @@ import type { Country } from '@/types';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const visitedColorPalette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
+const atlasRevealSparkles = [
+  { color: '#FFD166', left: '18%', top: '24%', x: -52, y: -54, rotate: -85 },
+  { color: '#59D98E', left: '28%', top: '68%', x: -58, y: 38, rotate: 74 },
+  { color: '#4ECFFF', left: '47%', top: '20%', x: 8, y: -64, rotate: 118 },
+  { color: '#FF9F6B', left: '64%', top: '62%', x: 54, y: 42, rotate: -76 },
+  { color: '#9B8CFF', left: '78%', top: '26%', x: 66, y: -44, rotate: 96 },
+  { color: '#FF7FB0', left: '88%', top: '72%', x: 42, y: 54, rotate: -126 },
+  { color: '#4CD7D0', left: '36%', top: '42%', x: -18, y: -78, rotate: 142 },
+  { color: '#FFD166', left: '58%', top: '38%', x: 36, y: -72, rotate: -138 },
+  { color: '#FF9F6B', left: '72%', top: '48%', x: 80, y: 8, rotate: 164 },
+  { color: '#9B8CFF', left: '12%', top: '58%', x: -74, y: -4, rotate: -156 },
+];
 
 const countryNameAliases: Record<string, string> = {
   'united states of america': 'US',
   'united states': 'US',
+  'benin': 'BJ',
+  'burkina faso': 'BF',
+  'congo kinshasa': 'CD',
   'dem rep congo': 'CD',
   'dominican rep': 'DO',
   'central african rep': 'CF',
   'eq guinea': 'GQ',
   'bosnia and herz': 'BA',
+  'curacao': 'CW',
+  'france': 'FR',
+  'germany': 'DE',
+  'burma': 'MM',
+  'myanmar': 'MM',
+  'myanmar burma': 'MM',
+  'russia': 'RU',
+  'serbia': 'RS',
   's sudan': 'SS',
   'solomon is': 'SB',
   'falkland is': 'FK',
+  'timor leste': 'TL',
+  'united kingdom': 'GB',
+  'vanuatu': 'VU',
+  'vietnam': 'VN',
   'w sahara': 'EH',
+  'yemen': 'YE',
+  'zimbabwe': 'ZW',
 };
 
 function normalizeCountryName(countryName: string) {
@@ -115,8 +144,8 @@ interface RevealedStampBanner {
 }
 
 interface CountryRemovalConfirmation {
-  id: string;
   name: string;
+  ids: string[];
 }
 
 interface QuickActionCountry {
@@ -124,6 +153,22 @@ interface QuickActionCountry {
   name: string;
   flag: string | null;
   initials: string;
+}
+
+interface VisitedCountryItem {
+  id: string;
+  name: string;
+  color: string;
+  flag: string | null;
+  initials: string;
+  sourceIds: string[];
+  latestVisitedIndex: number;
+}
+
+interface AtlasRevealCelebration {
+  id: number;
+  milestone: boolean;
+  percent: number;
 }
 
 type VisitedCountrySort = 'name-asc' | 'name-desc' | 'recent';
@@ -153,6 +198,8 @@ export default function MapPage() {
   const [isAtlasResetConfirmationOpen, setIsAtlasResetConfirmationOpen] = useState(false);
   const [visitedCountrySearch, setVisitedCountrySearch] = useState('');
   const [visitedCountrySort, setVisitedCountrySort] = useState<VisitedCountrySort>('name-asc');
+  const [atlasRevealCelebration, setAtlasRevealCelebration] = useState<AtlasRevealCelebration | null>(null);
+  const previousAtlasRevealPercentRef = useRef<number | null>(null);
 
   const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
     setCountryNeighborIds(neighborIds);
@@ -164,6 +211,10 @@ export default function MapPage() {
 
   const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
   const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
+  const atlasCountryById = useMemo(
+    () => new Map(atlasCountries.map((country) => [country.id, country])),
+    [atlasCountries]
+  );
   const atlasCountryLookup = useMemo(() => {
     const ids = new Set(atlasCountries.map((country) => country.id));
     const names = new Map(
@@ -182,21 +233,18 @@ export default function MapPage() {
 
     return { alpha2Codes, ids, names };
   }, [alpha2CountryLookup, atlasCountries]);
-  const visitedAtlasCountryIds = useMemo(() => {
-    const resolvedAtlasCountryIds = new Set<string>();
 
-    visitedCountries.forEach((countryId) => {
+  const resolveAtlasCountryId = useCallback(
+    (countryId: string) => {
       const normalizedCountryId = countryId.toUpperCase();
 
       if (atlasCountryLookup.ids.has(normalizedCountryId)) {
-        resolvedAtlasCountryIds.add(normalizedCountryId);
-        return;
+        return normalizedCountryId;
       }
 
       const alpha2Match = atlasCountryLookup.alpha2Codes.get(normalizedCountryId);
       if (alpha2Match) {
-        resolvedAtlasCountryIds.add(alpha2Match);
-        return;
+        return alpha2Match;
       }
 
       const knownCountry = placeholderCountries.find((country) => country.id === countryId);
@@ -212,14 +260,37 @@ export default function MapPage() {
 
         const nameMatch = atlasCountryLookup.names.get(normalizeCountryName(countryName));
         if (nameMatch) {
-          resolvedAtlasCountryIds.add(nameMatch);
-          return;
+          return nameMatch;
         }
+      }
+
+      return countryId;
+    },
+    [atlasCountryLookup, countryLabels, regionNames]
+  );
+
+  const visitedAtlasCountryIds = useMemo(() => {
+    const resolvedAtlasCountryIds = new Set<string>();
+
+    visitedCountries.forEach((countryId) => {
+      const resolvedCountryId = resolveAtlasCountryId(countryId);
+
+      if (atlasCountryLookup.ids.has(resolvedCountryId)) {
+        resolvedAtlasCountryIds.add(resolvedCountryId);
       }
     });
 
     return resolvedAtlasCountryIds;
-  }, [atlasCountryLookup, countryLabels, regionNames, visitedCountries]);
+  }, [atlasCountryLookup.ids, resolveAtlasCountryId, visitedCountries]);
+
+  const isCountryAlreadyVisited = useCallback(
+    (countryId: string) => {
+      const resolvedCountryId = resolveAtlasCountryId(countryId);
+
+      return visitedCountries.some((visitedCountryId) => resolveAtlasCountryId(visitedCountryId) === resolvedCountryId);
+    },
+    [resolveAtlasCountryId, visitedCountries]
+  );
 
   useEffect(() => {
     if (!isLoading && user === null) {
@@ -300,7 +371,10 @@ export default function MapPage() {
     const knownCountry = placeholderCountries.find((country) => country.id === selectedCountryId);
     if (knownCountry) return knownCountry;
 
-    const displayName = getRegionDisplayName(regionNames, selectedCountryId) ?? selectedCountryId;
+    const displayName =
+      getRegionDisplayName(regionNames, selectedCountryId) ??
+      atlasCountryById.get(selectedCountryId)?.name ??
+      selectedCountryId;
     const name = countryLabels[selectedCountryId] ?? displayName;
     const normalizedName = normalizeCountryName(name);
     const alpha2Code =
@@ -314,58 +388,127 @@ export default function MapPage() {
       name,
       code: alpha2Code,
       pathData: '',
-      visited: visitedCountries.includes(selectedCountryId),
+      visited: isCountryAlreadyVisited(selectedCountryId),
       journalEntries: [],
       cities: [],
       highlights: [],
     };
-  }, [alpha2CountryLookup, countryLabels, regionNames, selectedCountryId, visitedCountries]);
+  }, [
+    alpha2CountryLookup,
+    atlasCountryById,
+    countryLabels,
+    isCountryAlreadyVisited,
+    regionNames,
+    selectedCountryId,
+  ]);
 
-  const recentlyVisited = useMemo(
-    () =>
-      visitedCountries.map((countryId) => {
-        const knownCountry = placeholderCountries.find((country) => country.id === countryId);
-        const displayName = knownCountry?.name ?? getRegionDisplayName(regionNames, countryId) ?? countryId;
-        const name = countryLabels[countryId] ?? displayName;
-        const normalizedName = normalizeCountryName(name);
-        const alpha2Code =
-          knownCountry?.code ??
-          (/^[A-Z]{2}$/.test(countryId) ? countryId : undefined) ??
-          countryNameAliases[normalizedName] ??
-          alpha2CountryLookup.get(normalizedName);
+  const recentlyVisited = useMemo<VisitedCountryItem[]>(() => {
+    const visitedCountryItems = new Map<string, VisitedCountryItem>();
 
-        return {
-          id: countryId,
-          name,
-          color: countryColors[countryId] ?? '#4ECFFF',
-          flag: alpha2Code ? getFlagEmoji(alpha2Code) : null,
-          initials: getCountryInitials(name),
-        };
-      }),
-    [visitedCountries, countryColors, countryLabels, regionNames, alpha2CountryLookup]
+    visitedCountries.forEach((countryId, visitedIndex) => {
+      const resolvedCountryId = resolveAtlasCountryId(countryId);
+      const existingCountryItem = visitedCountryItems.get(resolvedCountryId);
+      const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+      const atlasCountry = atlasCountryById.get(resolvedCountryId);
+      const displayName =
+        knownCountry?.name ??
+        atlasCountry?.name ??
+        getRegionDisplayName(regionNames, countryId) ??
+        countryId;
+      const name = countryLabels[resolvedCountryId] ?? countryLabels[countryId] ?? displayName;
+      const normalizedName = normalizeCountryName(name);
+      const alpha2Code =
+        knownCountry?.code ??
+        (/^[A-Z]{2}$/.test(countryId) ? countryId : undefined) ??
+        countryNameAliases[normalizedName] ??
+        alpha2CountryLookup.get(normalizedName);
+
+      const countryItem: VisitedCountryItem = {
+        id: resolvedCountryId,
+        name,
+        color: countryColors[resolvedCountryId] ?? countryColors[countryId] ?? existingCountryItem?.color ?? '#4ECFFF',
+        flag: alpha2Code ? getFlagEmoji(alpha2Code) : null,
+        initials: getCountryInitials(name),
+        sourceIds: Array.from(new Set([...(existingCountryItem?.sourceIds ?? []), resolvedCountryId, countryId])),
+        latestVisitedIndex: Math.max(existingCountryItem?.latestVisitedIndex ?? -1, visitedIndex),
+      };
+
+      visitedCountryItems.set(resolvedCountryId, countryItem);
+    });
+
+    return Array.from(visitedCountryItems.values());
+  }, [
+    alpha2CountryLookup,
+    atlasCountryById,
+    countryColors,
+    countryLabels,
+    regionNames,
+    resolveAtlasCountryId,
+    visitedCountries,
+  ]);
+
+  const mapVisitedCountryIds = useMemo(
+    () => Array.from(new Set([...visitedCountries, ...visitedAtlasCountryIds])),
+    [visitedAtlasCountryIds, visitedCountries]
   );
+
+  const mapCountryColors = useMemo(() => {
+    const colors = { ...countryColors };
+
+    recentlyVisited.forEach((country) => {
+      colors[country.id] = colors[country.id] ?? country.color;
+    });
+
+    return colors;
+  }, [countryColors, recentlyVisited]);
 
   const visibleVisitedCountries = useMemo(() => {
     const searchQuery = normalizeCountryName(visitedCountrySearch);
     const filteredCountries = searchQuery
       ? recentlyVisited.filter((country) =>
-          normalizeCountryName(`${country.name} ${country.id}`).includes(searchQuery)
+          normalizeCountryName(`${country.name} ${country.id} ${country.sourceIds.join(' ')}`).includes(searchQuery)
         )
       : recentlyVisited;
 
     return [...filteredCountries].sort((firstCountry, secondCountry) => {
       if (visitedCountrySort === 'recent') {
-        return visitedCountries.indexOf(secondCountry.id) - visitedCountries.indexOf(firstCountry.id);
+        return secondCountry.latestVisitedIndex - firstCountry.latestVisitedIndex;
       }
 
       const nameComparison = firstCountry.name.localeCompare(secondCountry.name, undefined, { sensitivity: 'base' });
       return visitedCountrySort === 'name-desc' ? -nameComparison : nameComparison;
     });
-  }, [recentlyVisited, visitedCountries, visitedCountrySearch, visitedCountrySort]);
+  }, [recentlyVisited, visitedCountrySearch, visitedCountrySort]);
 
   const visitedCountryCountLabel = visitedCountrySearch.trim()
     ? `${visibleVisitedCountries.length}/${recentlyVisited.length}`
     : recentlyVisited.length;
+  const isAtlasRevealLoaded = atlasCountries.length > 0;
+  const atlasRevealPercent = isAtlasRevealLoaded ? Math.min(100, Math.max(0, scratchPercentage)) : 0;
+
+  useEffect(() => {
+    if (!isAtlasRevealLoaded) return;
+
+    const previousPercent = previousAtlasRevealPercentRef.current;
+    previousAtlasRevealPercentRef.current = atlasRevealPercent;
+
+    if (previousPercent === null || atlasRevealPercent <= previousPercent) return;
+
+    const crossedFivePercentMilestone =
+      Math.floor(atlasRevealPercent / 5) > Math.floor(previousPercent / 5);
+
+    setAtlasRevealCelebration({
+      id: Date.now(),
+      milestone: crossedFivePercentMilestone,
+      percent: atlasRevealPercent,
+    });
+
+    const celebrationTimeout = window.setTimeout(() => {
+      setAtlasRevealCelebration(null);
+    }, crossedFivePercentMilestone ? 10000 : 1200);
+
+    return () => window.clearTimeout(celebrationTimeout);
+  }, [atlasRevealPercent, isAtlasRevealLoaded]);
 
   if (isLoading || !user) {
     return null;
@@ -374,7 +517,7 @@ export default function MapPage() {
   const handleQuickVisit = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
     const knownCountry = placeholderCountries.find((country) => country.id === countryId);
     const resolvedCountryName = countryName ?? knownCountry?.name;
-    const wasVisited = visitedCountries.includes(countryId);
+    const wasVisited = isCountryAlreadyVisited(countryId);
     const currentColor = countryColors[countryId];
     const hasNeighborColorConflict =
       currentColor !== undefined &&
@@ -386,7 +529,9 @@ export default function MapPage() {
     if (resolvedCountryName) {
       setCountryLabel(countryId, resolvedCountryName);
     }
-    addVisitedCountry(countryId);
+    if (!wasVisited || visitedCountries.includes(countryId)) {
+      addVisitedCountry(countryId);
+    }
 
     if (!wasVisited) {
       const stamp = findCountryStamp(countryId, resolvedCountryName, knownCountry?.code);
@@ -403,7 +548,7 @@ export default function MapPage() {
   };
 
   const handleMapCountryClick = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
-    const wasVisited = visitedCountries.includes(countryId);
+    const wasVisited = isCountryAlreadyVisited(countryId);
     const currentColor = countryColors[countryId];
     const hasNeighborColorConflict =
       currentColor !== undefined &&
@@ -415,7 +560,9 @@ export default function MapPage() {
     if (countryName) {
       setCountryLabel(countryId, countryName);
     }
-    addVisitedCountry(countryId);
+    if (!wasVisited || visitedCountries.includes(countryId)) {
+      addVisitedCountry(countryId);
+    }
 
     if (!wasVisited) {
       const stamp = findCountryStamp(countryId, countryName);
@@ -447,7 +594,7 @@ export default function MapPage() {
   const handleConfirmCountryRemoval = () => {
     if (!countryPendingRemoval) return;
 
-    removeVisitedCountry(countryPendingRemoval.id);
+    countryPendingRemoval.ids.forEach((countryId) => removeVisitedCountry(countryId));
     setCountryPendingRemoval(null);
   };
 
@@ -479,20 +626,124 @@ export default function MapPage() {
       >
         <div className="space-y-6">
           <WorldAtlas
-            visitedCountries={visitedCountries}
-            countryColors={countryColors}
+            visitedCountries={mapVisitedCountryIds}
+            countryColors={mapCountryColors}
             onToggleCountry={handleMapCountryClick}
             onCountryNeighborsReady={handleCountryNeighborsReady}
             onAtlasCountriesReady={handleAtlasCountriesReady}
             atlasSummary={
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="gold">
-                    {atlasCountries.length > 0 ? `Atlas ${scratchPercentage}% revealed` : 'Atlas reveal loading'}
-                  </Badge>
-                  <Badge>{visitedCountries.length} countries visited</Badge>
-                </div>
-                <p className="max-w-2xl text-sm text-ink/65">
+              <div className="space-y-3">
+                <motion.div
+                  className="relative max-w-md rounded-2xl border border-gold/30 bg-white/80 p-3 text-ink shadow-sm-soft"
+                  animate={
+                    atlasRevealCelebration
+                      ? {
+                          boxShadow: [
+                            '0 8px 24px rgba(98, 75, 45, 0.08)',
+                            atlasRevealCelebration.milestone
+                              ? '0 0 0 6px rgba(255, 209, 102, 0.28), 0 18px 42px rgba(201, 151, 55, 0.28)'
+                              : '0 0 0 4px rgba(255, 209, 102, 0.2), 0 14px 32px rgba(201, 151, 55, 0.18)',
+                            '0 8px 24px rgba(98, 75, 45, 0.08)',
+                          ],
+                        }
+                      : undefined
+                  }
+                  transition={{ duration: atlasRevealCelebration?.milestone ? 1.15 : 0.8, ease: 'easeOut' }}
+                >
+                  <AnimatePresence>
+                    {atlasRevealCelebration && (
+                      <motion.div
+                        key={atlasRevealCelebration.id}
+                        className="pointer-events-none absolute -inset-8 z-20"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      >
+                        {atlasRevealSparkles.map((sparkle, index) => (
+                          <motion.span
+                            key={`${atlasRevealCelebration.id}-${sparkle.left}-${sparkle.top}`}
+                            className="absolute rounded-full shadow-md"
+                            style={{ backgroundColor: sparkle.color, left: sparkle.left, top: sparkle.top }}
+                            initial={{
+                              opacity: 0,
+                              scale: 0.25,
+                              x: 0,
+                              y: 0,
+                              rotate: 0,
+                              width: atlasRevealCelebration.milestone ? 12 : 9,
+                              height: atlasRevealCelebration.milestone ? 12 : 9,
+                              borderRadius: index % 3 === 0 ? 3 : 999,
+                            }}
+                            animate={{
+                              opacity: [0, 1, 1, 0],
+                              scale: [0.25, atlasRevealCelebration.milestone ? 1.9 : 1.45, 0.8],
+                              x: sparkle.x,
+                              y: sparkle.y,
+                              rotate: sparkle.rotate,
+                            }}
+                            transition={{
+                              delay: index * 0.025,
+                              duration: atlasRevealCelebration.milestone ? 1.45 : 1.05,
+                              ease: 'easeOut',
+                            }}
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                  <div className="relative z-10 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/80">Atlas reveal</p>
+                      <p className="mt-1 text-sm font-medium text-ink/65">
+                        {isAtlasRevealLoaded ? 'Your world is taking shape.' : 'Calculating progress...'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <motion.p
+                        key={atlasRevealPercent}
+                        className="text-3xl font-serif font-semibold text-ink"
+                        animate={
+                          atlasRevealCelebration
+                            ? { scale: [1, atlasRevealCelebration.milestone ? 1.22 : 1.12, 1] }
+                            : { scale: 1 }
+                        }
+                        transition={{ duration: 0.55, ease: 'easeOut' }}
+                      >
+                        {isAtlasRevealLoaded ? `${atlasRevealPercent}%` : '--'}
+                      </motion.p>
+                      <p className="text-xs font-black uppercase tracking-[0.18em] text-ink/45">revealed</p>
+                    </div>
+                  </div>
+                  <div className="relative z-10 mt-3 h-2.5 overflow-hidden rounded-full border border-gold/10 bg-cream">
+                    <motion.div
+                      className="h-full rounded-full bg-gold"
+                      style={{ width: `${atlasRevealPercent}%` }}
+                      animate={
+                        atlasRevealCelebration
+                          ? { filter: ['brightness(1)', 'brightness(1.3)', 'brightness(1)'] }
+                          : undefined
+                      }
+                      transition={{ duration: 0.7, ease: 'easeOut' }}
+                    />
+                  </div>
+                  <AnimatePresence>
+                    {atlasRevealCelebration?.milestone && (
+                      <motion.div
+                        key={`milestone-${atlasRevealCelebration.id}`}
+                        className="relative z-10 mt-3 flex justify-start"
+                        initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                      >
+                        <span className="rounded-full border border-gold/40 bg-cream px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-gold shadow-sm-soft">
+                          {atlasRevealCelebration.percent}% milestone
+                        </span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+                <p className="inline-flex max-w-2xl rounded-xl border border-gold/25 bg-white/65 px-3 py-2 text-sm font-medium text-ink shadow-sm-soft">
                   Click a country to mark it visited, then open Country Explorer from the visited list.
                 </p>
               </div>
@@ -611,7 +862,7 @@ export default function MapPage() {
                         <button
                           type="button"
                           aria-label={`Remove ${country.name}`}
-                          onClick={() => handleRequestCountryRemoval({ id: country.id, name: country.name })}
+                          onClick={() => handleRequestCountryRemoval({ ids: country.sourceIds, name: country.name })}
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-ink/45 transition hover:bg-white hover:text-ink focus:outline-none focus:ring-2 focus:ring-gold"
                         >
                           X
