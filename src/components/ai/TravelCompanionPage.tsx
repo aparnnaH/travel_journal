@@ -46,6 +46,8 @@ type CompanionDataState = {
   scrapbookPagesLoaded: ReturnType<typeof readScrapbookPagesFromStorage>;
 };
 
+type CompanionRailView = 'prompts' | 'insights' | 'memories' | 'passport';
+
 const initialDataState: CompanionDataState = {
   journalEntries: [],
   importedTrips: [],
@@ -84,6 +86,7 @@ export default function TravelCompanionPage() {
   const [loadingState, setLoadingState] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [atlasCountryLabels, setAtlasCountryLabels] = useState<Record<string, string>>({});
+  const [railView, setRailView] = useState<CompanionRailView>('prompts');
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -233,7 +236,7 @@ export default function TravelCompanionPage() {
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
           ) : null}
 
-          <div className="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="mt-6 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-5">
               <ChatPanel
                 messages={messages}
@@ -287,84 +290,117 @@ export default function TravelCompanionPage() {
               ) : null}
             </div>
 
-            <aside className="space-y-4">
-              {insights ? (
-                <section className="rounded-lg border border-gold/24 bg-[#f9f2e2] px-4 py-4 shadow-soft">
-                  <h2 className="text-xl font-serif text-ink">Suggested Prompts</h2>
-                  <div className="mt-3 space-y-2.5">
+            <aside className="space-y-4 xl:sticky xl:top-6">
+              {context ? <AITripSummaryCard summary={context.tripSummary} /> : null}
+
+              <section className="rounded-lg border border-gold/24 bg-[#f9f2e2] px-3 py-3 shadow-soft">
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    ['prompts', 'Prompts'],
+                    ['insights', 'Insights'],
+                    ['memories', 'Memories'],
+                    ['passport', 'Passport'],
+                  ].map(([key, label]) => {
+                    const isActive = railView === key;
+
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setRailView(key as CompanionRailView)}
+                        className={[
+                          'rounded-md border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition',
+                          isActive
+                            ? 'border-gold/60 bg-white text-ink shadow-soft'
+                            : 'border-gold/25 bg-cream/55 text-ink/70 hover:border-gold/45',
+                        ].join(' ')}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <motion.div
+                key={railView}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="max-h-[62vh] space-y-2.5 overflow-y-auto pr-1 xl:max-h-[calc(100vh-18rem)]"
+              >
+                {railView === 'prompts' && insights ? (
+                  <section className="space-y-2.5">
                     {insights.prompts.map((prompt) => (
                       <SuggestedPromptCard key={prompt.id} title={prompt.title} prompt={prompt.prompt} onSelect={sendPrompt} />
                     ))}
-                  </div>
-                </section>
-              ) : null}
+                  </section>
+                ) : null}
 
-              {context ? <AITripSummaryCard summary={context.tripSummary} /> : null}
+                {railView === 'insights' && insights ? (
+                  <section className="space-y-2.5">
+                    {insights.reflections.map((reflection) => (
+                      <TravelReflectionCard
+                        key={reflection.id}
+                        title={reflection.title}
+                        reflection={reflection.reflection}
+                        anchor={reflection.anchor}
+                      />
+                    ))}
+                    {insights.insightCards.map((card) => (
+                      <MemoryInsightCard key={card.id} title={card.title} detail={card.detail} cta={card.cta} />
+                    ))}
+                  </section>
+                ) : null}
 
-              {insights ? (
-                <section className="space-y-2.5">
-                  {insights.reflections.map((reflection) => (
-                    <TravelReflectionCard
-                      key={reflection.id}
-                      title={reflection.title}
-                      reflection={reflection.reflection}
-                      anchor={reflection.anchor}
-                    />
-                  ))}
-                </section>
-              ) : null}
+                {railView === 'memories' ? (
+                  <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-xl font-serif text-ink">Recent Memories</h2>
+                        <p className="text-sm text-ink/62">From journal, scrapbook, and imported trip context.</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {recentMemories.length ? (
+                        recentMemories.map((memory) => (
+                          <article key={memory.id} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2">
+                            <p className="text-sm font-semibold text-ink">{memory.title}</p>
+                            <p className="mt-1 text-sm text-ink/72">{memory.detail}</p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="text-sm text-ink/60">No travel memories found yet.</p>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
 
-              {insights ? (
-                <section className="space-y-2.5">
-                  {insights.insightCards.map((card) => (
-                    <MemoryInsightCard key={card.id} title={card.title} detail={card.detail} cta={card.cta} />
-                  ))}
-                </section>
-              ) : null}
-
-              <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-xl font-serif text-ink">Recent Memories</h2>
-                    <p className="text-sm text-ink/62">From journal, scrapbook, and imported trip context.</p>
-                  </div>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {recentMemories.length ? (
-                    recentMemories.map((memory) => (
-                      <article key={memory.id} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2">
-                        <p className="text-sm font-semibold text-ink">{memory.title}</p>
-                        <p className="mt-1 text-sm text-ink/72">{memory.detail}</p>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="text-sm text-ink/60">No travel memories found yet.</p>
-                  )}
-                </div>
-              </section>
-
-              <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
-                <h2 className="text-xl font-serif text-ink">Passport Quick Access</h2>
-                <div className="mt-3 space-y-2">
-                  {passportSnapshot.length ? (
-                    passportSnapshot.map((stamp) => (
-                      <p key={`${stamp.stampId}-${stamp.countryName}`} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2 text-sm text-ink/76">
-                        {stamp.countryName} · {stamp.region} · {stamp.rarity}
-                      </p>
-                    ))
-                  ) : (
-                    <p className="text-sm text-ink/60">No collected stamps detected yet.</p>
-                  )}
-                </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 text-center text-sm">
-                  <Link href="/passport" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
-                    Open Passport
-                  </Link>
-                  <Link href="/journal" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
-                    Open Journal
-                  </Link>
-                </div>
-              </section>
+                {railView === 'passport' ? (
+                  <section className="rounded-lg border border-gold/20 bg-white px-4 py-4 shadow-soft">
+                    <h2 className="text-xl font-serif text-ink">Passport Quick Access</h2>
+                    <div className="mt-3 space-y-2">
+                      {passportSnapshot.length ? (
+                        passportSnapshot.map((stamp) => (
+                          <p key={`${stamp.stampId}-${stamp.countryName}`} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2 text-sm text-ink/76">
+                            {stamp.countryName} · {stamp.region} · {stamp.rarity}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="text-sm text-ink/60">No collected stamps detected yet.</p>
+                      )}
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-center text-sm">
+                      <Link href="/passport" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
+                        Open Passport
+                      </Link>
+                      <Link href="/journal" className="rounded-md border border-gold/30 bg-cream/60 px-3 py-2 text-ink transition hover:bg-cream">
+                        Open Journal
+                      </Link>
+                    </div>
+                  </section>
+                ) : null}
+              </motion.div>
             </aside>
           </div>
         </div>
