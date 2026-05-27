@@ -8,8 +8,8 @@ import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import WorldAtlas from '@/components/maps/world/WorldAtlas';
 import CityExplorer from '@/components/maps/city/CityExplorer';
-import { COUNTRY_STAMPS } from '@/data/stamps/countries';
-import { normalizeCountryToStampId } from '@/lib/stamps/assets';
+import type { AtlasCountryReference } from '@/components/maps/world/WorldAtlas';
+import { findCountryStamp } from '@/lib/stamps/matching';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
@@ -108,37 +108,6 @@ function pickVisitedColor(
   return leastUsedColors[randomIndex];
 }
 
-function getRevealedStamp(countryId: string, countryName?: string) {
-  const visitedStampKeys = new Set([
-    countryId.toUpperCase(),
-    normalizeCountryToStampId(countryId),
-  ]);
-
-  if (countryName) {
-    visitedStampKeys.add(countryName.toUpperCase());
-    visitedStampKeys.add(normalizeCountryToStampId(countryName));
-  }
-
-  return COUNTRY_STAMPS.find((stamp) => {
-    if (visitedStampKeys.has(stamp.id) || visitedStampKeys.has(normalizeCountryToStampId(stamp.country_name))) {
-      return true;
-    }
-
-    const atlasMatch = stamp.atlas_ids?.some(
-      (atlasId) =>
-        visitedStampKeys.has(atlasId.toUpperCase()) ||
-        visitedStampKeys.has(normalizeCountryToStampId(atlasId)),
-    );
-    if (atlasMatch) return true;
-
-    return stamp.aliases?.some(
-      (alias) =>
-        visitedStampKeys.has(alias.toUpperCase()) ||
-        visitedStampKeys.has(normalizeCountryToStampId(alias)),
-    );
-  });
-}
-
 interface RevealedStampBanner {
   stampId: string;
   countryName: string;
@@ -174,14 +143,23 @@ export default function MapPage() {
   const [signingOut, setSigningOut] = useState(false);
   const [selectedCountryId, setSelectedCountryId] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
+  const [atlasCountries, setAtlasCountries] = useState<AtlasCountryReference[]>([]);
   const [revealedStamp, setRevealedStamp] = useState<RevealedStampBanner | null>(null);
   const [countryPendingRemoval, setCountryPendingRemoval] = useState<CountryRemovalConfirmation | null>(null);
+  const [isAtlasResetConfirmationOpen, setIsAtlasResetConfirmationOpen] = useState(false);
   const [visitedCountrySearch, setVisitedCountrySearch] = useState('');
   const [visitedCountrySort, setVisitedCountrySort] = useState<VisitedCountrySort>('name-asc');
 
   const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
     setCountryNeighborIds(neighborIds);
   }, []);
+
+  const handleAtlasCountriesReady = useCallback((countries: AtlasCountryReference[]) => {
+    setAtlasCountries(countries);
+  }, []);
+
+  const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
+  const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
 
   useEffect(() => {
     if (!isLoading && user === null) {
@@ -190,11 +168,61 @@ export default function MapPage() {
   }, [user, router, isLoading]);
 
   useEffect(() => {
-    const trackedCountryIds = new Set(placeholderCountries.map((country) => country.id));
-    const trackedVisitedCount = visitedCountries.filter((countryId) => trackedCountryIds.has(countryId)).length;
-    const percent = Math.round((trackedVisitedCount / placeholderCountries.length) * 100);
+    if (atlasCountries.length === 0) return;
+
+    const atlasCountryIds = new Set(atlasCountries.map((country) => country.id));
+    const atlasCountryNames = new Map(
+      atlasCountries.map((country) => [normalizeCountryName(country.name), country.id])
+    );
+    const atlasCountryAlpha2Codes = new Map(
+      atlasCountries
+        .map((country) => {
+          const alpha2Code =
+            countryNameAliases[normalizeCountryName(country.name)] ??
+            alpha2CountryLookup.get(normalizeCountryName(country.name));
+
+          return alpha2Code ? [alpha2Code, country.id] : null;
+        })
+        .filter((entry): entry is [string, string] => entry !== null)
+    );
+    const visitedAtlasCountryIds = new Set<string>();
+
+    visitedCountries.forEach((countryId) => {
+      const normalizedCountryId = countryId.toUpperCase();
+
+      if (atlasCountryIds.has(normalizedCountryId)) {
+        visitedAtlasCountryIds.add(normalizedCountryId);
+        return;
+      }
+
+      const alpha2Match = atlasCountryAlpha2Codes.get(normalizedCountryId);
+      if (alpha2Match) {
+        visitedAtlasCountryIds.add(alpha2Match);
+        return;
+      }
+
+      const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+      const countryNameCandidates = [
+        countryLabels[countryId],
+        knownCountry?.name,
+        getRegionDisplayName(regionNames, countryId),
+        countryId,
+      ];
+
+      for (const countryName of countryNameCandidates) {
+        if (!countryName) continue;
+
+        const nameMatch = atlasCountryNames.get(normalizeCountryName(countryName));
+        if (nameMatch) {
+          visitedAtlasCountryIds.add(nameMatch);
+          return;
+        }
+      }
+    });
+
+    const percent = Math.round((visitedAtlasCountryIds.size / atlasCountries.length) * 100);
     setScratchPercentage(percent);
-  }, [visitedCountries, setScratchPercentage]);
+  }, [alpha2CountryLookup, atlasCountries, countryLabels, regionNames, setScratchPercentage, visitedCountries]);
 
   useEffect(() => {
     if (Object.keys(countryNeighborIds).length === 0) return;
@@ -225,9 +253,6 @@ export default function MapPage() {
   }, [countryColors, countryNeighborIds, setCountryColor, visitedCountries]);
 
   const availableCountries = placeholderCountries.filter((country) => !visitedCountries.includes(country.id));
-
-  const regionNames = useMemo(() => new Intl.DisplayNames(['en'], { type: 'region' }), []);
-  const alpha2CountryLookup = useMemo(() => buildAlpha2CountryLookup(regionNames), [regionNames]);
 
   const selectedCountry = useMemo<Country | null>(() => {
     if (!selectedCountryId) return null;
@@ -324,7 +349,7 @@ export default function MapPage() {
     addVisitedCountry(countryId);
 
     if (!wasVisited) {
-      const stamp = getRevealedStamp(countryId, knownCountry?.name);
+      const stamp = findCountryStamp(countryId, knownCountry?.name);
 
       if (stamp) {
         setRevealedStamp({
@@ -353,7 +378,7 @@ export default function MapPage() {
     addVisitedCountry(countryId);
 
     if (!wasVisited) {
-      const stamp = getRevealedStamp(countryId, countryName);
+      const stamp = findCountryStamp(countryId, countryName);
 
       if (stamp) {
         setRevealedStamp({
@@ -386,6 +411,19 @@ export default function MapPage() {
     setCountryPendingRemoval(null);
   };
 
+  const handleRequestAtlasReset = () => {
+    setIsAtlasResetConfirmationOpen(true);
+  };
+
+  const handleCancelAtlasReset = () => {
+    setIsAtlasResetConfirmationOpen(false);
+  };
+
+  const handleConfirmAtlasReset = () => {
+    reset();
+    setIsAtlasResetConfirmationOpen(false);
+  };
+
   const handleShowRevealedStamp = () => {
     if (!revealedStamp) return;
 
@@ -412,17 +450,20 @@ export default function MapPage() {
                 countryColors={countryColors}
                 onToggleCountry={handleMapCountryClick}
                 onCountryNeighborsReady={handleCountryNeighborsReady}
+                onAtlasCountriesReady={handleAtlasCountriesReady}
               />
 
               <Card className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="gold">Atlas {scratchPercentage}% revealed</Badge>
+                  <Badge variant="gold">
+                    {atlasCountries.length > 0 ? `Atlas ${scratchPercentage}% revealed` : 'Atlas reveal loading'}
+                  </Badge>
                   <Badge>{visitedCountries.length} countries visited</Badge>
                 </div>
                 <p className="text-ink/70">
                   Click a country to mark it visited, then open Country Explorer from the visited list.
                 </p>
-                <Button variant="outline" onClick={() => reset()}>
+                <Button variant="outline" onClick={handleRequestAtlasReset}>
                   Reset Atlas Progress
                 </Button>
               </Card>
@@ -543,6 +584,46 @@ export default function MapPage() {
       <CityExplorer country={selectedCountry} onClose={() => setSelectedCountryId(null)} />
 
       <AnimatePresence>
+        {isAtlasResetConfirmationOpen && (
+          <motion.div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-atlas-title"
+            onClick={handleCancelAtlasReset}
+          >
+            <motion.div
+              className="w-full max-w-sm rounded-2xl border border-gold/30 bg-white p-5 text-ink shadow-lg-soft"
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-gold/80">
+                Confirm reset
+              </p>
+              <h3 id="reset-atlas-title" className="mt-2 text-xl font-semibold text-ink">
+                Reset atlas progress?
+              </h3>
+              <p className="mt-2 text-sm text-ink/65">
+                This will clear your visited countries, atlas colors, country labels, and reveal progress.
+              </p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={handleCancelAtlasReset}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleConfirmAtlasReset}>
+                  Reset Atlas
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {countryPendingRemoval && (
           <motion.div
             className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"

@@ -1,7 +1,9 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import type { Country } from '@/types';
 import { Button } from '@/components/ui';
+import { findCountryStamp } from '@/lib/stamps/matching';
 
 interface CityExplorerProps {
   country: Country | null;
@@ -9,12 +11,21 @@ interface CityExplorerProps {
 }
 
 export default function CityExplorer({ country, onClose }: CityExplorerProps) {
+  const router = useRouter();
+
   if (!country) {
     return null;
   }
 
-  const cityList = (country as any).cities ?? [];
-  const highlights = (country as any).highlights ?? [];
+  const cityList = country.cities ?? [];
+  const highlights = country.highlights ?? [];
+  const passportStamp = findCountryStamp(country.id, country.name, country.code);
+
+  const handleShowPassportStamp = () => {
+    if (!passportStamp) return;
+
+    router.push(`/passport?stamp=${encodeURIComponent(passportStamp.id)}`);
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-black/70 p-6 backdrop-blur-sm">
@@ -56,7 +67,7 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
                 <p className="text-sm uppercase tracking-[0.26em] text-white/50">Visited cities</p>
                 <ul className="mt-3 space-y-3 text-sm text-white/80">
                   {cityList.length > 0 ? (
-                    cityList.map((city: any) => (
+                    cityList.map((city) => (
                       <li key={city.id} className="rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3">
                         <p className="font-medium">{city.name}</p>
                         <p className="text-xs text-white/60">{city.region}</p>
@@ -93,6 +104,19 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
             <div className="space-y-4 rounded-3xl border border-ink/10 bg-cream p-4">
               <div className="text-sm font-medium text-ink">Country</div>
               <div className="text-2xl font-semibold text-ink">{country.name}</div>
+            </div>
+            <div className="space-y-3 rounded-3xl border border-gold/25 bg-cream p-4">
+              <div>
+                <div className="text-sm font-medium text-ink">Passport stamp</div>
+                <p className="mt-1 text-sm text-ink/70">
+                  {passportStamp
+                    ? `${passportStamp.visual.edition_name} in your ${passportStamp.region} folio.`
+                    : 'No passport stamp is available for this country yet.'}
+                </p>
+              </div>
+              <Button size="sm" variant="outline" onClick={handleShowPassportStamp} disabled={!passportStamp}>
+                View stamp
+              </Button>
             </div>
             <div className="space-y-4 rounded-3xl border border-ink/10 bg-cream p-4">
               <div className="text-sm font-medium text-ink">Next step</div>

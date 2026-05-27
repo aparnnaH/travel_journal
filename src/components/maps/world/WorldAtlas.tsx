@@ -9,6 +9,7 @@ interface WorldAtlasProps {
   countryColors: Record<string, string>;
   onToggleCountry: (countryId: string, countryName?: string, neighboringCountryIds?: string[]) => void;
   onCountryNeighborsReady?: (countryNeighborIds: Record<string, string[]>) => void;
+  onAtlasCountriesReady?: (countries: AtlasCountryReference[]) => void;
 }
 
 const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
@@ -59,6 +60,11 @@ type Topology = {
   objects: Record<string, TopoGeometryCollection>;
 };
 
+export interface AtlasCountryReference {
+  id: string;
+  name: string;
+}
+
 type MapPosition = {
   coordinates: [number, number];
   zoom: number;
@@ -82,6 +88,11 @@ function getTopologyCountryId(geometry: TopoGeometry) {
   if (geometry.id !== undefined && geometry.id !== null) return String(geometry.id).toUpperCase();
   const name = geometry.properties?.name;
   return name ? String(name).toUpperCase() : '';
+}
+
+function getTopologyCountryName(geometry: TopoGeometry) {
+  const name = geometry.properties?.name;
+  return name ? String(name) : undefined;
 }
 
 function addArcOwner(arcIndex: number, geometryIndex: number, arcOwners: Map<number, number[]>) {
@@ -145,6 +156,22 @@ function buildCountryNeighborMap(topology: Topology) {
   );
 }
 
+function buildAtlasCountries(topology: Topology): AtlasCountryReference[] {
+  const collection = topology.objects[Object.keys(topology.objects)[0]];
+  const geometries = collection?.geometries ?? [];
+
+  return geometries
+    .map((geometry) => {
+      const id = getTopologyCountryId(geometry);
+      const name = getTopologyCountryName(geometry);
+
+      if (!id || !name) return null;
+
+      return { id, name };
+    })
+    .filter((country): country is AtlasCountryReference => country !== null);
+}
+
 function clampMapZoom(zoom: number) {
   return Math.min(maxMapZoom, Math.max(minMapZoom, zoom));
 }
@@ -154,6 +181,7 @@ export default function WorldAtlas({
   countryColors,
   onToggleCountry,
   onCountryNeighborsReady,
+  onAtlasCountriesReady,
 }: WorldAtlasProps) {
   const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
   const [countryNeighborIds, setCountryNeighborIds] = useState<Record<string, string[]>>({});
@@ -169,9 +197,11 @@ export default function WorldAtlas({
 
         const topology = (await response.json()) as Topology;
         const neighborMap = buildCountryNeighborMap(topology);
+        const atlasCountries = buildAtlasCountries(topology);
         if (isMounted) {
           setCountryNeighborIds(neighborMap);
           onCountryNeighborsReady?.(neighborMap);
+          onAtlasCountriesReady?.(atlasCountries);
         }
       } catch {
         if (isMounted) setCountryNeighborIds({});
@@ -183,7 +213,7 @@ export default function WorldAtlas({
     return () => {
       isMounted = false;
     };
-  }, [onCountryNeighborsReady]);
+  }, [onAtlasCountriesReady, onCountryNeighborsReady]);
 
   function handleCountryToggle(id: string, countryName?: string) {
     onToggleCountry(id, countryName, countryNeighborIds[id] ?? []);
