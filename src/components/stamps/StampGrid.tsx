@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import HTMLFlipBook from 'react-pageflip';
 import { CountryStamp } from '@/types/stamps';
 import { sortStampsByRegion } from '@/lib/stamps/utils';
@@ -29,15 +29,10 @@ const STAMPS_PER_PAGE = 4;
 
 type PageFlipOrientation = 'portrait' | 'landscape';
 
-interface PageFlipApi {
-  flipNext: (corner?: 'top' | 'bottom') => void;
-  flipPrev: (corner?: 'top' | 'bottom') => void;
-  getCurrentPageIndex: () => number;
-  getPageCount: () => number;
-}
-
-interface PageFlipBookRef {
-  pageFlip: () => PageFlipApi;
+interface StampBookPage {
+  label: string;
+  stamps: CountryStamp[];
+  stampIndexOffset: number;
 }
 
 interface PageFlipEvent {
@@ -47,28 +42,76 @@ interface PageFlipEvent {
   };
 }
 
-const chunkStampsForPages = (stamps: CountryStamp[]) => {
-  const pages: CountryStamp[][] = [];
+const sortRegionEntries = (entries: [string, CountryStamp[]][]) =>
+  entries.sort(([firstRegion], [secondRegion]) => {
+    const firstIndex = REGION_ORDER.indexOf(firstRegion);
+    const secondIndex = REGION_ORDER.indexOf(secondRegion);
+
+    if (firstIndex === -1 && secondIndex === -1) {
+      return firstRegion.localeCompare(secondRegion);
+    }
+
+    if (firstIndex === -1) return 1;
+    if (secondIndex === -1) return -1;
+
+    return firstIndex - secondIndex;
+  });
+
+const getSortedRegionEntries = (stamps: CountryStamp[]) =>
+  sortRegionEntries(Object.entries(sortStampsByRegion(stamps)));
+
+const chunkStampsForPages = (
+  stamps: CountryStamp[],
+  label: string,
+  stampIndexOffset = 0,
+  padToEvenPageCount = true,
+) => {
+  const pages: StampBookPage[] = [];
 
   for (let index = 0; index < stamps.length; index += STAMPS_PER_PAGE) {
-    pages.push(stamps.slice(index, index + STAMPS_PER_PAGE));
+    pages.push({
+      label,
+      stamps: stamps.slice(index, index + STAMPS_PER_PAGE),
+      stampIndexOffset: stampIndexOffset + index,
+    });
   }
 
   if (pages.length === 0) {
-    pages.push([]);
+    pages.push({ label, stamps: [], stampIndexOffset });
   }
 
-  if (pages.length % 2 !== 0) {
-    pages.push([]);
+  if (padToEvenPageCount && pages.length % 2 !== 0) {
+    pages.push({ label, stamps: [], stampIndexOffset: stampIndexOffset + stamps.length });
   }
 
   return pages;
 };
 
+const padBookPages = (pages: StampBookPage[]) => {
+  if (pages.length === 0) {
+    return pages;
+  }
+
+  if (pages.length % 2 === 0) {
+    return pages;
+  }
+
+  const lastPage = pages[pages.length - 1];
+
+  return [
+    ...pages,
+    {
+      label: lastPage.label,
+      stamps: [],
+      stampIndexOffset: lastPage.stampIndexOffset + lastPage.stamps.length,
+    },
+  ];
+};
+
 const getRegionId = (region: string) => region.toLowerCase().replace(/\s+/g, '-');
 
 interface PassportBookPageProps {
-  region: string;
+  label: string;
   pageNumber: number;
   stamps: CountryStamp[];
   stampIndexOffset: number;
@@ -77,7 +120,7 @@ interface PassportBookPageProps {
 }
 
 const PassportBookPage = React.forwardRef<HTMLDivElement, PassportBookPageProps>(
-  ({ region, pageNumber, stamps, stampIndexOffset, unlockedStamps, side }, ref) => (
+  ({ label, pageNumber, stamps, stampIndexOffset, unlockedStamps, side }, ref) => (
     <div
       ref={ref}
       className={`${styles.passportPage} ${side === 'left' ? styles.leftPage : styles.rightPage} ${
@@ -86,7 +129,7 @@ const PassportBookPage = React.forwardRef<HTMLDivElement, PassportBookPageProps>
     >
       <div className={styles.pageInner}>
         <div className={styles.pageMark}>
-          <span>{region}</span>
+          <span>{label}</span>
           <small>{String(pageNumber).padStart(2, '0')}</small>
         </div>
         <div className={styles.pageGrid}>
@@ -117,6 +160,8 @@ interface RegionFlipBookProps {
   region: string;
   regionStamps: CountryStamp[];
   unlockedStamps: string[];
+  pages?: StampBookPage[];
+  eyebrow?: string;
 }
 
 const getEventPage = (event: PageFlipEvent) => {
@@ -150,20 +195,26 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
   region,
   regionStamps,
   unlockedStamps,
+  pages: providedPages,
+  eyebrow = 'Regional folio',
 }) => {
-  const bookRef = useRef<PageFlipBookRef | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [orientation, setOrientation] = useState<PageFlipOrientation>('landscape');
 
-  const pages = useMemo(() => chunkStampsForPages(regionStamps), [regionStamps]);
+  const pages = useMemo(
+    () => providedPages ?? chunkStampsForPages(regionStamps, region),
+    [providedPages, region, regionStamps],
+  );
   const unlockedInRegion = regionStamps.filter((stamp) => unlockedStamps.includes(stamp.id)).length;
   const totalPages = pages.length;
   const regionId = getRegionId(region);
   const isPortrait = orientation === 'portrait';
   const spreadStartPage = isPortrait ? currentPage + 1 : Math.floor(currentPage / 2) * 2 + 1;
   const spreadEndPage = isPortrait ? spreadStartPage : Math.min(spreadStartPage + 1, totalPages);
-  const isFirstPage = currentPage <= 0;
-  const isLastPage = isPortrait ? currentPage >= totalPages - 1 : currentPage >= totalPages - 2;
+  const currentPageLabel =
+    spreadEndPage !== spreadStartPage
+      ? `${String(spreadStartPage).padStart(2, '0')}-${String(spreadEndPage).padStart(2, '0')}`
+      : String(spreadStartPage).padStart(2, '0');
 
   const handleFlip = (event: PageFlipEvent) => {
     setCurrentPage(Math.min(getEventPage(event), Math.max(totalPages - 1, 0)));
@@ -182,19 +233,11 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
     handleOrientation(event);
   };
 
-  const flipPrevious = () => {
-    bookRef.current?.pageFlip().flipPrev('top');
-  };
-
-  const flipNext = () => {
-    bookRef.current?.pageFlip().flipNext('top');
-  };
-
   return (
     <section className={styles.regionSection} aria-labelledby={`${regionId}-stamps`}>
       <div className={styles.regionHeader}>
         <div>
-          <p className={styles.regionEyebrow}>Regional folio</p>
+          <p className={styles.regionEyebrow}>{eyebrow}</p>
           <h2 id={`${regionId}-stamps`} className={styles.regionTitle}>
             {region}
           </h2>
@@ -208,37 +251,20 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
             <small>of</small>
             <span>{regionStamps.length}</span>
           </div>
-          <div className={styles.pageControls} aria-label={`${region} passport page controls`}>
-            <button
-              type="button"
-              className={styles.pageButton}
-              onClick={flipPrevious}
-              disabled={isFirstPage}
-              aria-label={`Previous ${region} passport page`}
-            >
-              <span aria-hidden="true">‹</span>
-            </button>
-            <span className={styles.pageIndicator} aria-live="polite">
-              {String(spreadStartPage).padStart(2, '0')}
-              {spreadEndPage !== spreadStartPage ? `-${String(spreadEndPage).padStart(2, '0')}` : ''}
-              <small>/ {String(totalPages).padStart(2, '0')}</small>
-            </span>
-            <button
-              type="button"
-              className={styles.pageButton}
-              onClick={flipNext}
-              disabled={isLastPage}
-              aria-label={`Next ${region} passport page`}
-            >
-              <span aria-hidden="true">›</span>
-            </button>
+          <div
+            className={styles.pageReadout}
+            aria-label={`${region} showing page ${currentPageLabel} of ${totalPages}`}
+            aria-live="polite"
+          >
+            <span>{spreadEndPage !== spreadStartPage ? 'Pages' : 'Page'}</span>
+            <strong>{currentPageLabel}</strong>
+            <small>of {String(totalPages).padStart(2, '0')}</small>
           </div>
         </div>
       </div>
 
       <div className={styles.bookStack} aria-label={`${region} passport book`}>
         <HTMLFlipBook
-          ref={bookRef}
           className={styles.flipBook}
           style={{}}
           startPage={0}
@@ -261,7 +287,7 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
           useMouseEvents
           swipeDistance={28}
           showPageCorners
-          disableFlipByClick
+          disableFlipByClick={false}
           renderOnlyPageLengthChange={false}
           onFlip={handleFlip}
           onInit={handleInit}
@@ -269,11 +295,11 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
         >
           {pages.map((pageStamps, pageIndex) => (
             <PassportBookPage
-              key={`${region}-${pageIndex}`}
-              region={region}
+              key={`${region}-${pageIndex}-${pageStamps.label}`}
+              label={pageStamps.label}
               pageNumber={pageIndex + 1}
-              stamps={pageStamps}
-              stampIndexOffset={pageIndex * STAMPS_PER_PAGE}
+              stamps={pageStamps.stamps}
+              stampIndexOffset={pageStamps.stampIndexOffset}
               unlockedStamps={unlockedStamps}
               side={pageIndex % 2 === 0 ? 'left' : 'right'}
             />
@@ -297,34 +323,52 @@ export const StampGrid: React.FC<StampGridProps> = ({
     return stamps;
   }, [stamps, selectedRegion]);
 
+  const allRegionEntries = useMemo(() => getSortedRegionEntries(stamps), [stamps]);
+
+  const combinedBookPages = useMemo(() => {
+    const { pages } = allRegionEntries.reduce<{ pages: StampBookPage[]; stampIndexOffset: number }>(
+      (acc, [region, regionStamps]) => ({
+        pages: [
+          ...acc.pages,
+          ...chunkStampsForPages(regionStamps, region, acc.stampIndexOffset, false),
+        ],
+        stampIndexOffset: acc.stampIndexOffset + regionStamps.length,
+      }),
+      { pages: [], stampIndexOffset: 0 },
+    );
+
+    return padBookPages(pages);
+  }, [allRegionEntries]);
+
+  const combinedBookStamps = useMemo(() => {
+    return allRegionEntries.flatMap(([, regionStamps]) => regionStamps);
+  }, [allRegionEntries]);
+
   const regionEntries = useMemo(() => {
-    const stampsByRegion = sortStampsByRegion(displayStamps);
-
-    return Object.entries(stampsByRegion).sort(([firstRegion], [secondRegion]) => {
-      const firstIndex = REGION_ORDER.indexOf(firstRegion);
-      const secondIndex = REGION_ORDER.indexOf(secondRegion);
-
-      if (firstIndex === -1 && secondIndex === -1) {
-        return firstRegion.localeCompare(secondRegion);
-      }
-
-      if (firstIndex === -1) return 1;
-      if (secondIndex === -1) return -1;
-
-      return firstIndex - secondIndex;
-    });
+    return getSortedRegionEntries(displayStamps);
   }, [displayStamps]);
 
   return (
     <div className={styles.stampGridWrapper}>
-      {regionEntries.map(([region, regionStamps]) => (
+      {!selectedRegion ? (
         <RegionFlipBook
-          key={region}
-          region={region}
-          regionStamps={regionStamps}
+          key="complete-passport"
+          region="Passport Collection"
+          regionStamps={combinedBookStamps}
           unlockedStamps={unlockedStamps}
+          pages={combinedBookPages}
+          eyebrow="Complete passport"
         />
-      ))}
+      ) : (
+        regionEntries.map(([region, regionStamps]) => (
+          <RegionFlipBook
+            key={region}
+            region={region}
+            regionStamps={regionStamps}
+            unlockedStamps={unlockedStamps}
+          />
+        ))
+      )}
 
       {displayStamps.length === 0 && (
         <div className={styles.emptyState}>
