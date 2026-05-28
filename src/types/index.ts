@@ -49,6 +49,15 @@ export interface PassportStamp {
 /**
  * Country and scratch map types
  */
+export interface CountryCity {
+  id: string;
+  name: string;
+  region: string;
+  visited: boolean;
+  coordinates?: [number, number];
+  createdAt?: string;
+}
+
 export interface Country {
   id: string;
   name: string;
@@ -58,12 +67,7 @@ export interface Country {
   visitedAt?: string;
   journalEntries: JournalEntry[];
   coordinates?: [number, number];
-  cities?: Array<{
-    id: string;
-    name: string;
-    region: string;
-    visited: boolean;
-  }>;
+  cities?: CountryCity[];
   highlights?: string[];
 }
 
@@ -72,6 +76,7 @@ export interface ScratchMapState {
   visitedCountries: string[]; // country IDs
   countryColors: Record<string, string>; // country ID => persisted display color
   countryLabels: Record<string, string>; // country ID => persisted display label
+  countryCities: Record<string, CountryCity[]>; // country ID => user-added city pins
   lastUpdated: string;
 }
 

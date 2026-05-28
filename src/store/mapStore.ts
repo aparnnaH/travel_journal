@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { ScratchMapState } from '@/types';
+import type { CountryCity, ScratchMapState } from '@/types';
 
 interface MapStore extends ScratchMapState {
   setScratchPercentage: (percentage: number) => void;
@@ -11,6 +11,8 @@ interface MapStore extends ScratchMapState {
   clearCountryColor: (countryId: string) => void;
   setCountryLabel: (countryId: string, label: string) => void;
   clearCountryLabel: (countryId: string) => void;
+  addCountryCity: (countryId: string, city: CountryCity) => void;
+  removeCountryCity: (countryId: string, cityId: string) => void;
   reset: () => void;
 }
 
@@ -19,6 +21,7 @@ const initialState: ScratchMapState = {
   visitedCountries: [],
   countryColors: {},
   countryLabels: {},
+  countryCities: {},
   lastUpdated: new Date().toISOString(),
 };
 
@@ -57,6 +60,9 @@ export const useMapStore = create<MapStore>()(
           countryLabels: Object.fromEntries(
             Object.entries(state.countryLabels).filter(([id]) => id !== countryId)
           ),
+          countryCities: Object.fromEntries(
+            Object.entries(state.countryCities ?? {}).filter(([id]) => id !== countryId)
+          ),
           lastUpdated: new Date().toISOString(),
         })),
       setVisitedCountries: (visitedCountries) =>
@@ -94,6 +100,36 @@ export const useMapStore = create<MapStore>()(
           ),
           lastUpdated: new Date().toISOString(),
         })),
+      addCountryCity: (countryId, city) =>
+        set((state) => {
+          const countryCities = state.countryCities ?? {};
+          const existingCities = countryCities[countryId] ?? [];
+          const nextCities = [
+            ...existingCities.filter((existingCity) => existingCity.id !== city.id),
+            city,
+          ];
+
+          return {
+            countryCities: {
+              ...countryCities,
+              [countryId]: nextCities,
+            },
+            lastUpdated: new Date().toISOString(),
+          };
+        }),
+      removeCountryCity: (countryId, cityId) =>
+        set((state) => {
+          const countryCities = state.countryCities ?? {};
+          const nextCities = (countryCities[countryId] ?? []).filter((city) => city.id !== cityId);
+
+          return {
+            countryCities: {
+              ...countryCities,
+              [countryId]: nextCities,
+            },
+            lastUpdated: new Date().toISOString(),
+          };
+        }),
       reset: () => set(initialState),
     }),
     {
