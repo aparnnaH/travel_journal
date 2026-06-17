@@ -6,12 +6,29 @@ import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
 
+const getInitials = (value: string) => {
+  const words = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return 'TJ';
+  }
+
+  return words
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join('');
+};
+
 export default function AppHeader() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
   const accountLabel = user?.displayName || user?.email || 'Signed in';
+  const avatarUrl = user?.avatar?.trim();
 
   const handleSignOut = async () => {
     await signOut();
@@ -58,10 +75,22 @@ export default function AppHeader() {
             <>
               <Link
                 href="/profile"
-                className="flex min-w-0 items-center gap-2 rounded-full border border-gold/30 bg-white/70 px-3 py-1.5 text-left shadow-sm transition-colors hover:border-gold/60"
+                className="flex min-w-0 items-center gap-2.5 rounded-full border border-gold/30 bg-white/70 py-1.5 pl-1.5 pr-3 text-left shadow-sm transition-colors hover:border-gold/60"
                 aria-label={`Signed in as ${accountLabel}`}
               >
-                <span className="h-2 w-2 shrink-0 rounded-full bg-green-600" aria-hidden="true" />
+                <span className="relative flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gold/25 bg-cream text-xs font-semibold text-gold-deep">
+                  {avatarUrl ? (
+                    <span
+                      role="img"
+                      aria-label={`${accountLabel} profile picture`}
+                      className="h-full w-full bg-cover bg-center"
+                      style={{ backgroundImage: `url(${avatarUrl})` }}
+                    />
+                  ) : (
+                    <span aria-hidden="true">{getInitials(accountLabel)}</span>
+                  )}
+                  <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-white bg-green-600" aria-hidden="true" />
+                </span>
                 <span className="min-w-0 leading-tight">
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-gold-deep">
                     Signed in
