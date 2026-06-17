@@ -2,9 +2,44 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import {
+  ChevronDown,
+  Compass,
+  LogOut,
+  MapPinned,
+  Menu,
+  Sparkles,
+  Stamp,
+  UserRound,
+  UsersRound,
+  X,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
+
+type HeaderMenu = 'explore' | 'account' | null;
+
+interface HeaderLink {
+  label: string;
+  href: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+const exploreLinks = [
+  { label: 'Map', href: '/map', description: 'Mark countries, cities, and atlas progress.', icon: MapPinned },
+  { label: 'Passport', href: '/passport', description: 'Browse unlocked stamps from your travels.', icon: Stamp },
+  { label: 'Travel Audit', href: '/compare', description: 'Compare map visits with passport stamps.', icon: Compass },
+  { label: 'Companion', href: '/companion', description: 'Draft and polish travel memories with AI.', icon: Sparkles },
+] satisfies HeaderLink[];
+
+const accountLinks = [
+  { label: 'Profile', href: '/profile', description: 'Update your identity, photo, and details.', icon: UserRound },
+  { label: 'Friends / Travel Circle', href: '/friends', description: 'Manage friends and shared journal access.', icon: UsersRound },
+] satisfies HeaderLink[];
 
 const getInitials = (value: string) => {
   const words = value
@@ -27,48 +62,157 @@ export default function AppHeader() {
   const isLoading = useAuthStore((state) => state.isLoading);
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
+  const [openMenu, setOpenMenu] = useState<HeaderMenu>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const accountLabel = user?.displayName || user?.email || 'Signed in';
   const avatarUrl = user?.avatar?.trim();
 
   const handleSignOut = async () => {
     await signOut();
     logout();
+    setOpenMenu(null);
+    setMobileOpen(false);
     router.push('/login');
   };
 
+  const closeMenus = () => {
+    setOpenMenu(null);
+    setMobileOpen(false);
+  };
+
   return (
-    <header className="sticky top-0 z-40 h-16 border-b border-gold/10 bg-cream/95 backdrop-blur-sm">
-      <div className="container mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex shrink-0 items-center gap-2 text-ink">
-          <span className="text-2xl font-serif text-gold-deep">✈️</span>
-          <span className="text-lg font-serif font-bold">Travel Journal</span>
+    <header className="sticky top-0 z-40 border-b border-gold/10 bg-cream/90 backdrop-blur-xl">
+      <div className="container mx-auto flex min-h-16 items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
+        <Link href="/" className="flex shrink-0 items-center gap-2 text-ink" onClick={closeMenus}>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-gold/20 bg-white text-gold-deep shadow-sm">
+            <Compass className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <span className="text-lg font-semibold">Travel Journal</span>
         </Link>
 
-        <nav className="hidden items-center gap-5 text-sm text-ink md:flex lg:gap-6">
-          <Link href="/" className="hover:text-gold transition-colors">
-            Home
-          </Link>
-          <Link href="/map" className="hover:text-gold transition-colors">
-            Map
-          </Link>
-          <Link href="/journal" className="hover:text-gold transition-colors">
-            Journal
-          </Link>
-          <Link href="/companion" className="hover:text-gold transition-colors">
-            Companion
-          </Link>
-          <Link href="/passport" className="hover:text-gold transition-colors">
-            Passport
-          </Link>
-          <Link href="/friends" className="hover:text-gold transition-colors">
-            Friends
-          </Link>
-          <Link href="/dashboard" className="hover:text-gold transition-colors">
+        <nav className="hidden items-center gap-1 text-sm text-ink lg:flex">
+          <Link
+            href="/dashboard"
+            className="inline-flex h-10 items-center rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
+            onClick={closeMenus}
+          >
             Dashboard
           </Link>
-          <Link href="/profile" className="hover:text-gold transition-colors">
-            Profile
+
+          <div
+            className="relative"
+            onMouseEnter={() => setOpenMenu('explore')}
+            onMouseLeave={() => setOpenMenu((current) => (current === 'explore' ? null : current))}
+          >
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-1 rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
+              onClick={() => setOpenMenu((current) => (current === 'explore' ? null : 'explore'))}
+              aria-expanded={openMenu === 'explore'}
+              aria-haspopup="menu"
+            >
+              Explore
+              <ChevronDown className={`h-4 w-4 transition ${openMenu === 'explore' ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {openMenu === 'explore' ? (
+              <div className="absolute left-0 top-full mt-3 w-80 rounded-xl border border-gold/16 bg-white p-3 shadow-xl" role="menu">
+                {exploreLinks.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                    role="menuitem"
+                    onClick={closeMenus}
+                  >
+                    <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                    <span>
+                      <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                      <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <Link
+            href="/journal"
+            className="inline-flex h-10 items-center rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
+            onClick={closeMenus}
+          >
+            Journal
           </Link>
+
+          <div
+            className="relative"
+            onMouseEnter={() => setOpenMenu('account')}
+            onMouseLeave={() => setOpenMenu((current) => (current === 'account' ? null : current))}
+          >
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-1 rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
+              onClick={() => setOpenMenu((current) => (current === 'account' ? null : 'account'))}
+              aria-expanded={openMenu === 'account'}
+              aria-haspopup="menu"
+            >
+              Account
+              <ChevronDown className={`h-4 w-4 transition ${openMenu === 'account' ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {openMenu === 'account' ? (
+              <div className="absolute right-0 top-full mt-3 w-80 rounded-xl border border-gold/16 bg-white p-3 shadow-xl" role="menu">
+                {user
+                  ? accountLinks.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                        role="menuitem"
+                        onClick={closeMenus}
+                      >
+                        <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                        <span>
+                          <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                          <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                        </span>
+                      </Link>
+                    ))
+                  : null}
+                {user ? (
+                  <button
+                    type="button"
+                    className="mt-1 flex w-full select-none gap-4 rounded-md border-t border-gold/10 p-3 text-left leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                    role="menuitem"
+                    onClick={handleSignOut}
+                  >
+                    <LogOut className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                    <span>
+                      <span className="block text-sm font-semibold text-ink">Sign out</span>
+                      <span className="mt-1 block text-sm leading-snug text-ink/58">Leave this account on this device.</span>
+                    </span>
+                  </button>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
+                      role="menuitem"
+                      onClick={closeMenus}
+                    >
+                      Sign in
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
+                      role="menuitem"
+                      onClick={closeMenus}
+                    >
+                      Get started
+                    </Link>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
         </nav>
 
         <div className="flex shrink-0 items-center gap-3">
@@ -103,26 +247,136 @@ export default function AppHeader() {
                   </span>
                 </span>
               </Link>
-              <Button variant="secondary" size="sm" onClick={handleSignOut}>
-                Sign out
-              </Button>
             </>
           ) : (
             <>
-              <Link href="/login">
+              <Link href="/login" className="hidden sm:block">
                 <Button variant="ghost" size="sm">
                   Sign In
                 </Button>
               </Link>
-              <Link href="/signup">
+              <Link href="/signup" className="hidden sm:block">
                 <Button variant="primary" size="sm">
                   Get Started
                 </Button>
               </Link>
             </>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="lg:hidden"
+            onClick={() => setMobileOpen((current) => !current)}
+            aria-label={mobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X className="h-5 w-5" aria-hidden="true" /> : <Menu className="h-5 w-5" aria-hidden="true" />}
+          </Button>
         </div>
       </div>
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 bg-ink/20 backdrop-blur-sm lg:hidden" role="presentation" onClick={closeMenus}>
+          <aside
+            className="ml-auto flex h-full w-full max-w-sm flex-col overflow-y-auto border-l border-gold/16 bg-cream p-5 shadow-xl"
+            aria-label="Mobile navigation"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <Link href="/" className="flex items-center gap-2 text-ink" onClick={closeMenus}>
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-gold/20 bg-white text-gold-deep shadow-sm">
+                  <Compass className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="text-lg font-semibold">Travel Journal</span>
+              </Link>
+              <Button variant="ghost" size="sm" onClick={closeMenus} aria-label="Close navigation menu">
+                <X className="h-5 w-5" aria-hidden="true" />
+              </Button>
+            </div>
+
+            <nav className="mt-8 flex flex-1 flex-col gap-6 text-sm text-ink">
+              <Link href="/dashboard" className="font-semibold" onClick={closeMenus}>
+                Dashboard
+              </Link>
+
+              <div>
+                <p className="font-semibold text-ink">Explore</p>
+                <div className="mt-2 grid gap-1">
+                  {exploreLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="flex select-none gap-4 rounded-md p-3 leading-none outline-none transition-colors hover:bg-white"
+                      onClick={closeMenus}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                        <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <Link href="/journal" className="font-semibold" onClick={closeMenus}>
+                Journal
+              </Link>
+
+              <div className="border-t border-gold/16 pt-5">
+                <p className="font-semibold text-ink">Account</p>
+                <div className="mt-2 grid gap-1">
+                  {user ? (
+                    <>
+                      {accountLinks.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="flex select-none gap-4 rounded-md p-3 leading-none outline-none transition-colors hover:bg-white"
+                          onClick={closeMenus}
+                        >
+                          <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                          <span>
+                            <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                            <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                          </span>
+                        </Link>
+                      ))}
+                      <button
+                        type="button"
+                        className="flex select-none gap-4 rounded-md p-3 text-left leading-none outline-none transition-colors hover:bg-white"
+                        onClick={handleSignOut}
+                      >
+                        <LogOut className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                        <span>
+                          <span className="block text-sm font-semibold text-ink">Sign out</span>
+                          <span className="mt-1 block text-sm leading-snug text-ink/58">Leave this account on this device.</span>
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Link
+                        href="/login"
+                        className="rounded-md px-3 py-2 font-medium transition-colors hover:bg-white"
+                        onClick={closeMenus}
+                      >
+                        Sign in
+                      </Link>
+                      <Link
+                        href="/signup"
+                        className="rounded-md px-3 py-2 font-medium transition-colors hover:bg-white"
+                        onClick={closeMenus}
+                      >
+                        Get started
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </div>
+            </nav>
+          </aside>
+        </div>
+      ) : null}
     </header>
   );
 }
