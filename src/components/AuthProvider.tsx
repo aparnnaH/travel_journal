@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
-import { setAuthCookie, supabase } from '@/lib/supabase';
+import { getSupabaseClient, setAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 import type { AuthUser } from '@/types';
@@ -77,6 +77,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const initialize = async () => {
       setLoading(true);
       try {
+        const supabase = getSupabaseClient();
         const { data: sessionData } = await supabase.auth.getSession();
         setAuthCookie(sessionData.session?.access_token ?? null);
 
@@ -99,26 +100,31 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     initialize();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        const user = session?.user;
-        setAuthCookie(session?.access_token ?? null);
+    try {
+      const supabase = getSupabaseClient();
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          const user = session?.user;
+          setAuthCookie(session?.access_token ?? null);
 
-        if (event === 'SIGNED_IN' && user) {
-          setLoading(true);
-          setUser(await buildAuthUser(user));
+          if (event === 'SIGNED_IN' && user) {
+            setLoading(true);
+            setUser(await buildAuthUser(user));
+          }
+
+          if (event === 'SIGNED_OUT') {
+            logout();
+            router.replace('/login');
+          }
+
+          setLoading(false);
         }
+      );
 
-        if (event === 'SIGNED_OUT') {
-          logout();
-          router.replace('/login');
-        }
-
-        setLoading(false);
-      }
-    );
-
-    subscription = authListener?.subscription ?? null;
+      subscription = authListener?.subscription ?? null;
+    } catch (error) {
+      console.warn('Unable to subscribe to authentication changes.', error);
+    }
 
     return () => {
       subscription?.unsubscribe?.();
