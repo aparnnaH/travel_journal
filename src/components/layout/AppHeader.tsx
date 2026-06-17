@@ -60,6 +60,9 @@ export default function AppHeader() {
           <Link href="/passport" className="hover:text-gold transition-colors">
             Passport
           </Link>
+          <Link href="/friends" className="hover:text-gold transition-colors">
+            Friends
+          </Link>
           <Link href="/dashboard" className="hover:text-gold transition-colors">
             Dashboard
           </Link>

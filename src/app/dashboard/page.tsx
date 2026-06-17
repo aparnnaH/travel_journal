@@ -11,6 +11,7 @@ import {
   Sparkles,
   Stamp,
   Tags,
+  UsersRound,
   UserRound,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -164,6 +165,13 @@ export default function DashboardPage() {
       tone: 'bg-[#E8F1EA] text-[#315F43] border-[#A7C6AD]',
     },
     {
+      title: 'Build your travel circle',
+      description: 'Invite friends before shared journal features arrive.',
+      href: '/friends',
+      icon: UsersRound,
+      tone: 'bg-[#F3E6D8] text-[#71481F] border-[#D9B98C]',
+    },
+    {
       title: 'Ask for a story thread',
       description: 'Turn scattered memories into a stronger draft.',
       href: '/companion',
@@ -312,12 +320,12 @@ export default function DashboardPage() {
               onClick={() => router.push('/journal')}
             />
             <MetricCard
-              icon={Sparkles}
-              label="AI context"
-              value={String(archiveScore)}
-              detail="Signals for the companion"
+              icon={UsersRound}
+              label="Travel circle"
+              value="New"
+              detail="Friend requests and invites"
               tone="bg-[#F6E8EE] text-[#7A3E59]"
-              onClick={() => router.push('/companion')}
+              onClick={() => router.push('/friends')}
             />
           </section>
 

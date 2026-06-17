@@ -14,6 +14,7 @@ import {
   Sparkles,
   Stamp,
   UserRound,
+  UsersRound,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
@@ -410,6 +411,7 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 {[
                   { label: 'Passport', href: '/passport', icon: Stamp },
+                  { label: 'Friends', href: '/friends', icon: UsersRound },
                   { label: 'Map', href: '/map', icon: MapPinned },
                   { label: 'Dashboard', href: '/dashboard', icon: Compass },
                 ].map((item) => {

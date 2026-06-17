@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
+import { Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -12,7 +13,14 @@ import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
 import { appendImportedTripToStorage, getScrapbookStorageKey } from '@/lib/ai/storage';
 import { useAuthStore } from '@/store/authStore';
-import { fetchJournalEntries, createJournalEntry } from '@/lib/journalService';
+import { fetchFriends } from '@/lib/friendService';
+import {
+  createJournalEntry,
+  fetchJournalEntries,
+  fetchJournalEntryShares,
+  fetchSharedJournalEntries,
+  saveJournalEntryShares,
+} from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
 import {
   BOARD_FALLBACK_WIDTH,
@@ -40,6 +48,8 @@ import {
   templateLabels,
 } from '@/lib/canvas/scrapbook';
 import type { JournalEntry } from '@/types';
+import type { Friendship } from '@/types/friends';
+import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import type { TripImportResult } from '@/types/trips';
 import type {
   DrawingPoint,
@@ -194,7 +204,16 @@ export default function JournalPage() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
   const [entries, setEntries] = useState<SavedEntry[]>([]);
+  const [sharedEntries, setSharedEntries] = useState<SharedJournalEntry[]>([]);
+  const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [sharingEntryId, setSharingEntryId] = useState<string | null>(null);
+  const [shareRecipientsByEntry, setShareRecipientsByEntry] = useState<Record<string, JournalShareRecipient[]>>({});
+  const [selectedShareFriendIds, setSelectedShareFriendIds] = useState<string[]>([]);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareSaving, setShareSaving] = useState(false);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [scrapbookPages, setScrapbookPages] = useState<ScrapbookPageData[]>(() => [
     createScrapbookPage(1, 'page-1'),
@@ -253,11 +272,23 @@ export default function JournalPage() {
 
     const loadEntries = async () => {
       setEntriesLoading(true);
-      const response = await fetchJournalEntries(user.id);
+      const [entriesResponse, sharedResponse, friendsResponse] = await Promise.all([
+        fetchJournalEntries(user.id),
+        fetchSharedJournalEntries(),
+        fetchFriends(),
+      ]);
       setEntriesLoading(false);
 
-      if (response.success && response.data) {
-        setEntries(response.data as SavedEntry[]);
+      if (entriesResponse.success && entriesResponse.data) {
+        setEntries(entriesResponse.data as SavedEntry[]);
+      }
+
+      if (sharedResponse.success && sharedResponse.data) {
+        setSharedEntries(sharedResponse.data);
+      }
+
+      if (friendsResponse.success && friendsResponse.data) {
+        setAcceptedFriends(friendsResponse.data.friends);
       }
     };
 
@@ -1184,6 +1215,66 @@ export default function JournalPage() {
     setError(response.error || 'Could not save entry.');
   };
 
+  const refreshSharedEntries = async () => {
+    const response = await fetchSharedJournalEntries();
+
+    if (response.success && response.data) {
+      setSharedEntries(response.data);
+    }
+  };
+
+  const openSharePanel = async (entry: SavedEntry) => {
+    setSharingEntryId(entry.id);
+    setShareLoading(true);
+    setShareError(null);
+    setShareNotice(null);
+
+    const response = await fetchJournalEntryShares(entry.id);
+    setShareLoading(false);
+
+    if (!response.success) {
+      setShareError(response.error || 'Unable to load share settings.');
+      setSelectedShareFriendIds([]);
+      return;
+    }
+
+    const recipients = response.data ?? [];
+    setShareRecipientsByEntry((current) => ({
+      ...current,
+      [entry.id]: recipients,
+    }));
+    setSelectedShareFriendIds(recipients.map((recipient) => recipient.id));
+  };
+
+  const toggleShareFriend = (friendId: string) => {
+    setSelectedShareFriendIds((current) =>
+      current.includes(friendId)
+        ? current.filter((id) => id !== friendId)
+        : [...current, friendId]
+    );
+  };
+
+  const saveEntryShares = async (entryId: string) => {
+    setShareSaving(true);
+    setShareError(null);
+    setShareNotice(null);
+
+    const response = await saveJournalEntryShares(entryId, selectedShareFriendIds);
+    setShareSaving(false);
+
+    if (!response.success) {
+      setShareError(response.error || 'Unable to save sharing settings.');
+      return;
+    }
+
+    setShareRecipientsByEntry((current) => ({
+      ...current,
+      [entryId]: response.data ?? [],
+    }));
+    setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
+    await refreshSharedEntries();
+  };
+
   const isStoryDictating = dictationTarget?.type === 'story';
   const isSelectedNoteDictating =
     selectedItem?.type === 'note' &&
@@ -1517,6 +1608,114 @@ export default function JournalPage() {
                         {getEntryCountry(entry) ? <span>{getEntryCountry(entry)}</span> : null}
                         {entry.mood ? <span>{entry.mood}</span> : null}
                         {entry.tags?.map((tag) => (
+                          <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(entry)}>
+                          <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                          Share
+                        </Button>
+                        {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
+                          <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1 text-xs font-semibold text-ink/55">
+                            Shared with {shareRecipientsByEntry[entry.id].length}
+                          </span>
+                        ) : null}
+                      </div>
+                      {sharingEntryId === entry.id ? (
+                        <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3">
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-ink">Share with friends</p>
+                              <p className="text-xs text-ink/55">Friends get view-only access to this entry.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSharingEntryId(null)}
+                              className="rounded-md p-1 text-ink/45 transition hover:bg-cream hover:text-ink"
+                              aria-label="Close sharing panel"
+                            >
+                              <X className="h-4 w-4" aria-hidden="true" />
+                            </button>
+                          </div>
+                          {shareLoading ? (
+                            <p className="text-sm text-ink/60">Loading sharing settings...</p>
+                          ) : acceptedFriends.length === 0 ? (
+                            <p className="rounded-md border border-dashed border-gold/25 bg-cream/40 p-3 text-sm text-ink/60">
+                              Add friends before sharing journal entries.
+                            </p>
+                          ) : (
+                            <div className="space-y-2">
+                              {acceptedFriends.map((friendship) => {
+                                const label = friendship.profile.displayName || friendship.profile.email;
+                                const checked = selectedShareFriendIds.includes(friendship.profile.id);
+
+                                return (
+                                  <label
+                                    key={friendship.id}
+                                    className="flex cursor-pointer items-center gap-3 rounded-md border border-gold/14 bg-cream/35 px-3 py-2 text-sm text-ink transition hover:border-gold/35"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 accent-gold"
+                                      checked={checked}
+                                      onChange={() => toggleShareFriend(friendship.profile.id)}
+                                    />
+                                    <span className="min-w-0 flex-1 truncate">{label}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {shareError ? <p className="mt-3 text-sm text-red-600">{shareError}</p> : null}
+                          {shareNotice ? <p className="mt-3 text-sm text-emerald-700">{shareNotice}</p> : null}
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="mt-3 w-full"
+                            isLoading={shareSaving}
+                            disabled={shareLoading || acceptedFriends.length === 0}
+                            onClick={() => saveEntryShares(entry.id)}
+                          >
+                            Save sharing
+                          </Button>
+                        </div>
+                      ) : null}
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h3 className="text-xl font-semibold text-ink">Shared With Me</h3>
+                <UsersRound className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+              </div>
+              <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
+                {entriesLoading ? (
+                  <p className="text-ink/60">Loading shared entries...</p>
+                ) : sharedEntries.length === 0 ? (
+                  <p className="text-ink/60">No shared journal entries yet.</p>
+                ) : (
+                  sharedEntries.map((entry) => (
+                    <article key={`${entry.id}-${entry.sharedBy.id}`} className="rounded-lg border border-gold/20 bg-cream/55 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <h4 className="font-semibold text-ink">{entry.title}</h4>
+                        <time className="shrink-0 text-xs text-ink/60" dateTime={entry.sharedAt}>
+                          {new Date(entry.sharedAt).toLocaleDateString()}
+                        </time>
+                      </div>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">
+                        From {entry.sharedBy.displayName || entry.sharedBy.email}
+                      </p>
+                      <p className="mt-2 line-clamp-3 text-ink/70">{entry.content}</p>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
+                        {getEntryCountry(entry) ? <span>{getEntryCountry(entry)}</span> : null}
+                        {entry.mood ? <span>{entry.mood}</span> : null}
+                        {entry.tags?.slice(0, 3).map((tag) => (
                           <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
                             {tag}
                           </span>
