@@ -13,7 +13,7 @@ interface AuthStore {
 
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
-  isLoading: false,
+  isLoading: true,
   error: null,
   setUser: (user) => set({ user, error: null }),
   setLoading: (isLoading) => set({ isLoading }),

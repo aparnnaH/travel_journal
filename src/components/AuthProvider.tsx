@@ -2,12 +2,67 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import type { User } from '@supabase/supabase-js';
+import { setAuthCookie, supabase } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
+import type { AuthUser } from '@/types';
 
 interface AuthProviderProps {
   children: React.ReactNode;
+}
+
+interface ProfileRecord {
+  displayName?: string | null;
+  display_name?: string | null;
+  avatar?: string | null;
+  avatar_url?: string | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}
+
+function firstProfileRecord(response: unknown): ProfileRecord | null {
+  if (!response || typeof response !== 'object') return null;
+
+  const profileResponse = response as {
+    success?: boolean;
+    data?: unknown;
+  };
+
+  if (!profileResponse.success || !Array.isArray(profileResponse.data)) return null;
+
+  const [profile] = profileResponse.data;
+  return profile && typeof profile === 'object' ? (profile as ProfileRecord) : null;
+}
+
+async function buildAuthUser(user: User): Promise<AuthUser> {
+  let profile: ProfileRecord | null = null;
+
+  try {
+    profile = firstProfileRecord(await fetchProfile(user.id));
+  } catch (error) {
+    console.warn('Unable to load user profile during auth initialization.', error);
+  }
+
+  return {
+    id: user.id,
+    email: user.email || '',
+    displayName:
+      profile?.displayName ??
+      profile?.display_name ??
+      user.user_metadata?.full_name ??
+      undefined,
+    avatar:
+      profile?.avatar ??
+      profile?.avatar_url ??
+      user.user_metadata?.avatar_url ??
+      undefined,
+    createdAt:
+      profile?.createdAt ??
+      profile?.created_at ??
+      (user.created_at as string) ??
+      new Date().toISOString(),
+  };
 }
 
 export default function AuthProvider({ children }: AuthProviderProps) {
@@ -21,24 +76,25 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     const initialize = async () => {
       setLoading(true);
-      const { data } = await supabase.auth.getUser();
-      const user = data?.user;
-      if (user) {
-        const profileResponse = await fetchProfile(user.id);
-        const profile = profileResponse?.success && profileResponse?.data?.[0];
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        setAuthCookie(sessionData.session?.access_token ?? null);
 
-        setUser({
-          id: user.id,
-          email: user.email || '',
-          displayName:
-            profile?.displayName || user.user_metadata?.full_name || undefined,
-          avatar: profile?.avatar || user.user_metadata?.avatar_url || undefined,
-          createdAt: profile?.createdAt || (user.created_at as string) || new Date().toISOString(),
-        });
-      } else {
+        const { data } = await supabase.auth.getUser();
+        const user = data?.user;
+        if (user) {
+          setUser(await buildAuthUser(user));
+        } else {
+          setAuthCookie(null);
+          logout();
+        }
+      } catch (error) {
+        console.warn('Unable to initialize authentication.', error);
+        setAuthCookie(null);
         logout();
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     initialize();
@@ -46,18 +102,11 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user;
-        if (event === 'SIGNED_IN' && user) {
-          const profileResponse = await fetchProfile(user.id);
-          const profile = profileResponse?.success && profileResponse?.data?.[0];
+        setAuthCookie(session?.access_token ?? null);
 
-          setUser({
-            id: user.id,
-            email: user.email || '',
-            displayName:
-              profile?.displayName || user.user_metadata?.full_name || undefined,
-            avatar: profile?.avatar || user.user_metadata?.avatar_url || undefined,
-            createdAt: profile?.createdAt || (user.created_at as string) || new Date().toISOString(),
-          });
+        if (event === 'SIGNED_IN' && user) {
+          setLoading(true);
+          setUser(await buildAuthUser(user));
         }
 
         if (event === 'SIGNED_OUT') {

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { signOut } from '@/lib/supabase';
 
 export default function AppHeader() {
   const user = useAuthStore((state) => state.user);
@@ -12,7 +12,7 @@ export default function AppHeader() {
   const router = useRouter();
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     logout();
     router.push('/login');
   };

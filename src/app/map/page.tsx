@@ -510,8 +510,26 @@ export default function MapPage() {
     return () => window.clearTimeout(celebrationTimeout);
   }, [atlasRevealPercent, isAtlasRevealLoaded]);
 
-  if (isLoading || !user) {
-    return null;
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-cream">
+        <AppHeader />
+        <PageShell title="Your Travel Map" description="Checking your session before opening the atlas.">
+          <Card className="p-6 text-ink/70">Loading your map...</Card>
+        </PageShell>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-cream">
+        <AppHeader />
+        <PageShell title="Your Travel Map" description="Redirecting you to sign in.">
+          <Card className="p-6 text-ink/70">Taking you back to sign in...</Card>
+        </PageShell>
+      </div>
+    );
   }
 
   const handleQuickVisit = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {

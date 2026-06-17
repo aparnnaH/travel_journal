@@ -18,7 +18,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const authCookieName = 'sb-access-token';
 
-function setAuthCookie(token: string | null) {
+export function setAuthCookie(token: string | null) {
   if (typeof document === 'undefined') {
     return;
   }
