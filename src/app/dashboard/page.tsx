@@ -1,20 +1,77 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowRight,
+  BookOpen,
+  CalendarDays,
+  Compass,
+  MapPinned,
+  PenLine,
+  Sparkles,
+  Stamp,
+  Tags,
+  UserRound,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
-import { Card, Button } from '@/components/ui';
+import { Button, Card } from '@/components/ui';
+import { fetchJournalEntries } from '@/lib/journalService';
+import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
-import { fetchJournalEntries } from '@/lib/journalService';
-import { useRouter } from 'next/navigation';
+import type { JournalEntry } from '@/types';
+
+type DashboardJournalEntry = JournalEntry & {
+  country_id?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type DashboardAction = {
+  title: string;
+  description: string;
+  href: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  tone: string;
+};
+
+const countryNameLookup = new Map(placeholderCountries.map((country) => [country.id, country.name]));
+
+const getEntryDate = (entry: DashboardJournalEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
+const getEntryCountry = (entry: DashboardJournalEntry) => entry.countryId || entry.country_id || '';
+
+const formatDate = (value?: string) => {
+  if (!value) {
+    return 'No date yet';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Date pending';
+  }
+
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(date);
+};
+
+const formatCountryName = (countryId: string) => countryNameLookup.get(countryId) || countryId || 'Unplaced';
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const visitedCountries = useMapStore((state) => state.visitedCountries);
+  const scratchPercentage = useMapStore((state) => state.scratchPercentage);
+  const countryLabels = useMapStore((state) => state.countryLabels);
+  const countryCities = useMapStore((state) => state.countryCities);
+  const lastMapUpdated = useMapStore((state) => state.lastUpdated);
   const router = useRouter();
-  const [journalCount, setJournalCount] = useState(0);
+  const [journalEntries, setJournalEntries] = useState<DashboardJournalEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -32,12 +89,88 @@ export default function DashboardPage() {
       const response = await fetchJournalEntries(user.id);
       setLoading(false);
       if (response.success && response.data) {
-        setJournalCount(response.data.length);
+        setJournalEntries(response.data as DashboardJournalEntry[]);
       }
     };
 
     loadJournal();
   }, [router, user, isLoading]);
+
+  const dashboardStats = useMemo(() => {
+    const journalCountries = new Set(journalEntries.map(getEntryCountry).filter(Boolean));
+    const allTags = journalEntries.flatMap((entry) => entry.tags ?? []);
+    const uniqueTags = [...new Set(allTags)];
+    const tagCounts = allTags.reduce<Record<string, number>>((acc, tag) => {
+      acc[tag] = (acc[tag] ?? 0) + 1;
+      return acc;
+    }, {});
+    const topTags = Object.entries(tagCounts)
+      .sort(([, firstCount], [, secondCount]) => secondCount - firstCount)
+      .slice(0, 5)
+      .map(([tag]) => tag);
+    const cityCount = Object.values(countryCities ?? {}).reduce((total, cities) => total + cities.length, 0);
+    const sortedEntries = [...journalEntries].sort(
+      (first, second) => new Date(getEntryDate(second)).getTime() - new Date(getEntryDate(first)).getTime()
+    );
+    const moodCounts = journalEntries.reduce<Record<string, number>>((acc, entry) => {
+      if (entry.mood) {
+        acc[entry.mood] = (acc[entry.mood] ?? 0) + 1;
+      }
+      return acc;
+    }, {});
+    const favoriteMood = Object.entries(moodCounts).sort(([, firstCount], [, secondCount]) => secondCount - firstCount)[0]?.[0];
+
+    return {
+      cityCount,
+      favoriteMood,
+      journalCountries: journalCountries.size,
+      latestEntry: sortedEntries[0],
+      recentEntries: sortedEntries.slice(0, 3),
+      topTags,
+      uniqueTags: uniqueTags.length,
+    };
+  }, [countryCities, journalEntries]);
+
+  const visitedCountryCards = useMemo(
+    () =>
+      visitedCountries
+        .slice(-5)
+        .reverse()
+        .map((countryId) => ({
+          id: countryId,
+          label: countryLabels[countryId] || formatCountryName(countryId),
+          cityCount: countryCities[countryId]?.length ?? 0,
+        })),
+    [countryCities, countryLabels, visitedCountries]
+  );
+
+  const revealProgress = Math.max(0, Math.min(100, Math.round(scratchPercentage)));
+  const archiveScore = visitedCountries.length + journalEntries.length + dashboardStats.cityCount;
+  const profileName = user?.displayName ?? user?.email ?? 'Traveler';
+
+  const nextActions: DashboardAction[] = [
+    {
+      title: journalEntries.length > 0 ? 'Write another memory' : 'Start your first entry',
+      description: 'Capture the moment while the details are still warm.',
+      href: '/journal',
+      icon: PenLine,
+      tone: 'bg-[#EAF0F6] text-[#27516F] border-[#AFC5D6]',
+    },
+    {
+      title: visitedCountries.length > 0 ? 'Refine the atlas' : 'Mark your first country',
+      description: 'Add countries, labels, colors, and city pins.',
+      href: '/map',
+      icon: MapPinned,
+      tone: 'bg-[#E8F1EA] text-[#315F43] border-[#A7C6AD]',
+    },
+    {
+      title: 'Ask for a story thread',
+      description: 'Turn scattered memories into a stronger draft.',
+      href: '/companion',
+      icon: Sparkles,
+      tone: 'bg-[#F6E8EE] text-[#7A3E59] border-[#D9B0C1]',
+    },
+  ];
 
   if (isLoading || !user) {
     return null;
@@ -48,52 +181,294 @@ export default function DashboardPage() {
       <AppHeader />
       <PageShell
         title="Dashboard"
-        description="A quick vintage dashboard for your travel habits, story count, and map progress."
+        description="Your travel archive at a glance: map progress, journal momentum, and the next useful thing to do."
+        actions={
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => router.push('/journal')} className="gap-2">
+              <PenLine className="h-4 w-4" aria-hidden="true" />
+              New entry
+            </Button>
+            <Button variant="secondary" onClick={() => router.push('/map')} className="gap-2">
+              <MapPinned className="h-4 w-4" aria-hidden="true" />
+              Update map
+            </Button>
+          </div>
+        }
       >
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="space-y-4">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-ink/60">Profile</p>
-              <h2 className="text-2xl font-semibold text-ink mt-2">{user.displayName ?? user.email}</h2>
-            </div>
-            <p className="text-ink/70">Start your next entry or update your profile details.</p>
-            <Button onClick={() => router.push('/profile')}>Edit profile</Button>
-          </Card>
+        <div className="space-y-6">
+          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+            <Card className="overflow-hidden border-gold/30 bg-[#fff8ea] p-0" variant="elevated">
+              <div className="grid min-h-[320px] gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
+                      <Compass className="h-4 w-4" aria-hidden="true" />
+                      Travel command center
+                    </div>
+                    <h2 className="mt-5 max-w-3xl text-4xl font-serif font-semibold leading-tight text-ink sm:text-5xl">
+                      Welcome back, {profileName}.
+                    </h2>
+                    <p className="mt-4 max-w-2xl text-lg leading-7 text-ink/72">
+                      You have {visitedCountries.length} mapped countr{visitedCountries.length === 1 ? 'y' : 'ies'},{' '}
+                      {journalEntries.length} journal entr{journalEntries.length === 1 ? 'y' : 'ies'}, and{' '}
+                      {dashboardStats.cityCount} saved city pin{dashboardStats.cityCount === 1 ? '' : 's'}.
+                    </p>
+                  </div>
 
-          <Card className="space-y-4">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-ink/60">Map Progress</p>
-              <h2 className="text-3xl font-semibold text-ink mt-2">{visitedCountries.length}</h2>
-            </div>
-            <p className="text-ink/70">Countries scratched off on your travel map.</p>
-            <Button variant="outline" onClick={() => router.push('/map')}>
-              View map
-            </Button>
-          </Card>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-gold/20 bg-white/72 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">Archive score</p>
+                      <p className="mt-2 text-3xl font-semibold text-ink">{archiveScore}</p>
+                    </div>
+                    <div className="rounded-lg border border-gold/20 bg-white/72 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">Last story</p>
+                      <p className="mt-2 text-lg font-semibold text-ink">
+                        {dashboardStats.latestEntry ? formatDate(getEntryDate(dashboardStats.latestEntry)) : 'Not started'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-gold/20 bg-white/72 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/50">Map updated</p>
+                      <p className="mt-2 text-lg font-semibold text-ink">{formatDate(lastMapUpdated)}</p>
+                    </div>
+                  </div>
+                </div>
 
-          <Card className="space-y-4">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-ink/60">Journal Count</p>
-              <h2 className="text-3xl font-semibold text-ink mt-2">{loading ? '…' : journalCount}</h2>
-            </div>
-            <p className="text-ink/70">Entries saved to your travel journal.</p>
-            <Button variant="outline" onClick={() => router.push('/journal')}>
-              View journal
-            </Button>
-          </Card>
+                <div className="border-t border-gold/20 bg-[#1F3328] p-6 text-cream lg:border-l lg:border-t-0">
+                  <div className="flex h-full flex-col justify-between gap-8">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cream/64">Atlas reveal</p>
+                      <p className="mt-3 text-6xl font-serif font-semibold">{revealProgress}%</p>
+                      <div className="mt-5 h-2.5 overflow-hidden rounded-full bg-white/18">
+                        <div className="h-full rounded-full bg-gold" style={{ width: `${revealProgress}%` }} />
+                      </div>
+                      <p className="mt-4 text-sm leading-6 text-cream/74">
+                        {visitedCountries.length > 0
+                          ? `${visitedCountries.length} country stamps are anchoring the map.`
+                          : 'Your atlas is ready for its first marked country.'}
+                      </p>
+                    </div>
+                    <Button variant="secondary" onClick={() => router.push('/passport')} className="w-full gap-2">
+                      <Stamp className="h-4 w-4" aria-hidden="true" />
+                      View passport
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
 
-          <Card className="space-y-4">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-ink/60">AI Companion</p>
-              <h2 className="text-3xl font-semibold text-ink mt-2">{visitedCountries.length + journalCount}</h2>
+            <Card className="flex flex-col justify-between gap-5 bg-white/88">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Next best moves</p>
+                <h2 className="mt-2 text-2xl font-serif font-semibold text-ink">Keep the archive moving</h2>
+              </div>
+              <div className="space-y-3">
+                {nextActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <button
+                      key={action.href}
+                      type="button"
+                      onClick={() => router.push(action.href)}
+                      className="group flex w-full items-center gap-3 rounded-lg border border-gold/18 bg-cream/42 p-3 text-left transition hover:border-gold/45 hover:bg-cream"
+                    >
+                      <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${action.tone}`}>
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-semibold text-ink">{action.title}</span>
+                        <span className="mt-0.5 block text-sm leading-5 text-ink/62">{action.description}</span>
+                      </span>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-ink/45 transition group-hover:translate-x-1 group-hover:text-ink" aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+          </section>
+
+          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={UserRound}
+              label="Profile"
+              value={user.displayName ? 'Named' : 'Email only'}
+              detail={user.displayName ?? user.email}
+              tone="bg-[#F3E6D8] text-[#71481F]"
+              onClick={() => router.push('/profile')}
+            />
+            <MetricCard
+              icon={MapPinned}
+              label="Map progress"
+              value={String(visitedCountries.length)}
+              detail="Visited countries"
+              tone="bg-[#E8F1EA] text-[#315F43]"
+              onClick={() => router.push('/map')}
+            />
+            <MetricCard
+              icon={BookOpen}
+              label="Journal count"
+              value={loading ? '...' : String(journalEntries.length)}
+              detail={`${dashboardStats.journalCountries} countr${dashboardStats.journalCountries === 1 ? 'y' : 'ies'} represented`}
+              tone="bg-[#EAF0F6] text-[#27516F]"
+              onClick={() => router.push('/journal')}
+            />
+            <MetricCard
+              icon={Sparkles}
+              label="AI context"
+              value={String(archiveScore)}
+              detail="Signals for the companion"
+              tone="bg-[#F6E8EE] text-[#7A3E59]"
+              onClick={() => router.push('/companion')}
+            />
+          </section>
+
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+            <Card className="bg-white/90">
+              <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Recent journal</p>
+                  <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Latest saved stories</h2>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => router.push('/journal')} className="gap-2 self-start sm:self-auto">
+                  Open journal
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </div>
+
+              {dashboardStats.recentEntries.length > 0 ? (
+                <div className="space-y-3">
+                  {dashboardStats.recentEntries.map((entry) => (
+                    <article key={entry.id} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-lg font-semibold text-ink">{entry.title}</h3>
+                          <p className="mt-1 line-clamp-2 text-sm leading-6 text-ink/68">{entry.content}</p>
+                        </div>
+                        <time className="shrink-0 text-sm font-semibold text-ink/55" dateTime={getEntryDate(entry)}>
+                          {formatDate(getEntryDate(entry))}
+                        </time>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-ink/62">
+                        <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1">
+                          {formatCountryName(getEntryCountry(entry))}
+                        </span>
+                        {entry.mood ? (
+                          <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1">{entry.mood}</span>
+                        ) : null}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-gold/30 bg-cream/40 p-6 text-ink/65">
+                  <p className="font-semibold text-ink">No journal entries yet.</p>
+                  <p className="mt-2 text-sm leading-6">Start with one place, one moment, and one detail you do not want to lose.</p>
+                </div>
+              )}
+            </Card>
+
+            <div className="space-y-6">
+              <Card className="bg-[#F8F1E4]">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Visited list</p>
+                    <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Recent map marks</h2>
+                  </div>
+                  <MapPinned className="h-6 w-6 text-gold-deep" aria-hidden="true" />
+                </div>
+                {visitedCountryCards.length > 0 ? (
+                  <div className="space-y-2">
+                    {visitedCountryCards.map((country) => (
+                      <div key={country.id} className="flex items-center justify-between gap-3 rounded-lg border border-gold/16 bg-white/70 px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-ink">{country.label}</p>
+                          <p className="text-sm text-ink/58">
+                            {country.cityCount} city pin{country.cityCount === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-cream px-2.5 py-1 text-xs font-semibold text-ink/58">{country.id}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-dashed border-gold/30 bg-white/60 p-4 text-sm leading-6 text-ink/62">
+                    Your first visited country will appear here.
+                  </p>
+                )}
+              </Card>
+
+              <Card className="bg-white/90">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Travel rhythm</p>
+                    <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Story texture</h2>
+                  </div>
+                  <Tags className="h-6 w-6 text-gold-deep" aria-hidden="true" />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="rounded-lg border border-gold/16 bg-cream/36 p-4">
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-ink/52">
+                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      Mood
+                    </p>
+                    <p className="mt-2 text-xl font-semibold capitalize text-ink">{dashboardStats.favoriteMood ?? 'Unwritten'}</p>
+                  </div>
+                  <div className="rounded-lg border border-gold/16 bg-cream/36 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/52">Tags</p>
+                    {dashboardStats.topTags.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {dashboardStats.topTags.map((tag) => (
+                          <span key={tag} className="rounded-full border border-gold/22 bg-white px-2.5 py-1 text-sm font-semibold text-ink/68">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-ink/62">Tags from saved entries will collect here.</p>
+                    )}
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-ink/45">
+                      {dashboardStats.uniqueTags} unique tag{dashboardStats.uniqueTags === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </div>
+              </Card>
             </div>
-            <p className="text-ink/70">Chat with your travel memory assistant using journal and passport context.</p>
-            <Button variant="outline" onClick={() => router.push('/companion')}>
-              Open companion
-            </Button>
-          </Card>
+          </section>
         </div>
       </PageShell>
     </div>
+  );
+}
+
+function MetricCard({
+  detail,
+  icon: Icon,
+  label,
+  onClick,
+  tone,
+  value,
+}: {
+  detail: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  label: string;
+  onClick: () => void;
+  tone: string;
+  value: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group rounded-3xl border border-gold/20 bg-white p-5 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/45 hover:shadow-md-soft"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <span className={`flex h-11 w-11 items-center justify-center rounded-lg ${tone}`}>
+          <Icon className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <ArrowRight className="h-4 w-4 text-ink/40 transition group-hover:translate-x-1 group-hover:text-ink" aria-hidden="true" />
+      </div>
+      <p className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-ink/52">{label}</p>
+      <p className="mt-2 text-3xl font-semibold text-ink">{value}</p>
+      <p className="mt-1 truncate text-sm text-ink/62">{detail}</p>
+    </button>
   );
 }
