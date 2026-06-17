@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Header, HeroSection, FeaturesSection, Footer } from '@/features/landing';
+import { Header, HeroSection, FeaturesSection } from '@/features/landing';
 
 export default function Home() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -22,8 +22,6 @@ export default function Home() {
         <HeroSection />
         <FeaturesSection />
       </main>
-      <Footer />
     </div>
   );
 }
-

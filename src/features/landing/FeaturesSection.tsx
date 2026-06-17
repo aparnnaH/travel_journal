@@ -1,50 +1,76 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Card } from '@/components/ui';
+import { GradientCard, type GradientCardProps } from '@/components/ui';
 
-interface Feature {
-  icon: string;
-  title: string;
-  description: string;
-}
+type FeatureCard = Pick<
+  GradientCardProps,
+  'badgeText' | 'badgeColor' | 'title' | 'description' | 'ctaText' | 'ctaHref' | 'imageUrl' | 'gradient'
+>;
 
-const features: Feature[] = [
+const features: FeatureCard[] = [
   {
-    icon: '🗺️',
+    badgeText: 'Map',
+    badgeColor: '#4ECFFF',
     title: 'Interactive Scratch Map',
     description:
-      'Watch the world light up as you visit countries. Like a vintage scratch-off poster with real-time updates.',
+      'Watch the world light up as you mark countries visited, zoom around the atlas, and track your travel progress.',
+    ctaText: 'Open map',
+    ctaHref: '/map',
+    imageUrl: '/images/features/map.png',
+    gradient: 'green',
   },
   {
-    icon: '📔',
+    badgeText: 'Journal',
+    badgeColor: '#FF9F6B',
     title: 'Scrapbook Journals',
     description:
-      'Document your travels with polaroid-style photos, mood tags, and handwritten notes for each destination.',
+      'Document trips with flexible scrapbook pages, photos, stickers, notes, imported memories, and saved entries.',
+    ctaText: 'Open journal',
+    ctaHref: '/journal',
+    imageUrl: '/images/features/journal.png',
+    gradient: 'orange',
   },
   {
-    icon: '🎫',
+    badgeText: 'Passport',
+    badgeColor: '#9B8CFF',
     title: 'Passport Stamps',
-    description:
-      'Collect digital passport stamps for every country you visit. Build your complete travel collection.',
+    description: 'Collect digital country stamps, browse regional stamp books, and revisit stamps revealed from the map.',
+    ctaText: 'View passport',
+    ctaHref: '/passport',
+    imageUrl: '/images/features/passport.png',
+    gradient: 'purple',
   },
   {
-    icon: '👥',
-    title: 'Friend Collaboration',
+    badgeText: 'Planner',
+    badgeColor: '#59D98E',
+    title: 'Country Explorer',
     description:
-      'Share your adventures with friends in real-time. See where they are and what memories they are creating.',
+      'Open a focused country view with city planning, saved places, notes, and a passport stamp shortcut.',
+    ctaText: 'Explore countries',
+    ctaHref: '/map',
+    imageUrl: '/images/features/explorer.png',
+    gradient: 'green',
   },
   {
-    icon: '📱',
-    title: 'Offline-First',
-    description:
-      'Your travels never stop. Access your journal and map even without internet. Everything syncs when you reconnect.',
+    badgeText: 'Import',
+    badgeColor: '#FFD166',
+    title: 'Trip Import',
+    description: 'Turn itinerary text and trip files into organized drafts, timeline cards, and scrapbook material.',
+    ctaText: 'Import a trip',
+    ctaHref: '/journal',
+    imageUrl: '/images/features/import.png',
+    gradient: 'orange',
   },
   {
-    icon: '🔐',
-    title: 'Privacy First',
-    description:
-      'Your memories are yours alone. Complete control over who sees what. Enterprise-grade security.',
+    badgeText: 'Companion',
+    badgeColor: '#4CD7D0',
+    title: 'AI Travel Companion',
+    description: 'Use your journal, imported trips, scrapbook pages, and stamps as context for travel-memory drafts.',
+    ctaText: 'Open companion',
+    ctaHref: '/companion',
+    imageUrl: '/images/features/companion.png',
+    gradient: 'gray',
   },
 ];
 
@@ -72,28 +98,26 @@ export function FeaturesSection() {
   return (
     <section
       id="features"
-      className="py-20 px-4 sm:px-6 lg:px-8 bg-white/50 backdrop-blur-sm"
+      className="bg-white/50 px-4 py-20 backdrop-blur-sm sm:px-6 lg:px-8"
     >
       <div className="container mx-auto max-w-6xl">
-        {/* Section Header */}
         <motion.div
-          className="text-center mb-12"
+          className="mx-auto mb-12 max-w-3xl text-center"
           initial={{ opacity: 0, y: -20 }}
           whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           viewport={{ once: true }}
         >
-          <h2 className="text-4xl sm:text-5xl font-serif font-bold text-ink mb-4">
+          <h2 className="mb-4 font-serif text-4xl font-bold text-ink sm:text-5xl">
             Everything You Need to Travel Smart
           </h2>
-          <p className="text-lg text-ink/70 max-w-2xl mx-auto">
-            From capturing memories to sharing adventures, Travel Journal has all the tools to make your trips unforgettable.
+          <p className="mx-auto max-w-2xl text-lg text-ink/70">
+            From mapping visited countries to turning memories into scrapbook pages, Travel Journal keeps your trips organized and beautiful.
           </p>
         </motion.div>
 
-        {/* Features Grid */}
         <motion.div
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:gap-10"
           variants={containerVariants}
           initial="hidden"
           whileInView="visible"
@@ -101,13 +125,7 @@ export function FeaturesSection() {
         >
           {features.map((feature, index) => (
             <motion.div key={index} variants={itemVariants}>
-              <Card variant="subtle" className="h-full hover:shadow-md-soft transition-shadow">
-                <div className="text-5xl mb-4">{feature.icon}</div>
-                <h3 className="text-xl font-serif font-bold text-ink mb-2">
-                  {feature.title}
-                </h3>
-                <p className="text-ink/70">{feature.description}</p>
-              </Card>
+              <GradientCard {...feature} />
             </motion.div>
           ))}
         </motion.div>

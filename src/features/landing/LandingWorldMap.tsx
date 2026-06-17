@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ExtendedFeature } from 'd3-geo';
-import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 
 type AtlasGeography = ExtendedFeature & {
   rsmKey: string;
@@ -16,8 +16,8 @@ type FeaturedCountry = {
   id: string;
   name: string;
   atlasNames: string[];
-  coordinates: [number, number];
   color: string;
+  note: string;
 };
 
 const geoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
@@ -27,47 +27,56 @@ const featuredCountries: FeaturedCountry[] = [
     id: 'US',
     name: 'United States',
     atlasNames: ['United States of America', 'United States'],
-    coordinates: [-95.7129, 37.0902],
     color: '#4ECFFF',
+    note: 'Road-trip journals, city pins, and a fresh passport stamp preview.',
   },
   {
     id: 'FR',
     name: 'France',
     atlasNames: ['France'],
-    coordinates: [2.2137, 46.2276],
     color: '#59D98E',
+    note: 'Paris notes and countryside memories are ready to explore.',
   },
   {
     id: 'JP',
     name: 'Japan',
     atlasNames: ['Japan'],
-    coordinates: [138.2529, 36.2048],
     color: '#FF9F6B',
+    note: 'Saved cities, food notes, and a stamp reveal moment.',
   },
   {
     id: 'BR',
     name: 'Brazil',
     atlasNames: ['Brazil'],
-    coordinates: [-51.9253, -14.235],
     color: '#FFD166',
+    note: 'A bright atlas color marks the next story-rich stop.',
   },
   {
     id: 'IT',
     name: 'Italy',
     atlasNames: ['Italy'],
-    coordinates: [12.5674, 41.8719],
     color: '#9B8CFF',
+    note: 'Scrapbook pages, saved meals, and coastal city pins.',
   },
   {
     id: 'AU',
     name: 'Australia',
     atlasNames: ['Australia'],
-    coordinates: [134.491, -25.734],
     color: '#4CD7D0',
+    note: 'Wide-open routes and a country-level explorer preview.',
   },
 ];
 
-const countryPalette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0'];
+const demoVisitedCountryNames = ['France', 'Japan', 'Italy'];
+const normalMapPosition = { coordinates: [0, 0] as [number, number], zoom: 1 };
+const minMapZoom = 1;
+const maxMapZoom = 3.5;
+const mapZoomStep = 0.5;
+
+type MapPosition = {
+  coordinates: [number, number];
+  zoom: number;
+};
 
 function normalizeCountryName(countryName: string) {
   return countryName.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -78,16 +87,15 @@ function getCountryName(geo: AtlasGeography) {
   return name ? String(name) : '';
 }
 
-function getCountryColor(countryName: string) {
-  const normalizedName = normalizeCountryName(countryName);
-  const charTotal = Array.from(normalizedName).reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  return countryPalette[charTotal % countryPalette.length];
+function clampMapZoom(zoom: number) {
+  return Math.min(maxMapZoom, Math.max(minMapZoom, zoom));
 }
 
 export function LandingWorldMap() {
-  const [visitedCountryNames, setVisitedCountryNames] = useState<string[]>(['France', 'Japan', 'Italy']);
+  const [visitedCountryNames, setVisitedCountryNames] = useState<string[]>(demoVisitedCountryNames);
   const [hoveredCountryName, setHoveredCountryName] = useState<string | null>(null);
   const [selectedCountryName, setSelectedCountryName] = useState('France');
+  const [mapPosition, setMapPosition] = useState<MapPosition>(normalMapPosition);
 
   const featuredCountryByAtlasName = useMemo(() => {
     const countryMap = new Map<string, FeaturedCountry>();
@@ -105,7 +113,14 @@ export function LandingWorldMap() {
   const activeCountryName = hoveredCountryName ?? selectedCountryName;
   const activeFeaturedCountry = featuredCountryByAtlasName.get(normalizeCountryName(activeCountryName));
   const activeDisplayName = activeFeaturedCountry?.name ?? activeCountryName;
-  const activeCountryIsVisited = visitedCountrySet.has(activeCountryName);
+  const activeCountryIsVisited =
+    activeFeaturedCountry?.atlasNames.some((name) => visitedCountrySet.has(name)) ?? visitedCountrySet.has(activeCountryName);
+  const isMinZoom = mapPosition.zoom <= minMapZoom;
+  const isMaxZoom = mapPosition.zoom >= maxMapZoom;
+  const isNormalMapView =
+    mapPosition.zoom === normalMapPosition.zoom &&
+    mapPosition.coordinates[0] === normalMapPosition.coordinates[0] &&
+    mapPosition.coordinates[1] === normalMapPosition.coordinates[1];
 
   function toggleCountry(countryName: string) {
     if (!countryName) return;
@@ -118,144 +133,192 @@ export function LandingWorldMap() {
     );
   }
 
+  function getVisitedColor(countryName: string) {
+    const featuredCountry = featuredCountryByAtlasName.get(normalizeCountryName(countryName));
+    return featuredCountry?.color ?? '#4ECFFF';
+  }
+
+  function handleZoomIn() {
+    setMapPosition((currentPosition) => ({
+      ...currentPosition,
+      zoom: clampMapZoom(currentPosition.zoom + mapZoomStep),
+    }));
+  }
+
+  function handleZoomOut() {
+    setMapPosition((currentPosition) => ({
+      ...currentPosition,
+      zoom: clampMapZoom(currentPosition.zoom - mapZoomStep),
+    }));
+  }
+
+  function handleResetView() {
+    setMapPosition(normalMapPosition);
+  }
+
+  function handleMapMoveEnd(nextPosition: MapPosition) {
+    setMapPosition({
+      coordinates: nextPosition.coordinates,
+      zoom: clampMapZoom(nextPosition.zoom),
+    });
+  }
+
   return (
     <div
       id="showcase"
-      className="overflow-hidden rounded-3xl border border-gold/25 bg-white shadow-lg-soft"
+      className="overflow-hidden rounded-lg border border-ink/10 bg-cream shadow-lg-soft"
       aria-label="Interactive world map demo"
     >
-      <div className="grid gap-0 lg:grid-cols-[1fr_17rem]">
-        <div className="relative min-h-[20rem] bg-[#DCEDEA]">
-          <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-3 px-4 py-4 sm:px-6">
-            <div className="rounded-full border border-white/70 bg-white/85 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink/70 shadow-soft">
-              Live atlas
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="relative min-h-[24rem] overflow-hidden bg-[#F6ECD7]">
+          <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-start justify-between gap-3 px-4 py-4 sm:px-6">
+            <div>
+              <div className="inline-flex rounded-full border border-white/70 bg-white/85 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink/70 shadow-soft">
+                World Atlas
+              </div>
+              <div className="mt-2 rounded-full border border-ink/10 bg-white/85 px-4 py-2 text-sm font-semibold text-ink shadow-soft">
+                {hoveredCountryName ?? 'Hover a country'}
+              </div>
             </div>
-            <div className="rounded-full border border-ink/10 bg-white/85 px-4 py-2 text-sm font-semibold text-ink shadow-soft">
-              {visitedCountryNames.length} stamped
+            <div className="flex items-center gap-1 rounded-lg border border-ink/10 bg-white/80 p-1 shadow-soft backdrop-blur-sm">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                title="Zoom out"
+                onClick={handleZoomOut}
+                disabled={isMinZoom}
+                className="flex h-9 w-9 items-center justify-center rounded-md text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                -
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                title="Zoom in"
+                onClick={handleZoomIn}
+                disabled={isMaxZoom}
+                className="flex h-9 w-9 items-center justify-center rounded-md text-lg font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                aria-label="Reset map view"
+                title="Reset map view"
+                onClick={handleResetView}
+                disabled={isNormalMapView}
+                className="flex h-9 min-w-14 items-center justify-center rounded-md px-3 text-sm font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Reset
+              </button>
             </div>
           </div>
 
           <ComposableMap
             projection="geoEqualEarth"
-            projectionConfig={{ scale: 150, center: [0, 14] }}
+            projectionConfig={{ scale: 142, center: [0, 2] }}
             width={760}
             height={410}
-            className="h-full min-h-[20rem] w-full"
+            className="h-full min-h-[24rem] w-full bg-[#F6ECD7]"
           >
-            <Geographies geography={geoUrl}>
-              {({ geographies }) => {
-                const atlasGeographies = geographies as AtlasGeography[];
+            <ZoomableGroup
+              center={mapPosition.coordinates}
+              zoom={mapPosition.zoom}
+              minZoom={minMapZoom}
+              maxZoom={maxMapZoom}
+              onMoveEnd={handleMapMoveEnd}
+            >
+              <Geographies geography={geoUrl}>
+                {({ geographies }) => {
+                  const atlasGeographies = geographies as AtlasGeography[];
 
-                return (
-                  <>
-                    {atlasGeographies.map((geo) => {
-                      const countryName = getCountryName(geo);
-                      const isVisited = visitedCountrySet.has(countryName);
-                      const isActive = activeCountryName === countryName;
-                      const fillColor = isVisited ? getCountryColor(countryName) : '#E6D5B8';
+                  return atlasGeographies.map((geo) => {
+                    const countryName = getCountryName(geo);
+                    const featuredCountry = countryName
+                      ? featuredCountryByAtlasName.get(normalizeCountryName(countryName))
+                      : undefined;
+                    const isVisited = countryName ? visitedCountrySet.has(countryName) : false;
+                    const isActive = activeCountryName === countryName;
+                    const fillColor = isVisited ? getVisitedColor(countryName) : '#E6D5B8';
 
-                      return (
-                        <Geography
-                          key={geo.rsmKey}
-                          geography={geo}
-                          role="button"
-                          tabIndex={0}
-                          aria-label={`${countryName || 'Country'} ${isVisited ? 'stamped' : 'unstamped'}`}
-                          fill={fillColor}
-                          stroke={isActive ? '#3D2B0E' : '#8B6B3F'}
-                          strokeWidth={isActive ? 0.9 : 0.35}
-                          onMouseEnter={() => countryName && setHoveredCountryName(countryName)}
-                          onMouseLeave={() => setHoveredCountryName(null)}
-                          onFocus={() => countryName && setHoveredCountryName(countryName)}
-                          onBlur={() => setHoveredCountryName(null)}
-                          onClick={() => toggleCountry(countryName)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              toggleCountry(countryName);
-                            }
-                          }}
-                          style={{
-                            default: {
-                              outline: 'none',
-                              transition: 'fill 220ms ease, stroke 220ms ease, stroke-width 220ms ease',
-                            },
-                            hover: {
-                              fill: isVisited ? fillColor : '#D8C19C',
-                              cursor: countryName ? 'pointer' : 'default',
-                              outline: 'none',
-                            },
-                            pressed: {
-                              fill: isVisited ? fillColor : '#CBAF7B',
-                              outline: 'none',
-                            },
-                          }}
-                        />
-                      );
-                    })}
-
-                    {featuredCountries.map((country) => {
-                      const atlasName = country.atlasNames[0];
-                      const isVisited = country.atlasNames.some((name) => visitedCountrySet.has(name));
-                      const isActive = activeFeaturedCountry?.id === country.id;
-
-                      return (
-                        <Marker key={country.id} coordinates={country.coordinates}>
-                          <g
-                            role="button"
-                            tabIndex={0}
-                            aria-label={`${country.name} marker`}
-                            className="cursor-pointer"
-                            onMouseEnter={() => setHoveredCountryName(atlasName)}
-                            onMouseLeave={() => setHoveredCountryName(null)}
-                            onFocus={() => setHoveredCountryName(atlasName)}
-                            onBlur={() => setHoveredCountryName(null)}
-                            onClick={() => toggleCountry(atlasName)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault();
-                                toggleCountry(atlasName);
-                              }
-                            }}
-                            style={{ transition: 'transform 220ms ease' }}
-                            transform={isActive ? 'scale(1.16)' : 'scale(1)'}
-                          >
-                            <circle
-                              r={isActive ? 14 : 12}
-                              fill={isVisited ? country.color : '#FFF8E8'}
-                              stroke="#3D2B0E"
-                              strokeWidth="1.8"
-                            />
-                            <circle r={isActive ? 22 : 18} fill="none" stroke="#3D2B0E" strokeWidth="1" opacity="0.24" />
-                            <text
-                              y="4"
-                              textAnchor="middle"
-                              fontFamily="Playfair Display, serif"
-                              fontSize="9"
-                              fontWeight="700"
-                              fill="#3D2B0E"
-                            >
-                              {country.id}
-                            </text>
-                          </g>
-                        </Marker>
-                      );
-                    })}
-                  </>
-                );
-              }}
-            </Geographies>
+                    return (
+                      <Geography
+                        key={geo.rsmKey}
+                        geography={geo}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${countryName || 'Country'} ${isVisited ? 'visited' : 'not visited'}`}
+                        fill={fillColor}
+                        stroke={isActive ? '#3D2B0E' : '#9D7B4A'}
+                        strokeWidth={isActive ? 0.85 : 0.35}
+                        onMouseEnter={() => countryName && setHoveredCountryName(countryName)}
+                        onMouseLeave={() => setHoveredCountryName(null)}
+                        onFocus={() => countryName && setHoveredCountryName(countryName)}
+                        onBlur={() => setHoveredCountryName(null)}
+                        onClick={() => toggleCountry(countryName)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleCountry(countryName);
+                          }
+                        }}
+                        style={{
+                          default: {
+                            outline: 'none',
+                            transition: 'fill 220ms ease, stroke 220ms ease, stroke-width 220ms ease',
+                          },
+                          hover: {
+                            fill: isVisited ? fillColor : featuredCountry?.color ?? '#DCC9A8',
+                            cursor: countryName ? 'pointer' : 'default',
+                            outline: 'none',
+                          },
+                          pressed: {
+                            fill: isVisited ? fillColor : '#D6C19D',
+                            outline: 'none',
+                          },
+                        }}
+                      />
+                    );
+                  });
+                }}
+              </Geographies>
+            </ZoomableGroup>
           </ComposableMap>
+
+          <div className="absolute inset-x-4 bottom-4 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-white/50 bg-white/85 p-3 shadow-soft backdrop-blur-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/60">Visited</span>
+            {visitedCountryNames.length > 0 ? (
+              visitedCountryNames.map((countryName) => {
+                const featuredCountry = featuredCountryByAtlasName.get(normalizeCountryName(countryName));
+                return (
+                  <button
+                    key={countryName}
+                    type="button"
+                    onClick={() => setSelectedCountryName(countryName)}
+                    className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-cream px-3 py-1.5 text-sm font-semibold text-ink transition hover:border-gold focus:outline-none focus:ring-2 focus:ring-gold"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: featuredCountry?.color ?? '#4ECFFF' }}
+                    />
+                    {featuredCountry?.id ?? countryName.slice(0, 2).toUpperCase()}
+                  </button>
+                );
+              })
+            ) : (
+              <span className="text-sm text-ink/65">Click a country to start the demo atlas.</span>
+            )}
+          </div>
         </div>
 
         <aside className="flex min-h-full flex-col justify-between gap-6 border-t border-gold/20 bg-[#FFF8E8] p-5 lg:border-l lg:border-t-0">
           <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-gold-deep/75">Selected</p>
-            <h2 className="font-serif text-3xl font-bold leading-tight text-ink">{activeDisplayName}</h2>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.24em] text-gold-deep/75">Country Explorer</p>
+            <h2 className="font-serif text-2xl font-bold leading-tight text-ink">{activeDisplayName}</h2>
             <p className="mt-3 text-base leading-relaxed text-ink/70">
               {activeCountryIsVisited
-                ? 'A stamp is glowing here in your demo atlas.'
-                : 'This destination is ready for its first stamp.'}
+                ? activeFeaturedCountry?.note ?? 'This country is colored into the demo atlas.'
+                : 'Click the country on the atlas to color it in and preview the explorer flow.'}
             </p>
           </div>
 
@@ -267,7 +330,7 @@ export function LandingWorldMap() {
                   key={country.id}
                   type="button"
                   onClick={() => toggleCountry(country.atlasNames[0])}
-                  className="rounded-2xl border border-gold/25 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-gold hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
+                  className="rounded-lg border border-gold/25 bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-gold hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
                   style={{ boxShadow: isVisited ? `inset 0 -3px 0 ${country.color}` : undefined }}
                 >
                   {country.id}
