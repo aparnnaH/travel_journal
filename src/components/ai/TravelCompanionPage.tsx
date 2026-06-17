@@ -191,11 +191,19 @@ export default function TravelCompanionPage() {
   const recentMemories = useMemo(() => context?.memoryPool.slice(0, 5) ?? [], [context]);
   const passportSnapshot = useMemo(() => context?.passportStamps.slice(0, 6) ?? [], [context]);
 
-  const { messages, isThinking, isSavingJournalDraft, canSaveJournalDraft, sendMessage, sendPrompt, saveJournalDraft } =
-    useTravelCompanionChat({
-      context,
-      userId: user?.id,
-    });
+  const {
+    messages,
+    isThinking,
+    isSavingJournalDraft,
+    canSaveJournalDraft,
+    sendMessage,
+    sendPrompt,
+    clearChat,
+    saveJournalDraft,
+  } = useTravelCompanionChat({
+    context,
+    userId: user?.id,
+  });
 
   if (isLoading || !user) {
     return null;
@@ -244,6 +252,7 @@ export default function TravelCompanionPage() {
                 canSaveJournalDraft={canSaveJournalDraft}
                 isSavingJournalDraft={isSavingJournalDraft}
                 onSendMessage={sendMessage}
+                onClearChat={clearChat}
                 onSaveJournalDraft={saveJournalDraft}
               />
 

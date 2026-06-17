@@ -184,6 +184,12 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
     [sendMessage]
   );
 
+  const clearChat = useCallback(() => {
+    setMessages([]);
+    setJournalSession(null);
+    initializedRef.current = true;
+  }, []);
+
   const saveJournalDraft = useCallback(async () => {
     if (!context || !userId || !journalSession?.lastDraft) {
       setMessages((current) => [
@@ -259,6 +265,7 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
     canSaveJournalDraft: Boolean(journalSession?.lastDraft && userId),
     sendMessage,
     sendPrompt,
+    clearChat,
     saveJournalDraft,
   };
 }
