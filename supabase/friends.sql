@@ -81,3 +81,62 @@ drop policy if exists "Users can delete journal shares they created" on public.j
 create policy "Users can delete journal shares they created"
   on public.journal_shares for delete
   using (auth.uid() = shared_by);
+
+create table if not exists public.journal_share_comments (
+  id uuid primary key default gen_random_uuid(),
+  journal_entry_id uuid not null references public.journal_entries(id) on delete cascade,
+  author_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now(),
+  constraint journal_share_comments_body_length check (char_length(trim(body)) between 1 and 1000)
+);
+
+create index if not exists journal_share_comments_entry_idx on public.journal_share_comments(journal_entry_id);
+create index if not exists journal_share_comments_author_idx on public.journal_share_comments(author_id);
+create index if not exists journal_share_comments_created_idx on public.journal_share_comments(created_at);
+
+alter table public.journal_share_comments enable row level security;
+
+drop policy if exists "Users can view comments on accessible journal entries" on public.journal_share_comments;
+create policy "Users can view comments on accessible journal entries"
+  on public.journal_share_comments for select
+  using (
+    exists (
+      select 1
+      from public.journal_entries entry
+      where entry.id = journal_share_comments.journal_entry_id
+        and entry.user_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.journal_shares share
+      where share.journal_entry_id = journal_share_comments.journal_entry_id
+        and share.shared_with = auth.uid()
+    )
+  );
+
+drop policy if exists "Users can comment on accessible journal entries" on public.journal_share_comments;
+create policy "Users can comment on accessible journal entries"
+  on public.journal_share_comments for insert
+  with check (
+    auth.uid() = author_id
+    and (
+      exists (
+        select 1
+        from public.journal_entries entry
+        where entry.id = journal_share_comments.journal_entry_id
+          and entry.user_id = auth.uid()
+      )
+      or exists (
+        select 1
+        from public.journal_shares share
+        where share.journal_entry_id = journal_share_comments.journal_entry_id
+          and share.shared_with = auth.uid()
+      )
+    )
+  );
+
+drop policy if exists "Users can delete their own journal comments" on public.journal_share_comments;
+create policy "Users can delete their own journal comments"
+  on public.journal_share_comments for delete
+  using (auth.uid() = author_id);

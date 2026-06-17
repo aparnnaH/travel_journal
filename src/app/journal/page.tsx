@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
-import { Share2, UsersRound, X } from 'lucide-react';
+import { MessageCircle, Send, Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -15,7 +15,9 @@ import { appendImportedTripToStorage, getScrapbookStorageKey } from '@/lib/ai/st
 import { useAuthStore } from '@/store/authStore';
 import { fetchFriends } from '@/lib/friendService';
 import {
+  createJournalComment,
   createJournalEntry,
+  fetchJournalComments,
   fetchJournalEntries,
   fetchJournalEntryShares,
   fetchSharedJournalEntries,
@@ -49,6 +51,7 @@ import {
 } from '@/lib/canvas/scrapbook';
 import type { JournalEntry } from '@/types';
 import type { Friendship } from '@/types/friends';
+import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import type { TripImportResult } from '@/types/trips';
 import type {
@@ -214,6 +217,12 @@ export default function JournalPage() {
   const [shareSaving, setShareSaving] = useState(false);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [commentEntryId, setCommentEntryId] = useState<string | null>(null);
+  const [commentsByEntry, setCommentsByEntry] = useState<Record<string, JournalComment[]>>({});
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentSavingEntryId, setCommentSavingEntryId] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [scrapbookPages, setScrapbookPages] = useState<ScrapbookPageData[]>(() => [
     createScrapbookPage(1, 'page-1'),
@@ -1275,6 +1284,130 @@ export default function JournalPage() {
     await refreshSharedEntries();
   };
 
+  const openCommentPanel = async (entryId: string) => {
+    setCommentEntryId(entryId);
+    setCommentError(null);
+    setCommentsLoading(true);
+
+    const response = await fetchJournalComments(entryId);
+    setCommentsLoading(false);
+
+    if (!response.success) {
+      setCommentError(response.error || 'Unable to load comments.');
+      return;
+    }
+
+    setCommentsByEntry((current) => ({
+      ...current,
+      [entryId]: response.data ?? [],
+    }));
+  };
+
+  const sendComment = async (entryId: string) => {
+    const draft = commentDrafts[entryId]?.trim() ?? '';
+
+    if (!draft) {
+      setCommentError('Write a comment before sending.');
+      return;
+    }
+
+    setCommentSavingEntryId(entryId);
+    setCommentError(null);
+
+    const response = await createJournalComment(entryId, draft);
+    setCommentSavingEntryId(null);
+
+    if (!response.success || !response.data) {
+      setCommentError(response.error || 'Unable to save comment.');
+      return;
+    }
+
+    const savedComment = response.data;
+
+    setCommentsByEntry((current) => ({
+      ...current,
+      [entryId]: [...(current[entryId] ?? []), savedComment],
+    }));
+    setCommentDrafts((current) => ({
+      ...current,
+      [entryId]: '',
+    }));
+  };
+
+  const renderCommentPanel = (entryId: string) => {
+    if (commentEntryId !== entryId) {
+      return null;
+    }
+
+    const comments = commentsByEntry[entryId] ?? [];
+
+    return (
+      <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-ink">Comments</p>
+            <p className="text-xs text-ink/55">A private thread for this shared entry.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCommentEntryId(null)}
+            className="rounded-md p-1 text-ink/45 transition hover:bg-cream hover:text-ink"
+            aria-label="Close comments"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+        {commentsLoading ? (
+          <p className="text-sm text-ink/60">Loading comments...</p>
+        ) : comments.length === 0 ? (
+          <p className="rounded-md border border-dashed border-gold/25 bg-cream/40 p-3 text-sm text-ink/60">
+            No comments yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {comments.map((comment) => (
+              <article key={comment.id} className="rounded-md border border-gold/14 bg-cream/35 px-3 py-2">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-semibold text-ink">
+                    {comment.author.displayName || comment.author.email}
+                  </p>
+                  <time className="shrink-0 text-[11px] text-ink/45" dateTime={comment.createdAt}>
+                    {new Date(comment.createdAt).toLocaleDateString()}
+                  </time>
+                </div>
+                <p className="mt-1 text-sm leading-5 text-ink/72">{comment.body}</p>
+              </article>
+            ))}
+          </div>
+        )}
+        {commentError ? <p className="mt-3 text-sm text-red-600">{commentError}</p> : null}
+        <div className="mt-3 flex gap-2">
+          <input
+            value={commentDrafts[entryId] ?? ''}
+            onChange={(event) =>
+              setCommentDrafts((current) => ({
+                ...current,
+                [entryId]: event.target.value,
+              }))
+            }
+            placeholder="Write a comment"
+            className="min-w-0 flex-1 rounded-lg border border-gold/25 bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+          />
+          <Button
+            type="button"
+            size="sm"
+            isLoading={commentSavingEntryId === entryId}
+            onClick={() => sendComment(entryId)}
+            className="gap-2"
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+            Send
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   const isStoryDictating = dictationTarget?.type === 'story';
   const isSelectedNoteDictating =
     selectedItem?.type === 'note' &&
@@ -1618,6 +1751,10 @@ export default function JournalPage() {
                           <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
                           Share
                         </Button>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => openCommentPanel(entry.id)}>
+                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+                          Comments
+                        </Button>
                         {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
                           <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1 text-xs font-semibold text-ink/55">
                             Shared with {shareRecipientsByEntry[entry.id].length}
@@ -1683,6 +1820,7 @@ export default function JournalPage() {
                           </Button>
                         </div>
                       ) : null}
+                      {renderCommentPanel(entry.id)}
                     </article>
                   ))
                 )}
@@ -1721,6 +1859,13 @@ export default function JournalPage() {
                           </span>
                         ))}
                       </div>
+                      <div className="mt-3">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => openCommentPanel(entry.id)}>
+                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+                          Comments
+                        </Button>
+                      </div>
+                      {renderCommentPanel(entry.id)}
                     </article>
                   ))
                 )}

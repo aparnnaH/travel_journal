@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { JournalEntry } from '@/types';
+import type { JournalComment } from '@/types/journalComments';
 import type { JournalSharePermission, JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 
 type JournalEntryRow = {
@@ -30,6 +31,14 @@ type ProfileRow = {
   avatar_url?: string | null;
 };
 
+type JournalCommentRow = {
+  id: string;
+  journal_entry_id: string;
+  author_id: string;
+  body: string;
+  created_at: string;
+};
+
 function mapEntry(row: JournalEntryRow): JournalEntry & { country_id: string; created_at: string } {
   return {
     id: row.id,
@@ -56,6 +65,17 @@ function mapProfile(profile?: ProfileRow) {
   };
 }
 
+function mapComment(row: JournalCommentRow, profiles: Map<string, ProfileRow>): JournalComment {
+  return {
+    id: row.id,
+    journalEntryId: row.journal_entry_id,
+    authorId: row.author_id,
+    body: row.body,
+    createdAt: row.created_at,
+    author: mapProfile(profiles.get(row.author_id)),
+  };
+}
+
 export async function getOwnedJournalEntry(supabaseAdmin: SupabaseClient, entryId: string, userId: string) {
   const { data, error } = await supabaseAdmin
     .from('journal_entries')
@@ -69,6 +89,27 @@ export async function getOwnedJournalEntry(supabaseAdmin: SupabaseClient, entryI
   }
 
   return data as JournalEntryRow | null;
+}
+
+export async function canAccessJournalEntry(supabaseAdmin: SupabaseClient, entryId: string, userId: string) {
+  const ownedEntry = await getOwnedJournalEntry(supabaseAdmin, entryId, userId);
+
+  if (ownedEntry) {
+    return true;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('journal_shares')
+    .select('id')
+    .eq('journal_entry_id', entryId)
+    .eq('shared_with', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return Boolean(data);
 }
 
 export async function getAcceptedFriendIds(supabaseAdmin: SupabaseClient, userId: string) {
@@ -227,4 +268,95 @@ export async function loadSharedJournalEntries(supabaseAdmin: SupabaseClient, us
       },
     ];
   });
+}
+
+export async function loadJournalComments(supabaseAdmin: SupabaseClient, entryId: string, userId: string) {
+  const canAccess = await canAccessJournalEntry(supabaseAdmin, entryId, userId);
+
+  if (!canAccess) {
+    throw new Error('Journal entry not found.');
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('journal_share_comments')
+    .select('*')
+    .eq('journal_entry_id', entryId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as JournalCommentRow[];
+  const authorIds = [...new Set(rows.map((row) => row.author_id))];
+
+  if (authorIds.length === 0) {
+    return [];
+  }
+
+  const { data: profiles, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id,email,display_name,avatar_url')
+    .in('id', authorIds);
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  const profileLookup = new Map((profiles ?? []).map((profile) => [String(profile.id), profile as ProfileRow]));
+  return rows.map((row) => mapComment(row, profileLookup));
+}
+
+export async function createJournalComment({
+  body,
+  entryId,
+  supabaseAdmin,
+  userId,
+}: {
+  body: string;
+  entryId: string;
+  supabaseAdmin: SupabaseClient;
+  userId: string;
+}) {
+  const cleanBody = body.trim();
+
+  if (!cleanBody) {
+    throw new Error('Write a comment before sending.');
+  }
+
+  if (cleanBody.length > 1000) {
+    throw new Error('Comments must be 1000 characters or fewer.');
+  }
+
+  const canAccess = await canAccessJournalEntry(supabaseAdmin, entryId, userId);
+
+  if (!canAccess) {
+    throw new Error('Journal entry not found.');
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('journal_share_comments')
+    .insert({
+      journal_entry_id: entryId,
+      author_id: userId,
+      body: cleanBody,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const { data: profiles, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id,email,display_name,avatar_url')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  return mapComment(data as JournalCommentRow, new Map([[userId, profiles as ProfileRow]]));
 }
