@@ -1,233 +1,259 @@
 # Travel Journal
 
-A production-quality, cross-platform travel journaling app with interactive scratch-off world map, scrapbook-style journals, passport stamp collection, and friend collaboration features.
+A Next.js travel archive for mapping visited countries, building scrapbook-style journals, collecting passport stamps, sharing entries with friends, and auditing map progress against passport coverage.
 
-## 🌍 Features
+## Current App Surface
 
-### Core Features
-- **Interactive Scratch Map**: Scratch off countries as you visit them, tracking your global adventures
-- **Scrapbook Journals**: Document memories with polaroid-style photos, mood tags, and handwritten notes
-- **Passport Stamp Collection**: Collect digital stamps for every country visited
-- **Friend Collaboration**: Share adventures with friends in real-time with live updates
-- **Offline-First Support**: Access your journal and map without internet, syncs automatically when reconnected
+### Main pages
 
-### Technical Features
-- TypeScript for strong typing across the entire codebase
-- Responsive mobile-first design
-- Real-time updates with Supabase
-- Row-level security for privacy
-- Accessibility support
-- Production-ready architecture
+- `/` - public landing page with feature sections and visual previews
+- `/login` and `/signup` - Supabase-backed authentication
+- `/dashboard` - signed-in command center with map, journal, passport, profile, and Travel Circle shortcuts
+- `/profile` - editable profile details, avatar display, profile completeness, and account shortcuts
+- `/map` - scratch-map experience with visited countries, country explorer, city pins, and atlas controls
+- `/journal` - journal entries, scrapbook canvas, trip import, entry sharing, shared entries, and comments
+- `/passport` - passport stamp collection, locked/unlocked stamp states, and map-to-stamp reveal links
+- `/compare` - user-facing **Travel Audit** page that compares map visits with passport stamp coverage
+- `/friends` - **Travel Circle** friend requests, accepted friends, blocked users, and friend discovery by email
+- `/companion` and `/ai-companion` - AI travel-memory assistant and journal draft workflow
 
-## 🎨 Design System
+### Recent product additions
 
-### Color Palette
-- **Cream**: `#F5EDD8` - Primary background
-- **Gold**: `#C9A96E` - Primary accent
-- **Deep Gold**: `#8B6035` - Secondary accent
-- **Ink**: `#3D2B0E` - Primary text
+- Organized app header with `Dashboard`, `Explore`, `Journal`, and `Account` groups.
+- `Explore` dropdown includes Map, Passport, Travel Audit, and Companion.
+- `Account` dropdown includes Profile, Friends / Travel Circle, and Sign out.
+- Dashboard and Profile now surface Travel Circle without keeping Friends in the main header nav.
+- Journal sharing prompts users to open Travel Circle when no friends exist.
+- Travel Audit compares visited countries with passport stamp matches, missing map-stamp links, and still-locked stamp goals.
+- Signed-in header shows the profile image or initials beside the account label.
+- Profile completeness is hidden once the profile is complete.
 
-### Typography
-- **Playfair Display**: Headings (serif)
-- **Crimson Pro**: Body text (serif)
-- **Caveat**: Handwritten notes (script)
+## Feature Overview
 
-## 📁 Project Structure
+### Map and Country Explorer
 
-```
+- Interactive world atlas built around visited countries and country labels.
+- Country Explorer modal with city data and OpenStreetMap tile previews.
+- City pins are stored with the map state.
+- Map state persists locally with Zustand persistence.
+
+### Journal and Scrapbook
+
+- Journal entry creation and listing.
+- Scrapbook canvas with draggable memories, rotatable photos, decorations, and page themes.
+- Trip import components for parsing itinerary-like content into draft journal material.
+- Shared journal section for entries shared with the current user.
+- Comments on accessible shared journal entries.
+
+### Passport Stamps
+
+- Digital passport collection driven by country stamp metadata.
+- Locked and unlocked stamp states.
+- Asset-ready stamp rendering with SVG/PNG artwork and texture layers.
+- Deep links such as `/passport?stamp=...` can highlight a specific stamp.
+
+### Travel Audit
+
+- Compares `visitedCountries` from the map store with the passport stamp catalog.
+- Shows matched countries, mapped countries without stamp matches, and passport stamps not yet unlocked by the map.
+- Links back to Map, Passport, and Journal for follow-up work.
+
+### Friends / Travel Circle
+
+- Friend request flow with pending, accepted, and blocked states.
+- Journal sharing to accepted friends.
+- View/comment access for shared entries.
+- Supabase RLS policies for friendships, journal shares, and comments.
+
+### AI Companion
+
+- Travel-memory-aware companion page.
+- Can use journal entries, scrapbook notes/photos, imported trips, map context, and passport context.
+- Optional server-side OpenAI polishing endpoint for draft refinement.
+- Drafts can be saved back to the journal flow.
+
+## Tech Stack
+
+- **Next.js 16.2.6** with App Router
+- **React 19.2.4**
+- **TypeScript**
+- **Tailwind CSS 4**
+- **Supabase** for auth, database access, and server-side admin operations
+- **Zustand** for client state and persisted map state
+- **TanStack React Query** for server state patterns
+- **Framer Motion**, `react-pageflip`, `react-simple-maps`, `react-moveable`, `react-konva`, and `lucide-react`
+
+## Project Structure
+
+```text
 src/
-├── app/                 # Next.js app directory
-│   ├── layout.tsx      # Root layout with fonts
-│   ├── page.tsx        # Landing page
-│   └── globals.css     # Global styles and Tailwind config
-├── components/         # Reusable components
-│   ├── ui/            # Base UI components (Button, Card, Input, etc.)
-│   └── layout/        # Layout components (Header, Footer, Navigation)
-├── features/          # Feature-specific components and logic
-│   ├── landing/       # Landing page components
-│   ├── auth/          # Authentication features
-│   ├── map/           # Scratch map feature
-│   ├── journal/       # Journal entries and entries list
-│   ├── passport/      # Passport stamp collection
-│   └── friends/       # Friend collaboration
-├── hooks/             # Custom React hooks
-├── lib/               # Utility libraries
-│   └── supabase.ts    # Supabase client setup
-├── services/          # API and external services
-├── store/             # Zustand state management
-│   ├── authStore.ts   # Authentication state
-│   └── mapStore.ts    # Scratch map state
-├── types/             # TypeScript type definitions
-│   └── index.ts       # Core types and interfaces
-└── utils/             # Utility functions
-    └── cn.ts          # Class name merging utility
+├── app/
+│   ├── api/                  # Next route handlers
+│   ├── dashboard/            # Signed-in dashboard
+│   ├── map/                  # Scratch map route
+│   ├── journal/              # Journal, scrapbook, sharing, comments
+│   ├── passport/             # Passport route
+│   ├── compare/              # Travel Audit route
+│   ├── friends/              # Travel Circle route
+│   ├── profile/              # Profile route
+│   └── companion/            # AI companion route
+├── components/
+│   ├── ai/                   # Companion cards and page composition
+│   ├── chat/                 # Companion chat panel
+│   ├── import/               # Trip import UI
+│   ├── journal/              # Scrapbook/canvas components
+│   ├── layout/               # AppHeader and PageShell
+│   ├── maps/                 # World atlas and city explorer
+│   ├── passport/             # Passport page UI
+│   ├── stamps/               # Stamp renderers and locked states
+│   └── ui/                   # Button, Card, Input, Badge
+├── data/
+│   └── stamps/               # Country stamp and atlas data
+├── hooks/
+├── lib/
+│   ├── ai/                   # Companion context, storage, polishing
+│   ├── canvas/               # Scrapbook data model
+│   ├── server/               # Server helpers for friends/sharing
+│   ├── stamps/               # Stamp matching and map comparison
+│   └── trip-parser/          # Trip import parsing
+├── store/                    # Zustand auth/map stores
+├── types/                    # Shared TypeScript types
+└── utils/                    # Shared utilities
+
+supabase/
+└── friends.sql               # Friendships, journal shares, comments, and RLS policies
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+ (installed via Homebrew on macOS)
+
+- Node.js 18+
 - npm 11+
-- Supabase account
+- Supabase project
 
-### Installation
+### Install
 
-1. **Environment Configuration**
-   - Copy `.env.local.example` to `.env.local`
-   - Add your Supabase credentials:
-     ```bash
-     NEXT_PUBLIC_SUPABASE_URL=your_url
-     NEXT_PUBLIC_SUPABASE_ANON_KEY=your_key
-     ```
+```bash
+npm install
+```
 
-   To get Supabase credentials:
-   1. Visit [app.supabase.com](https://app.supabase.com)
-   2. Create a new project
-   3. Go to Project Settings → API
-   4. Copy the URL and anon key
+### Environment
 
-2. **Run Development Server**
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000)
+Copy the example file and fill in the values:
 
-### Build for Production
+```bash
+cp .env.local.example .env.local
+```
+
+Required for the app:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+```
+
+Optional for AI journal polishing:
+
+```env
+OPENAI_API_KEY=
+OPENAI_POLISH_MODEL=gpt-5.2
+```
+
+The example file still includes Instagram variables, but the current active app routes do not require them for the core map, journal, passport, friends, profile, dashboard, or companion flows.
+
+### Supabase setup
+
+The app expects Supabase auth plus profile and journal tables used by the existing services. For the friend and sharing feature, run:
+
+```bash
+supabase/friends.sql
+```
+
+That SQL adds:
+
+- `friendships`
+- `journal_shares`
+- `journal_share_comments`
+- indexes for friend/share/comment lookups
+- row-level security policies for user-owned access
+
+Run it after the base `profiles` and `journal_entries` tables exist, because the script references both.
+
+### Development
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+If another dev server is already using port 3000, Next.js may choose the next available port.
+
+### Production
+
 ```bash
 npm run build
 npm run start
 ```
 
-## 📦 Installed Dependencies
-
-### Core Framework
-- **next** (16.2.6) - React framework
-- **react** & **react-dom** - React library
-
-### State Management & Data
-- **zustand** - Lightweight state management
-- **@tanstack/react-query** - Server state management
-- **@supabase/supabase-js** - Supabase client
-
-### Styling & UI
-- **tailwindcss** (4.x) - Utility-first CSS framework
-- **@tailwindcss/postcss** - PostCSS plugin for Tailwind 4
-
-### Animations
-- **framer-motion** - Animation library for React
-
-### Utilities
-- **clsx** - Utility for constructing classNames
-- **tailwind-merge** - Merge Tailwind CSS classes
-
-### Development
-- **typescript** - TypeScript compiler
-- **eslint** - Code quality
-- **sass** - SCSS support
-
-## 🏗️ Architecture Decisions
-
-### Component Organization
-- **UI Components**: Reusable, style-focused components (Button, Card, Input)
-- **Feature Components**: Feature-specific components grouped by domain
-- **Layout Components**: Shared layout structure (Header, Footer)
-
-### State Management
-- **Zustand**: Lightweight stores for auth and map state
-- **React Query**: Server state with Supabase
-- **Local State**: React useState for component-level state
-
-### Styling
-- **Tailwind CSS 4**: Utility-first CSS with new inline @theme syntax
-- **Custom Utilities**: Soft shadows defined in @layer utilities
-- **CSS Variables**: Design tokens for colors
-
-### API & Backend
-- **Supabase**: PostgreSQL database + auth + realtime
-- **Row-Level Security**: User data isolation
-- **Realtime Subscriptions**: Live updates for collaboration
-
-## 🔧 Available Scripts
+## Scripts
 
 ```bash
-# Development
-npm run dev        # Start dev server with hot reload
-
-# Production
-npm run build      # Build for production
-npm run start      # Start production server
-
-# Code Quality
-npm run lint       # Run ESLint
+npm run dev      # Start the Next.js dev server
+npm run lint     # Run ESLint
+npm run build    # Create a production build
+npm run start    # Start the production server
 ```
 
-## 📝 Next Steps
-
-### Phase 1: Foundation (Current)
-- ✅ Project setup and folder structure
-- ✅ Design system and Tailwind configuration
-- ✅ Base UI components (Button, Card, Input)
-- ✅ Zustand stores (auth, map)
-- ✅ Supabase client setup
-- ✅ Landing page with features showcase
-
-### Phase 2: Authentication
-- [ ] Auth UI components
-- [ ] Login/Signup pages
-- [ ] Email verification
-- [ ] Google OAuth integration
-- [ ] Protected routes
-
-### Phase 3: Scratch Map
-- [ ] SVG world map component
-- [ ] Canvas scratch animation
-- [ ] Country data and paths
-- [ ] Scratch persistence
-
-### Phase 4: Journal System
-- [ ] Journal entry pages
-- [ ] Memory cards UI
-- [ ] Photo upload integration
-- [ ] Mood tags and notes
-
-### Phase 5: Passport & Friends
-- [ ] Passport stamp grid
-- [ ] Friend collaboration
-- [ ] Realtime updates
-- [ ] Sharing features
-
-## 🔐 Environment Variables
+## Environment Variables
 
 ```env
 # Required
-NEXT_PUBLIC_SUPABASE_URL=          # Your Supabase URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY=     # Your Supabase anonymous key
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
 
-# Optional (Server-side only)
-SUPABASE_SERVICE_ROLE_KEY=         # For server-side operations
-OPENAI_API_KEY=                    # Enables AI draft polishing in /companion
-OPENAI_POLISH_MODEL=gpt-5.2        # Optional override
+# Optional AI companion polish endpoint
+OPENAI_API_KEY=
+OPENAI_POLISH_MODEL=gpt-5.2
+
+# Present in .env.local.example, not required by current core routes
+NEXT_PUBLIC_INSTAGRAM_APP_ID=
+INSTAGRAM_APP_SECRET=
+NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=
+NEXT_PUBLIC_APP_URL=
 ```
 
-## 📚 Resources
+## API Routes
+
+- `/api/profile` - profile read/update flow
+- `/api/journal` - journal persistence
+- `/api/journal/share` - replace/load journal share recipients
+- `/api/journal/shared` - shared journal entries accessible to the current user
+- `/api/journal/comments` - comments on accessible journal entries
+- `/api/friends` - friendship summary
+- `/api/friends/request` - create friend requests
+- `/api/friends/[friendshipId]` - accept, block, or remove friendships
+- `/api/ai/polish` - optional AI polish endpoint for companion drafts
+
+## Notes for Future Work
+
+- The user-facing Travel Audit page currently lives at `/compare`; only the label has been renamed.
+- The app header intentionally groups secondary pages under dropdowns instead of placing every route in the main nav.
+- Map and passport systems are connected through country/stamp matching but should remain loosely coupled.
+- Friend sharing depends on accepted friendships and the `supabase/friends.sql` schema.
+
+## Resources
 
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Tailwind CSS Documentation](https://tailwindcss.com)
 - [Supabase Documentation](https://supabase.com/docs)
 - [Framer Motion Documentation](https://www.framer.com/motion)
 - [Zustand Documentation](https://github.com/pmndrs/zustand)
-- [React Query Documentation](https://tanstack.com/query/latest)
-
-## 🎯 Project Goals
-
-1. **Production-Ready**: Enterprise-grade code quality
-2. **Scalable**: Easy to add new features and maintain
-3. **Type-Safe**: Full TypeScript coverage
-4. **Performant**: Optimized bundle and runtime performance
-5. **Accessible**: WCAG compliant UI
-6. **Offline-First**: Works without internet connection
-7. **Privacy-Focused**: User data is user's alone
+- [TanStack Query Documentation](https://tanstack.com/query/latest)
 
 ---
 
-**Built with ❤️ for travelers**
+Built for travelers who want their map, memories, friends, and passport stamps in one place.
