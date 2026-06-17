@@ -7,6 +7,7 @@ import {
   BookOpen,
   Camera,
   Compass,
+  GitCompare,
   IdCard,
   Mail,
   MapPinned,
@@ -411,7 +412,8 @@ export default function ProfilePage() {
               <div className="space-y-2">
                 {[
                   { label: 'Passport', href: '/passport', icon: Stamp },
-                  { label: 'Friends', href: '/friends', icon: UsersRound },
+                  { label: 'Travel Audit', href: '/compare', icon: GitCompare },
+                  { label: 'Friends / Travel Circle', href: '/friends', icon: UsersRound },
                   { label: 'Map', href: '/map', icon: MapPinned },
                   { label: 'Dashboard', href: '/dashboard', icon: Compass },
                 ].map((item) => {

@@ -1780,9 +1780,21 @@ export default function JournalPage() {
                           {shareLoading ? (
                             <p className="text-sm text-ink/60">Loading sharing settings...</p>
                           ) : acceptedFriends.length === 0 ? (
-                            <p className="rounded-md border border-dashed border-gold/25 bg-cream/40 p-3 text-sm text-ink/60">
-                              Add friends before sharing journal entries.
-                            </p>
+                            <div className="rounded-md border border-dashed border-gold/25 bg-cream/40 p-3">
+                              <p className="text-sm font-semibold text-ink">No friends in your Travel Circle yet.</p>
+                              <p className="mt-1 text-sm text-ink/60">
+                                Add friends first, then come back here to share this journal entry.
+                              </p>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                className="mt-3"
+                                onClick={() => router.push('/friends')}
+                              >
+                                Open Travel Circle
+                              </Button>
+                            </div>
                           ) : (
                             <div className="space-y-2">
                               {acceptedFriends.map((friendship) => {

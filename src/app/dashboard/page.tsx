@@ -6,6 +6,7 @@ import {
   BookOpen,
   CalendarDays,
   Compass,
+  GitCompare,
   MapPinned,
   PenLine,
   Sparkles,
@@ -165,11 +166,18 @@ export default function DashboardPage() {
       tone: 'bg-[#E8F1EA] text-[#315F43] border-[#A7C6AD]',
     },
     {
-      title: 'Build your travel circle',
-      description: 'Invite friends before shared journal features arrive.',
+      title: 'Travel Circle',
+      description: 'Invite friends and manage shared journal access.',
       href: '/friends',
       icon: UsersRound,
       tone: 'bg-[#F3E6D8] text-[#71481F] border-[#D9B98C]',
+    },
+    {
+      title: 'Travel Audit',
+      description: 'Check map coverage, passport stamps, and locked goals.',
+      href: '/compare',
+      icon: GitCompare,
+      tone: 'bg-[#F8E6D8] text-[#884E29] border-[#DEB595]',
     },
     {
       title: 'Ask for a story thread',
@@ -321,7 +329,7 @@ export default function DashboardPage() {
             />
             <MetricCard
               icon={UsersRound}
-              label="Travel circle"
+              label="Travel Circle"
               value="New"
               detail="Friend requests and invites"
               tone="bg-[#F6E8EE] text-[#7A3E59]"
