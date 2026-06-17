@@ -16,7 +16,7 @@ export function Header({ isScrolled = false }: HeaderProps) {
         isScrolled ? 'bg-cream/95 backdrop-blur shadow-soft' : 'bg-transparent'
       )}
     >
-      <nav className="container mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+      <nav className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center space-x-2">
           <div className="text-2xl font-serif font-bold text-gold-deep">✈️</div>

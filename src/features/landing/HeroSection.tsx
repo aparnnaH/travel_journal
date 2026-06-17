@@ -27,7 +27,7 @@ export function HeroSection() {
   };
 
   return (
-    <section className="relative pt-32 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
+    <section className="relative pt-16 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
       <motion.div
         className="container mx-auto max-w-6xl relative z-10"
         variants={containerVariants}
@@ -59,14 +59,9 @@ export function HeroSection() {
           variants={itemVariants}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12"
         >
-          <Link href="/signup">
+          <Link href="/map">
             <Button variant="primary" size="lg" className="w-full sm:w-auto">
               Start Your Journey
-            </Button>
-          </Link>
-          <Link href="#showcase">
-            <Button variant="outline" size="lg" className="w-full sm:w-auto">
-              See It In Action
             </Button>
           </Link>
         </motion.div>

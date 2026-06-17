@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Input, Button } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
 import { signInWithEmail } from '@/lib/supabase';
@@ -12,8 +12,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const isAuthLoading = useAuthStore((s) => s.isLoading);
   const setUser = useAuthStore((s) => s.setUser);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!isAuthLoading && user) {
+      router.replace('/');
+    }
+  }, [isAuthLoading, router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,9 +48,9 @@ export default function LoginPage() {
       }
 
       setLoading(false);
-      router.push('/map');
-    } catch (err: any) {
-      setError(err?.message || 'Unexpected error');
+      router.push('/');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
       setLoading(false);
     }
   };
