@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
-import { ExternalLink, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
+import { ExternalLink, Maximize2, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -256,6 +256,8 @@ export default function JournalPage() {
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [canvaImportingDesignId, setCanvaImportingDesignId] = useState<string | null>(null);
   const [canvaCreatingDesign, setCanvaCreatingDesign] = useState(false);
+  const [canvaWorkspaceDesign, setCanvaWorkspaceDesign] = useState<CanvaDesign | null>(null);
+  const [canvaFullscreenOpen, setCanvaFullscreenOpen] = useState(false);
   const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -1241,6 +1243,13 @@ export default function JournalPage() {
     return editUrl.toString();
   };
 
+  const openCanvaInWorkspace = (design: CanvaDesign) => {
+    setCanvaWorkspaceDesign(design);
+    setCanvaModalOpen(false);
+    setLocalScrapbookBackupOpen(false);
+    setCanvaError(null);
+  };
+
   const createCanvaJournalPage = async () => {
     setCanvaCreatingDesign(true);
     setCanvaError(null);
@@ -1254,7 +1263,7 @@ export default function JournalPage() {
       return;
     }
 
-    window.location.href = getCanvaEditUrl(response.data);
+    openCanvaInWorkspace(response.data);
   };
 
   const importCanvaDesign = async (design: CanvaDesign) => {
@@ -1272,8 +1281,7 @@ export default function JournalPage() {
     let completedExport = null as Awaited<ReturnType<typeof fetchCanvaExport>>['data'] | null;
 
     for (let attempt = 0; attempt < 18; attempt += 1) {
-      const includeDataUrls = attempt > 0;
-      const exportStatusResponse = await fetchCanvaExport(exportResponse.data.id, includeDataUrls);
+      const exportStatusResponse = await fetchCanvaExport(exportResponse.data.id);
 
       if (!exportStatusResponse.success || !exportStatusResponse.data) {
         setCanvaImportingDesignId(null);
@@ -1288,7 +1296,15 @@ export default function JournalPage() {
       }
 
       if (exportStatusResponse.data.status === 'success') {
-        completedExport = exportStatusResponse.data;
+        const downloadableExportResponse = await fetchCanvaExport(exportResponse.data.id, true);
+
+        if (!downloadableExportResponse.success || !downloadableExportResponse.data) {
+          setCanvaImportingDesignId(null);
+          setCanvaError(downloadableExportResponse.error || 'Could not download the exported Canva page.');
+          return;
+        }
+
+        completedExport = downloadableExportResponse.data;
         break;
       }
 
@@ -1553,6 +1569,45 @@ export default function JournalPage() {
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
   const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
 
+  const renderCanvaFrame = (design: CanvaDesign, fullscreen = false) => (
+    <div className={fullscreen ? 'flex h-full flex-col bg-cream' : 'flex min-h-[620px] flex-col bg-cream'}>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ink">{design.title || 'Untitled Canva design'}</p>
+          <p className="text-xs text-ink/50">Canva editor</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!fullscreen ? (
+            <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={() => setCanvaFullscreenOpen(true)}>
+              <Maximize2 className="h-4 w-4" aria-hidden="true" />
+              Fullscreen
+            </Button>
+          ) : null}
+          <a
+            href={getCanvaEditUrl(design)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            New Tab
+          </a>
+          <Button type="button" size="sm" onClick={() => void importCanvaDesign(design)} isLoading={canvaImportingDesignId === design.id}>
+            Import
+          </Button>
+        </div>
+      </div>
+      <iframe
+        title={design.title || 'Canva editor'}
+        src={getCanvaEditUrl(design)}
+        className={fullscreen ? 'min-h-0 flex-1 border-0' : 'h-[620px] w-full border-0'}
+        allow="clipboard-read; clipboard-write; fullscreen"
+        allowFullScreen
+        referrerPolicy="strict-origin-when-cross-origin"
+      />
+    </div>
+  );
+
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
       <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
@@ -1567,7 +1622,14 @@ export default function JournalPage() {
         </div>
       </div>
 
-      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+      {canvaWorkspaceDesign ? (
+        <div className="p-5">
+          <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+            {renderCanvaFrame(canvaWorkspaceDesign)}
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="relative min-h-[520px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_14%,rgba(255,255,255,0.62),transparent_20%),radial-gradient(circle_at_78%_72%,rgba(47,111,109,0.14),transparent_26%)]" />
@@ -1609,6 +1671,7 @@ export default function JournalPage() {
           </div>
         </div>
       </div>
+      )}
     </section>
   );
 
@@ -1707,6 +1770,16 @@ export default function JournalPage() {
                           type="button"
                           size="sm"
                           className="gap-2"
+                          variant="secondary"
+                          onClick={() => openCanvaInWorkspace(design)}
+                        >
+                          <Palette className="h-4 w-4" aria-hidden="true" />
+                          Workspace
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-2"
                           isLoading={canvaImportingDesignId === design.id}
                           onClick={() => void importCanvaDesign(design)}
                         >
@@ -1734,6 +1807,27 @@ export default function JournalPage() {
             )}
           </div>
         </div>
+      </div>
+    );
+  };
+
+  const renderCanvaFullscreen = () => {
+    if (!canvaFullscreenOpen || !canvaWorkspaceDesign) {
+      return null;
+    }
+
+    return (
+      <div className="fixed inset-0 z-[70] flex flex-col bg-cream">
+        <div className="flex items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
+            <h2 className="text-lg font-semibold text-ink">{canvaWorkspaceDesign.title || 'Untitled Canva design'}</h2>
+          </div>
+          <Button type="button" variant="ghost" onClick={() => setCanvaFullscreenOpen(false)}>
+            Close
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1">{renderCanvaFrame(canvaWorkspaceDesign, true)}</div>
       </div>
     );
   };
@@ -2373,6 +2467,7 @@ export default function JournalPage() {
           onImport={handleTripImported}
         />
         {renderCanvaModal()}
+        {renderCanvaFullscreen()}
       </PageShell>
     </div>
   );
