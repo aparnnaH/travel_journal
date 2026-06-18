@@ -75,6 +75,12 @@ type SavedEntry = JournalEntry & {
   created_at?: string;
 };
 
+type CanvaImportedPreview = {
+  design: CanvaDesign;
+  title: string;
+  dataUrls: string[];
+};
+
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 
 type DragState = {
@@ -257,6 +263,7 @@ export default function JournalPage() {
   const [canvaImportingDesignId, setCanvaImportingDesignId] = useState<string | null>(null);
   const [canvaCreatingDesign, setCanvaCreatingDesign] = useState(false);
   const [canvaWorkspaceDesign, setCanvaWorkspaceDesign] = useState<CanvaDesign | null>(null);
+  const [canvaImportedPreview, setCanvaImportedPreview] = useState<CanvaImportedPreview | null>(null);
   const [canvaFullscreenOpen, setCanvaFullscreenOpen] = useState(false);
   const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
   const [form, setForm] = useState({
@@ -1245,6 +1252,7 @@ export default function JournalPage() {
 
   const openCanvaInWorkspace = (design: CanvaDesign) => {
     setCanvaWorkspaceDesign(design);
+    setCanvaImportedPreview(null);
     setCanvaModalOpen(false);
     setLocalScrapbookBackupOpen(false);
     setCanvaError(null);
@@ -1340,6 +1348,14 @@ export default function JournalPage() {
     setImportNotice(
       `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
     );
+    setCanvaImportedPreview({
+      design,
+      title: result.title,
+      dataUrls,
+    });
+    setCanvaWorkspaceDesign(design);
+    setLocalScrapbookBackupOpen(false);
+    setCanvaFullscreenOpen(false);
     setCanvaImportingDesignId(null);
     setCanvaModalOpen(false);
   };
@@ -1608,6 +1624,43 @@ export default function JournalPage() {
     </div>
   );
 
+  const renderCanvaImportedPreview = (preview: CanvaImportedPreview) => (
+    <div className="bg-cream">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-ink">{preview.title}</p>
+          <p className="text-xs text-ink/50">Imported Canva page</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={() => setCanvaImportedPreview(null)}>
+            Edit Again
+          </Button>
+          <a
+            href={getCanvaEditUrl(preview.design)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
+          >
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            New Tab
+          </a>
+        </div>
+      </div>
+      <div className="grid max-h-[720px] gap-4 overflow-y-auto p-4">
+        {preview.dataUrls.map((src, index) => (
+          <figure key={`${preview.design.id}-${index}`} className="mx-auto w-full max-w-4xl overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+            <div
+              role="img"
+              aria-label={`${preview.title} page ${index + 1}`}
+              className="min-h-[520px] w-full bg-contain bg-center bg-no-repeat"
+              style={{ backgroundImage: `url(${src})` }}
+            />
+          </figure>
+        ))}
+      </div>
+    </div>
+  );
+
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
       <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
@@ -1622,7 +1675,13 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {canvaWorkspaceDesign ? (
+      {canvaImportedPreview ? (
+        <div className="p-5">
+          <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+            {renderCanvaImportedPreview(canvaImportedPreview)}
+          </div>
+        </div>
+      ) : canvaWorkspaceDesign ? (
         <div className="p-5">
           <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
             {renderCanvaFrame(canvaWorkspaceDesign)}
