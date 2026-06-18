@@ -115,10 +115,14 @@ function getCountryInitials(countryName: string) {
 function pickVisitedColor(
   countryId: string,
   countryColors: Record<string, string>,
-  neighboringCountryIds: string[] = []
+  neighboringCountryIds: string[] = [],
+  visitedCountryIds?: Set<string>
 ) {
   const blockedNeighborColors = new Set(
-    neighboringCountryIds.map((neighborId) => countryColors[neighborId]).filter(Boolean)
+    neighboringCountryIds
+      .filter((neighborId) => !visitedCountryIds || visitedCountryIds.has(neighborId))
+      .map((neighborId) => countryColors[neighborId])
+      .filter(Boolean)
   );
   const colorUseCounts = new Map(visitedColorPalette.map((color) => [color, 0]));
 
@@ -131,9 +135,12 @@ function pickVisitedColor(
   const colorOptions = availableColors.length > 0 ? availableColors : visitedColorPalette;
   const lowestUseCount = Math.min(...colorOptions.map((color) => colorUseCounts.get(color) ?? 0));
   const leastUsedColors = colorOptions.filter((color) => (colorUseCounts.get(color) ?? 0) === lowestUseCount);
-  const randomIndex = Math.floor(Math.random() * leastUsedColors.length);
+  const stableIndex = Array.from(countryId).reduce(
+    (total, character) => total + character.charCodeAt(0),
+    countryId.length
+  ) % leastUsedColors.length;
 
-  return leastUsedColors[randomIndex];
+  return leastUsedColors[stableIndex];
 }
 
 interface RevealedStampBanner {
@@ -305,34 +312,6 @@ export default function MapPage() {
     setScratchPercentage(percent);
   }, [atlasCountries.length, setScratchPercentage, visitedAtlasCountryIds]);
 
-  useEffect(() => {
-    if (Object.keys(countryNeighborIds).length === 0) return;
-
-    const visitedCountryIds = new Set(visitedCountries);
-    const nextCountryColors = { ...countryColors };
-    const colorChanges: Array<[string, string]> = [];
-
-    visitedCountries.forEach((countryId) => {
-      const currentColor = nextCountryColors[countryId];
-      if (!currentColor) return;
-
-      const neighboringCountryIds = countryNeighborIds[countryId] ?? [];
-      const hasNeighborColorConflict = neighboringCountryIds.some(
-        (neighborId) => visitedCountryIds.has(neighborId) && nextCountryColors[neighborId] === currentColor
-      );
-
-      if (!hasNeighborColorConflict) return;
-
-      const nextColor = pickVisitedColor(countryId, nextCountryColors, neighboringCountryIds);
-      if (nextColor === currentColor) return;
-
-      nextCountryColors[countryId] = nextColor;
-      colorChanges.push([countryId, nextColor]);
-    });
-
-    colorChanges.forEach(([countryId, color]) => setCountryColor(countryId, color));
-  }, [countryColors, countryNeighborIds, setCountryColor, visitedCountries]);
-
   const quickActionCountries = useMemo<QuickActionCountry[]>(() => {
     if (atlasCountries.length === 0) {
       return placeholderCountries
@@ -462,6 +441,51 @@ export default function MapPage() {
     return colors;
   }, [countryColors, recentlyVisited]);
 
+  useEffect(() => {
+    if (Object.keys(countryNeighborIds).length === 0) return;
+
+    const visitedCountryIds = new Set(mapVisitedCountryIds);
+    const nextCountryColors = { ...mapCountryColors };
+    const visitedAtlasCountryIdsWithNeighbors = mapVisitedCountryIds
+      .filter((countryId) => countryNeighborIds[countryId])
+      .sort((firstCountryId, secondCountryId) => {
+        const firstNeighborCount = (countryNeighborIds[firstCountryId] ?? []).filter((neighborId) =>
+          visitedCountryIds.has(neighborId)
+        ).length;
+        const secondNeighborCount = (countryNeighborIds[secondCountryId] ?? []).filter((neighborId) =>
+          visitedCountryIds.has(neighborId)
+        ).length;
+
+        if (secondNeighborCount !== firstNeighborCount) {
+          return secondNeighborCount - firstNeighborCount;
+        }
+
+        return firstCountryId.localeCompare(secondCountryId);
+      });
+
+    const colorChanges: Array<[string, string]> = [];
+
+    visitedAtlasCountryIdsWithNeighbors.forEach((countryId) => {
+      const currentColor = nextCountryColors[countryId];
+      const neighboringCountryIds = countryNeighborIds[countryId] ?? [];
+      const hasNeighborColorConflict =
+        currentColor !== undefined &&
+        neighboringCountryIds.some(
+          (neighborId) => visitedCountryIds.has(neighborId) && nextCountryColors[neighborId] === currentColor
+        );
+
+      if (currentColor && !hasNeighborColorConflict) return;
+
+      const nextColor = pickVisitedColor(countryId, nextCountryColors, neighboringCountryIds, visitedCountryIds);
+      if (nextColor === currentColor) return;
+
+      nextCountryColors[countryId] = nextColor;
+      colorChanges.push([countryId, nextColor]);
+    });
+
+    colorChanges.forEach(([countryId, color]) => setCountryColor(countryId, color));
+  }, [countryNeighborIds, mapCountryColors, mapVisitedCountryIds, setCountryColor]);
+
   const visibleVisitedCountries = useMemo(() => {
     const searchQuery = normalizeCountryName(visitedCountrySearch);
     const filteredCountries = searchQuery
@@ -536,13 +560,16 @@ export default function MapPage() {
     const knownCountry = placeholderCountries.find((country) => country.id === countryId);
     const resolvedCountryName = countryName ?? knownCountry?.name;
     const wasVisited = isCountryAlreadyVisited(countryId);
-    const currentColor = countryColors[countryId];
+    const currentColor = mapCountryColors[countryId];
+    const visitedCountryIds = new Set(mapVisitedCountryIds);
     const hasNeighborColorConflict =
       currentColor !== undefined &&
-      neighboringCountryIds.some((neighborId) => countryColors[neighborId] === currentColor);
+      neighboringCountryIds.some(
+        (neighborId) => visitedCountryIds.has(neighborId) && mapCountryColors[neighborId] === currentColor
+      );
 
     if (!currentColor || hasNeighborColorConflict) {
-      setCountryColor(countryId, pickVisitedColor(countryId, countryColors, neighboringCountryIds));
+      setCountryColor(countryId, pickVisitedColor(countryId, mapCountryColors, neighboringCountryIds, visitedCountryIds));
     }
     if (resolvedCountryName) {
       setCountryLabel(countryId, resolvedCountryName);
@@ -567,13 +594,16 @@ export default function MapPage() {
 
   const handleMapCountryClick = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
     const wasVisited = isCountryAlreadyVisited(countryId);
-    const currentColor = countryColors[countryId];
+    const currentColor = mapCountryColors[countryId];
+    const visitedCountryIds = new Set(mapVisitedCountryIds);
     const hasNeighborColorConflict =
       currentColor !== undefined &&
-      neighboringCountryIds.some((neighborId) => countryColors[neighborId] === currentColor);
+      neighboringCountryIds.some(
+        (neighborId) => visitedCountryIds.has(neighborId) && mapCountryColors[neighborId] === currentColor
+      );
 
     if (!currentColor || hasNeighborColorConflict) {
-      setCountryColor(countryId, pickVisitedColor(countryId, countryColors, neighboringCountryIds));
+      setCountryColor(countryId, pickVisitedColor(countryId, mapCountryColors, neighboringCountryIds, visitedCountryIds));
     }
     if (countryName) {
       setCountryLabel(countryId, countryName);

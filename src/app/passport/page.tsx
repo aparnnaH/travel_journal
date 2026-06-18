@@ -1,13 +1,27 @@
 'use client';
 
 import React, { Suspense, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
-import PassportPageComponent from '@/components/passport/PassportPage';
+import PassportLoadingShell from '@/components/passport/PassportLoadingShell';
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { normalizeCountryToStampId } from '@/lib/stamps/assets';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
+
+const PassportPageComponent = dynamic(() => import('@/components/passport/PassportPage'), {
+  loading: () => <PassportLoadingShell />,
+});
+
+function PassportRouteLoadingShell() {
+  return (
+    <div className="min-h-screen bg-cream">
+      <AppHeader />
+      <PassportLoadingShell />
+    </div>
+  );
+}
 
 function PassportRouteContent() {
   const user = useAuthStore((state) => state.user);
@@ -24,7 +38,7 @@ function PassportRouteContent() {
   }, [router, user, isLoading]);
 
   if (isLoading || !user) {
-    return null;
+    return <PassportRouteLoadingShell />;
   }
 
   const visitedStampKeys = new Set<string>();
@@ -75,7 +89,7 @@ function PassportRouteContent() {
 
 export default function PassportPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PassportRouteLoadingShell />}>
       <PassportRouteContent />
     </Suspense>
   );

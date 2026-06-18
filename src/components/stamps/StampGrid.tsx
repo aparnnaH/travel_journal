@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import HTMLFlipBook from 'react-pageflip';
+import dynamic from 'next/dynamic';
+import type HTMLFlipBookComponent from 'react-pageflip';
 import { CountryStamp } from '@/types/stamps';
 import { sortStampsByRegion } from '@/lib/stamps/utils';
 import PassportStamp from './PassportStamp';
@@ -29,6 +30,7 @@ const REGION_ORDER = [
 const STAMPS_PER_PAGE = 4;
 
 type PageFlipOrientation = 'portrait' | 'landscape';
+type HTMLFlipBookProps = React.ComponentProps<typeof HTMLFlipBookComponent>;
 
 interface StampBookPage {
   label: string;
@@ -42,6 +44,32 @@ interface PageFlipEvent {
     mode?: PageFlipOrientation;
   };
 }
+
+const FlipBookLoadingPlaceholder = () => (
+  <div className={styles.flipBookLoading} aria-hidden="true">
+    <div className={styles.loadingPage}>
+      <div className={styles.loadingPageMark} />
+      <div className={styles.loadingStampGrid}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <span key={index} />
+        ))}
+      </div>
+    </div>
+    <div className={styles.loadingPage}>
+      <div className={styles.loadingPageMark} />
+      <div className={styles.loadingStampGrid}>
+        {Array.from({ length: 4 }).map((_, index) => (
+          <span key={index} />
+        ))}
+      </div>
+    </div>
+  </div>
+);
+
+const HTMLFlipBook = dynamic<HTMLFlipBookProps>(() => import('react-pageflip'), {
+  ssr: false,
+  loading: () => <FlipBookLoadingPlaceholder />,
+});
 
 const sortRegionEntries = (entries: [string, CountryStamp[]][]) =>
   entries.sort(([firstRegion], [secondRegion]) => {
