@@ -27,6 +27,16 @@ export async function fetchCanvaDesigns(query?: string) {
   return readApiResponse<CanvaDesign[]>(response);
 }
 
+export async function createCanvaDesign(title: string) {
+  const response = await fetch('/api/canva/designs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+
+  return readApiResponse<CanvaDesign>(response);
+}
+
 export async function createCanvaExport(designId: string, format: 'png' | 'jpg' | 'pdf' = 'png') {
   const response = await fetch('/api/canva/exports', {
     method: 'POST',
@@ -47,4 +57,3 @@ export async function fetchCanvaExport(exportId: string, includeDataUrls = false
   const response = await fetch(`/api/canva/exports/${encodeURIComponent(exportId)}${params.toString() ? `?${params}` : ''}`);
   return readApiResponse<CanvaExportJob & { dataUrls?: string[] }>(response);
 }
-

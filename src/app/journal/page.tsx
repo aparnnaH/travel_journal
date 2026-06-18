@@ -23,7 +23,7 @@ import {
   fetchSharedJournalEntries,
   saveJournalEntryShares,
 } from '@/lib/journalService';
-import { createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
+import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { createCanvaImportPages } from '@/services/import/canvaImportService';
 import {
@@ -255,6 +255,8 @@ export default function JournalPage() {
   const [canvaLoading, setCanvaLoading] = useState(false);
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [canvaImportingDesignId, setCanvaImportingDesignId] = useState<string | null>(null);
+  const [canvaCreatingDesign, setCanvaCreatingDesign] = useState(false);
+  const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -1239,6 +1241,22 @@ export default function JournalPage() {
     return editUrl.toString();
   };
 
+  const createCanvaJournalPage = async () => {
+    setCanvaCreatingDesign(true);
+    setCanvaError(null);
+
+    const response = await createCanvaDesign(form.title || `Travel Journal Page ${scrapbookPages.length + 1}`);
+    setCanvaCreatingDesign(false);
+
+    if (!response.success || !response.data) {
+      setCanvaError(response.error || 'Could not create a Canva page.');
+      setCanvaModalOpen(true);
+      return;
+    }
+
+    window.location.href = getCanvaEditUrl(response.data);
+  };
+
   const importCanvaDesign = async (design: CanvaDesign) => {
     setCanvaImportingDesignId(design.id);
     setCanvaError(null);
@@ -1535,6 +1553,65 @@ export default function JournalPage() {
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
   const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
 
+  const renderCanvaWorkspace = () => (
+    <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
+      <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
+            <h2 className="mt-1 text-3xl font-serif text-ink">Design the page in Canva</h2>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setLocalScrapbookBackupOpen(true)}>
+            Local backup
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="relative min-h-[520px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_14%,rgba(255,255,255,0.62),transparent_20%),radial-gradient(circle_at_78%_72%,rgba(47,111,109,0.14),transparent_26%)]" />
+          <div className="relative flex min-h-[520px] items-center justify-center px-5 text-center">
+            <div className="max-w-xl rounded-lg border border-gold/25 bg-white/85 p-6 shadow-soft">
+              <Palette className="mx-auto h-10 w-10 text-gold-deep" aria-hidden="true" />
+              <h3 className="mt-4 text-2xl font-serif text-ink">Canva is now the design surface</h3>
+              <div className="mt-5 flex flex-wrap justify-center gap-3">
+                <Button type="button" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
+                  <Palette className="h-4 w-4" aria-hidden="true" />
+                  New Canva Page
+                </Button>
+                <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                  Choose Existing
+                </Button>
+              </div>
+              {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-gold/25 bg-white p-4">
+            <p className="text-sm font-semibold text-ink">Canva actions</p>
+            <div className="mt-3 space-y-2">
+              <Button type="button" variant="secondary" size="sm" className="w-full" onClick={openCanvaModal}>
+                Import finished page
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="w-full" onClick={() => setLocalScrapbookBackupOpen(true)}>
+                Local scrapbook backup
+              </Button>
+            </div>
+          </div>
+          <div className="rounded-lg border border-gold/25 bg-white p-4">
+            <p className="text-sm font-semibold text-ink">Current draft</p>
+            <p className="mt-2 text-sm text-ink/65">{form.title || 'Untitled journal entry'}</p>
+            <p className="mt-1 text-xs text-ink/50">{scrapbookPages.length} imported page{scrapbookPages.length === 1 ? '' : 's'} available</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+
   const renderCanvaModal = () => {
     if (!canvaModalOpen) {
       return null;
@@ -1681,6 +1758,9 @@ export default function JournalPage() {
       >
         <DndContext onDragEnd={handleDndDragEnd}>
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          {!localScrapbookBackupOpen ? (
+            renderCanvaWorkspace()
+          ) : (
           <section className="rounded-lg border border-gold/25 bg-[#fff8ea] p-4 shadow-soft">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1723,6 +1803,13 @@ export default function JournalPage() {
                   }}
                 >
                   {activeTool === 'draw' ? 'Drawing' : 'Draw'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setLocalScrapbookBackupOpen(false)}
+                >
+                  Use Canva
                 </Button>
                 <Button
                   type="button"
@@ -1824,8 +1911,11 @@ export default function JournalPage() {
               onMoveableRotate={rotateItemFromMoveable}
             />
           </section>
+          )}
 
           <aside className="space-y-4">
+            {localScrapbookBackupOpen ? (
+              <>
             <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
               <h3 className="mb-4 text-xl font-semibold text-ink">Themes</h3>
               <div className="grid grid-cols-2 gap-2">
@@ -1970,6 +2060,28 @@ export default function JournalPage() {
                 <p className="text-sm text-ink/60">No piece selected.</p>
               )}
             </section>
+              </>
+            ) : (
+              <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
+                <h3 className="text-xl font-semibold text-ink">Canva Page Tools</h3>
+                <div className="mt-4 space-y-3">
+                  <Button type="button" className="w-full gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
+                    <Palette className="h-4 w-4" aria-hidden="true" />
+                    New Canva Page
+                  </Button>
+                  <Button type="button" variant="secondary" className="w-full gap-2" onClick={openCanvaModal}>
+                    <Search className="h-4 w-4" aria-hidden="true" />
+                    Choose Existing Design
+                  </Button>
+                  <Button type="button" variant="outline" className="w-full" onClick={connectCanva}>
+                    Connect Canva
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full" onClick={() => setLocalScrapbookBackupOpen(true)}>
+                    Open local scrapbook backup
+                  </Button>
+                </div>
+              </section>
+            )}
 
             <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
               <h3 className="mb-4 text-xl font-semibold text-ink">Recent Entries</h3>

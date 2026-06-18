@@ -271,6 +271,21 @@ export async function listCanvaDesigns(accessToken: string, query?: string) {
   return data as { items: CanvaDesign[]; continuation?: string };
 }
 
+export async function createCanvaDesign(accessToken: string, title: string) {
+  return requestCanva<{ design: CanvaDesign }>('/designs', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'type_and_asset',
+      design_type: {
+        type: 'custom',
+        width: 1600,
+        height: 1200,
+      },
+      title,
+    }),
+  });
+}
+
 export async function createCanvaExportJob(accessToken: string, designId: string, format: 'png' | 'jpg' | 'pdf' = 'png') {
   return requestCanva<{ job: CanvaExportJob }>('/exports', accessToken, {
     method: 'POST',
