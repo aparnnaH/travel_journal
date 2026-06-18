@@ -19,11 +19,13 @@ import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import { Button, Card } from '@/components/ui';
+import { fetchFriends, updateFriendRequest } from '@/lib/friendService';
 import { fetchJournalEntries } from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 import type { JournalEntry } from '@/types';
+import type { FriendsResponse, Friendship } from '@/types/friends';
 
 type DashboardJournalEntry = JournalEntry & {
   country_id?: string;
@@ -40,9 +42,17 @@ type DashboardAction = {
 };
 
 const countryNameLookup = new Map(placeholderCountries.map((country) => [country.id, country.name]));
+const emptyFriends: FriendsResponse = {
+  friends: [],
+  incoming: [],
+  outgoing: [],
+  blocked: [],
+};
 
 const getEntryDate = (entry: DashboardJournalEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: DashboardJournalEntry) => entry.countryId || entry.country_id || '';
+const getFriendLabel = (friendship: Friendship) =>
+  friendship.profile.displayName || friendship.profile.email || 'Travel friend';
 
 const formatDate = (value?: string) => {
   if (!value) {
@@ -74,6 +84,8 @@ export default function DashboardPage() {
   const lastMapUpdated = useMapStore((state) => state.lastUpdated);
   const router = useRouter();
   const [journalEntries, setJournalEntries] = useState<DashboardJournalEntry[]>([]);
+  const [friendsData, setFriendsData] = useState<FriendsResponse>(emptyFriends);
+  const [acceptingFriendshipId, setAcceptingFriendshipId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -95,7 +107,15 @@ export default function DashboardPage() {
       }
     };
 
+    const loadFriends = async () => {
+      const response = await fetchFriends();
+      if (response.success && response.data) {
+        setFriendsData(response.data);
+      }
+    };
+
     loadJournal();
+    loadFriends();
   }, [router, user, isLoading]);
 
   const dashboardStats = useMemo(() => {
@@ -149,6 +169,26 @@ export default function DashboardPage() {
   const revealProgress = Math.max(0, Math.min(100, Math.round(scratchPercentage)));
   const archiveScore = visitedCountries.length + journalEntries.length + dashboardStats.cityCount;
   const profileName = user?.displayName ?? user?.email ?? 'Traveler';
+  const nextRevealMilestone = Math.min(100, Math.max(10, Math.ceil((revealProgress + 1) / 10) * 10));
+  const totalPendingFriends = friendsData.incoming.length + friendsData.outgoing.length;
+  const pendingApprovals = friendsData.incoming.slice(0, 2);
+
+  const refreshFriends = async () => {
+    const response = await fetchFriends();
+    if (response.success && response.data) {
+      setFriendsData(response.data);
+    }
+  };
+
+  const acceptFriendRequest = async (friendshipId: string) => {
+    setAcceptingFriendshipId(friendshipId);
+    const response = await updateFriendRequest(friendshipId, 'accept');
+    setAcceptingFriendshipId(null);
+
+    if (response.success) {
+      await refreshFriends();
+    }
+  };
 
   const nextActions: DashboardAction[] = [
     {
@@ -247,6 +287,99 @@ export default function DashboardPage() {
                       <p className="mt-2 text-lg font-semibold text-ink">{formatDate(lastMapUpdated)}</p>
                     </div>
                   </div>
+
+                  <div className="grid gap-3 xl:grid-cols-3">
+                    <div className="rounded-lg border border-gold/18 bg-white/58 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
+                        <BookOpen className="h-4 w-4" aria-hidden="true" />
+                        Journal momentum
+                      </div>
+                      <p className="mt-3 text-sm leading-6 text-ink/68">
+                        {dashboardStats.latestEntry
+                          ? `Last saved story: ${dashboardStats.latestEntry.title}.`
+                          : 'Start with one place, one moment, and one detail you want to keep.'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-gold/18 bg-white/58 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
+                        <Tags className="h-4 w-4" aria-hidden="true" />
+                        Top tags
+                      </div>
+                      {dashboardStats.topTags.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {dashboardStats.topTags.slice(0, 4).map((tag) => (
+                            <span key={tag} className="rounded-full border border-gold/20 bg-cream/65 px-2.5 py-1 text-xs font-semibold text-ink/65">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm leading-6 text-ink/68">Tags will appear here as your journal grows.</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-gold/18 bg-white/58 p-4">
+                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
+                        <UsersRound className="h-4 w-4" aria-hidden="true" />
+                        Pending approvals
+                      </div>
+                      <div className="mt-3 flex items-end gap-3">
+                        <p className="text-3xl font-semibold text-ink">{friendsData.incoming.length}</p>
+                        <p className="pb-1 text-sm text-ink/62">
+                          request{friendsData.incoming.length === 1 ? '' : 's'}
+                        </p>
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-ink/68">
+                        {friendsData.incoming.length > 0
+                          ? 'Approve travelers waiting to join your circle.'
+                          : totalPendingFriends > 0
+                            ? `${friendsData.outgoing.length} sent invite${friendsData.outgoing.length === 1 ? '' : 's'} waiting.`
+                            : 'No approvals waiting right now.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gold/18 bg-white/62 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">Friend requests</p>
+                        <p className="mt-1 text-sm leading-6 text-ink/68">
+                          {pendingApprovals.length > 0
+                            ? 'Review pending approvals without leaving the dashboard.'
+                            : 'Open Friends to invite someone or manage your travel circle.'}
+                        </p>
+                      </div>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => router.push('/friends')} className="gap-2 self-start sm:self-auto">
+                        View all
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+
+                    {pendingApprovals.length > 0 ? (
+                      <div className="mt-3 grid gap-2">
+                        {pendingApprovals.map((friendship) => (
+                          <div
+                            key={friendship.id}
+                            className="flex flex-col gap-3 rounded-lg border border-gold/16 bg-cream/45 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-ink">{getFriendLabel(friendship)}</p>
+                              <p className="truncate text-xs text-ink/58">{friendship.profile.email}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => acceptFriendRequest(friendship.id)}
+                              disabled={acceptingFriendshipId === friendship.id}
+                              className="self-start sm:self-auto"
+                            >
+                              {acceptingFriendshipId === friendship.id ? 'Accepting' : 'Accept'}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <div className="border-t border-gold/20 bg-[#1F3328] p-6 text-cream lg:border-l lg:border-t-0">
@@ -262,6 +395,18 @@ export default function DashboardPage() {
                           ? `${visitedCountries.length} country stamps are anchoring the map.`
                           : 'Your atlas is ready for its first marked country.'}
                       </p>
+                      <div className="mt-6 grid gap-3 text-sm">
+                        <div className="rounded-lg border border-white/12 bg-white/8 p-3">
+                          <p className="text-cream/56">Mapped countries</p>
+                          <p className="mt-1 text-2xl font-semibold">{visitedCountries.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-white/12 bg-white/8 p-3">
+                          <p className="text-cream/56">Next reveal mark</p>
+                          <p className="mt-1 text-2xl font-semibold">
+                            {revealProgress >= 100 ? 'Complete' : `${nextRevealMilestone}%`}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                     <Button variant="secondary" onClick={() => router.push('/passport')} className="w-full gap-2">
                       <Stamp className="h-4 w-4" aria-hidden="true" />

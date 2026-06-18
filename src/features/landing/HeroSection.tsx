@@ -3,9 +3,14 @@
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Button } from '@/components/ui';
+import { useAuthStore } from '@/store/authStore';
 import { LandingWorldMap } from './LandingWorldMap';
 
 export function HeroSection() {
+  const user = useAuthStore((state) => state.user);
+  const ctaHref = user ? '/dashboard' : '/map';
+  const ctaLabel = user ? 'Continue Your Journey' : 'Start Your Journey';
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: {
@@ -59,9 +64,9 @@ export function HeroSection() {
           variants={itemVariants}
           className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12"
         >
-          <Link href="/map">
+          <Link href={ctaHref}>
             <Button variant="primary" size="lg" className="w-full sm:w-auto">
-              Start Your Journey
+              {ctaLabel}
             </Button>
           </Link>
         </motion.div>
