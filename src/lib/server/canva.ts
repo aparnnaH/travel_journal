@@ -251,7 +251,7 @@ export async function requestCanva<T>(path: string, accessToken: string, init: R
 }
 
 export async function listCanvaDesigns(accessToken: string, query?: string) {
-  const url = new URL('/designs', CANVA_API_BASE_URL);
+  const url = new URL(`${CANVA_API_BASE_URL}/designs`);
   url.searchParams.set('sort_by', 'modified_descending');
   url.searchParams.set('limit', '24');
 
