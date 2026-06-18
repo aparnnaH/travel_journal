@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
@@ -63,22 +63,81 @@ export default function AppHeader() {
   const logout = useAuthStore((state) => state.logout);
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState<HeaderMenu>(null);
+  const [pinnedMenu, setPinnedMenu] = useState<HeaderMenu>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const desktopNavRef = useRef<HTMLElement | null>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountLabel = user?.displayName || user?.email || 'Signed in';
   const avatarUrl = user?.avatar?.trim();
+
+  const clearCloseTimer = useCallback(() => {
+    if (!closeTimerRef.current) return;
+    clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  }, []);
+
+  const openHeaderMenu = (menu: Exclude<HeaderMenu, null>) => {
+    clearCloseTimer();
+    setOpenMenu(menu);
+  };
+
+  const pinHeaderMenu = (menu: Exclude<HeaderMenu, null>) => {
+    clearCloseTimer();
+    setOpenMenu(menu);
+    setPinnedMenu((current) => (current === menu ? null : menu));
+  };
+
+  const scheduleMenuClose = (menu: Exclude<HeaderMenu, null>) => {
+    clearCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      setOpenMenu((current) => (current === menu ? null : current));
+    }, 180);
+  };
 
   const handleSignOut = async () => {
     await signOut();
     logout();
     setOpenMenu(null);
+    setPinnedMenu(null);
     setMobileOpen(false);
     router.push('/login');
   };
 
-  const closeMenus = () => {
+  const closeMenus = useCallback(() => {
+    clearCloseTimer();
     setOpenMenu(null);
+    setPinnedMenu(null);
     setMobileOpen(false);
+  }, [clearCloseTimer]);
+
+  const handleMenuLeave = (menu: Exclude<HeaderMenu, null>) => {
+    if (pinnedMenu === menu) return;
+    scheduleMenuClose(menu);
   };
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!pinnedMenu) return;
+      const target = event.target;
+      if (target instanceof Node && desktopNavRef.current?.contains(target)) return;
+      closeMenus();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeMenus();
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      clearCloseTimer();
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [clearCloseTimer, closeMenus, pinnedMenu]);
 
   return (
     <header className="sticky top-0 z-40 border-b border-gold/10 bg-cream/90 backdrop-blur-xl">
@@ -90,7 +149,7 @@ export default function AppHeader() {
           <span className="text-lg font-semibold">Travel Journal</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 text-sm text-ink lg:flex">
+        <nav ref={desktopNavRef} className="hidden items-center gap-1 text-sm text-ink lg:flex">
           <Link
             href="/dashboard"
             className="inline-flex h-10 items-center rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
@@ -101,13 +160,13 @@ export default function AppHeader() {
 
           <div
             className="relative"
-            onMouseEnter={() => setOpenMenu('explore')}
-            onMouseLeave={() => setOpenMenu((current) => (current === 'explore' ? null : current))}
+            onMouseEnter={() => openHeaderMenu('explore')}
+            onMouseLeave={() => handleMenuLeave('explore')}
           >
             <button
               type="button"
               className="inline-flex h-10 items-center justify-center gap-1 rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
-              onClick={() => setOpenMenu((current) => (current === 'explore' ? null : 'explore'))}
+              onClick={() => pinHeaderMenu('explore')}
               aria-expanded={openMenu === 'explore'}
               aria-haspopup="menu"
             >
@@ -115,22 +174,24 @@ export default function AppHeader() {
               <ChevronDown className={`h-4 w-4 transition ${openMenu === 'explore' ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
             {openMenu === 'explore' ? (
-              <div className="absolute left-0 top-full mt-3 w-80 rounded-xl border border-gold/16 bg-white p-3 shadow-xl" role="menu">
-                {exploreLinks.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
-                    role="menuitem"
-                    onClick={closeMenus}
-                  >
-                    <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
-                    <span>
-                      <span className="block text-sm font-semibold text-ink">{item.label}</span>
-                      <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
-                    </span>
-                  </Link>
-                ))}
+              <div className="absolute left-0 top-full w-80 pt-3" role="menu">
+                <div className="rounded-xl border border-gold/16 bg-white p-3 shadow-xl">
+                  {exploreLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                      role="menuitem"
+                      onClick={closeMenus}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                        <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>
@@ -145,13 +206,13 @@ export default function AppHeader() {
 
           <div
             className="relative"
-            onMouseEnter={() => setOpenMenu('account')}
-            onMouseLeave={() => setOpenMenu((current) => (current === 'account' ? null : current))}
+            onMouseEnter={() => openHeaderMenu('account')}
+            onMouseLeave={() => handleMenuLeave('account')}
           >
             <button
               type="button"
               className="inline-flex h-10 items-center justify-center gap-1 rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
-              onClick={() => setOpenMenu((current) => (current === 'account' ? null : 'account'))}
+              onClick={() => pinHeaderMenu('account')}
               aria-expanded={openMenu === 'account'}
               aria-haspopup="menu"
             >
@@ -159,57 +220,59 @@ export default function AppHeader() {
               <ChevronDown className={`h-4 w-4 transition ${openMenu === 'account' ? 'rotate-180' : ''}`} aria-hidden="true" />
             </button>
             {openMenu === 'account' ? (
-              <div className="absolute right-0 top-full mt-3 w-80 rounded-xl border border-gold/16 bg-white p-3 shadow-xl" role="menu">
-                {user
-                  ? accountLinks.map((item) => (
+              <div className="absolute right-0 top-full w-80 pt-3" role="menu">
+                <div className="rounded-xl border border-gold/16 bg-white p-3 shadow-xl">
+                  {user
+                    ? accountLinks.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                          role="menuitem"
+                          onClick={closeMenus}
+                        >
+                          <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                          <span>
+                            <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                            <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                          </span>
+                        </Link>
+                      ))
+                    : null}
+                  {user ? (
+                    <button
+                      type="button"
+                      className="mt-1 flex w-full select-none gap-4 rounded-md border-t border-gold/10 p-3 text-left leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                      role="menuitem"
+                      onClick={handleSignOut}
+                    >
+                      <LogOut className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">Sign out</span>
+                        <span className="mt-1 block text-sm leading-snug text-ink/58">Leave this account on this device.</span>
+                      </span>
+                    </button>
+                  ) : (
+                    <>
                       <Link
-                        key={item.href}
-                        href={item.href}
-                        className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                        href="/login"
+                        className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
                         role="menuitem"
                         onClick={closeMenus}
                       >
-                        <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
-                        <span>
-                          <span className="block text-sm font-semibold text-ink">{item.label}</span>
-                          <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
-                        </span>
+                        Sign in
                       </Link>
-                    ))
-                  : null}
-                {user ? (
-                  <button
-                    type="button"
-                    className="mt-1 flex w-full select-none gap-4 rounded-md border-t border-gold/10 p-3 text-left leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
-                    role="menuitem"
-                    onClick={handleSignOut}
-                  >
-                    <LogOut className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
-                    <span>
-                      <span className="block text-sm font-semibold text-ink">Sign out</span>
-                      <span className="mt-1 block text-sm leading-snug text-ink/58">Leave this account on this device.</span>
-                    </span>
-                  </button>
-                ) : (
-                  <>
-                    <Link
-                      href="/login"
-                      className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
-                      role="menuitem"
-                      onClick={closeMenus}
-                    >
-                      Sign in
-                    </Link>
-                    <Link
-                      href="/signup"
-                      className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
-                      role="menuitem"
-                      onClick={closeMenus}
-                    >
-                      Get started
-                    </Link>
-                  </>
-                )}
+                      <Link
+                        href="/signup"
+                        className="block rounded-md px-3 py-2 font-medium text-ink transition hover:bg-cream"
+                        role="menuitem"
+                        onClick={closeMenus}
+                      >
+                        Get started
+                      </Link>
+                    </>
+                  )}
+                </div>
               </div>
             ) : null}
           </div>
