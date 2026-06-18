@@ -21,6 +21,16 @@ export interface JournalEntry {
   mood: 'happy' | 'excited' | 'peaceful' | 'nostalgic' | 'reflective';
   tags: string[];
   photos: Photo[];
+  canvaDesignId?: string | null;
+  canvaDesignTitle?: string | null;
+  canvaDesignEditUrl?: string | null;
+  canvaPages?: string[];
+  canvaPageCount?: number | null;
+  canva_design_id?: string | null;
+  canva_design_title?: string | null;
+  canva_design_edit_url?: string | null;
+  canva_pages?: string[] | null;
+  canva_page_count?: number | null;
   createdAt: string;
   updatedAt: string;
 }

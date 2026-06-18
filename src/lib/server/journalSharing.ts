@@ -11,6 +11,11 @@ type JournalEntryRow = {
   content: string;
   mood: JournalEntry['mood'];
   tags?: string[];
+  canva_design_id?: string | null;
+  canva_design_title?: string | null;
+  canva_design_edit_url?: string | null;
+  canva_pages?: string[] | null;
+  canva_page_count?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -50,6 +55,16 @@ function mapEntry(row: JournalEntryRow): JournalEntry & { country_id: string; cr
     mood: row.mood,
     tags: row.tags ?? [],
     photos: [],
+    canvaDesignId: row.canva_design_id ?? null,
+    canvaDesignTitle: row.canva_design_title ?? null,
+    canvaDesignEditUrl: row.canva_design_edit_url ?? null,
+    canvaPages: row.canva_pages ?? [],
+    canvaPageCount: row.canva_page_count ?? row.canva_pages?.length ?? null,
+    canva_design_id: row.canva_design_id ?? null,
+    canva_design_title: row.canva_design_title ?? null,
+    canva_design_edit_url: row.canva_design_edit_url ?? null,
+    canva_pages: row.canva_pages ?? [],
+    canva_page_count: row.canva_page_count ?? row.canva_pages?.length ?? null,
     createdAt: row.created_at,
     created_at: row.created_at,
     updatedAt: row.updated_at,

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Palette, PencilLine, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -23,6 +23,7 @@ import {
   fetchJournalEntryShares,
   fetchSharedJournalEntries,
   saveJournalEntryShares,
+  updateJournalEntryTitle,
 } from '@/lib/journalService';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -184,6 +185,18 @@ const getEntryDate = (entry: SavedEntry) => entry.createdAt || entry.created_at 
 const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_id || '';
 const formatEntryCountry = (countryId: string) =>
   placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
+const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
+  const pages = entry?.canvaPages ?? entry?.canva_pages ?? [];
+  return Array.isArray(pages)
+    ? pages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
+    : [];
+};
+const getEntryCanvaPageCount = (entry: SavedEntry | SharedJournalEntry) =>
+  getEntryCanvaPages(entry).length || entry.canvaPageCount || entry.canva_page_count || 0;
+const getEntryCanvaTitle = (entry: SavedEntry | SharedJournalEntry) =>
+  entry.canvaDesignTitle || entry.canva_design_title || entry.title;
+const getEntryCanvaEditUrl = (entry: SavedEntry | SharedJournalEntry) =>
+  entry.canvaDesignEditUrl || entry.canva_design_edit_url || null;
 
 const getSpeechRecognition = () => {
   if (typeof window === 'undefined') {
@@ -266,6 +279,12 @@ export default function JournalPage() {
   const [canvaImportedPreview, setCanvaImportedPreview] = useState<CanvaImportedPreview | null>(null);
   const [canvaPreviewPageIndex, setCanvaPreviewPageIndex] = useState(0);
   const [canvaPreviewTurnDirection, setCanvaPreviewTurnDirection] = useState<'next' | 'previous'>('next');
+  const [openedCanvaPageIndex, setOpenedCanvaPageIndex] = useState(0);
+  const [openedCanvaTurnDirection, setOpenedCanvaTurnDirection] = useState<'next' | 'previous'>('next');
+  const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
+  const [renameTitleDraft, setRenameTitleDraft] = useState('');
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -294,6 +313,15 @@ export default function JournalPage() {
     () => (user ? getScrapbookStorageKey(user.id) : null),
     [user]
   );
+
+  const openSavedEntry = (entry: SavedEntry) => {
+    setOpenedCanvaPageIndex(0);
+    setOpenedCanvaTurnDirection('next');
+    setRenamingEntryId(null);
+    setRenameTitleDraft(entry.title);
+    setRenameError(null);
+    setOpenedEntry(entry);
+  };
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -1280,6 +1308,16 @@ export default function JournalPage() {
     setCanvaPreviewPageIndex(nextIndex);
   };
 
+  const turnOpenedCanvaToPage = (pageCount: number, pageIndex: number) => {
+    if (pageCount <= 0) {
+      return;
+    }
+
+    const nextIndex = clamp(pageIndex, 0, pageCount - 1);
+    setOpenedCanvaTurnDirection(nextIndex >= openedCanvaPageIndex ? 'next' : 'previous');
+    setOpenedCanvaPageIndex(nextIndex);
+  };
+
   const createCanvaJournalPage = async () => {
     setCanvaCreatingDesign(true);
     setCanvaError(null);
@@ -1400,6 +1438,10 @@ export default function JournalPage() {
       content: form.content,
       mood: form.mood,
       tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      canvaDesignId: canvaImportedPreview?.design.id,
+      canvaDesignTitle: canvaImportedPreview?.title,
+      canvaDesignEditUrl: canvaImportedPreview ? getCanvaEditUrl(canvaImportedPreview.design) : undefined,
+      canvaPages: canvaImportedPreview?.dataUrls,
     });
 
     setSaving(false);
@@ -1407,10 +1449,57 @@ export default function JournalPage() {
     if (response.success && response.data) {
       setEntries((current) => [response.data as SavedEntry, ...current]);
       setForm({ ...form, title: '', content: '', tags: '' });
+      setCanvaImportedPreview(null);
+      setCanvaPreviewPageIndex(0);
+      setCanvaPreviewTurnDirection('next');
       return;
     }
 
     setError(response.error || 'Could not save entry.');
+  };
+
+  const saveOpenedEntryTitle = async () => {
+    if (!user || !openedEntry) {
+      return;
+    }
+
+    const cleanTitle = renameTitleDraft.trim();
+
+    if (!cleanTitle) {
+      setRenameError('Add a journal name before saving.');
+      return;
+    }
+
+    if (cleanTitle === openedEntry.title) {
+      setRenamingEntryId(null);
+      setRenameError(null);
+      return;
+    }
+
+    setRenameSaving(true);
+    setRenameError(null);
+
+    const response = await updateJournalEntryTitle({
+      userId: user.id,
+      entryId: openedEntry.id,
+      title: cleanTitle,
+    });
+
+    setRenameSaving(false);
+
+    if (!response.success || !response.data) {
+      setRenameError(response.error || 'Could not rename this journal.');
+      return;
+    }
+
+    const updatedEntry = response.data as SavedEntry;
+
+    setEntries((current) =>
+      current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry))
+    );
+    setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
+    setRenameTitleDraft(updatedEntry.title);
+    setRenamingEntryId(null);
   };
 
   const refreshSharedEntries = async () => {
@@ -1704,6 +1793,112 @@ export default function JournalPage() {
           </div>
         ) : null}
       </div>
+    );
+  };
+
+  const renderSavedCanvaBook = (entry: SavedEntry) => {
+    const pages = getEntryCanvaPages(entry);
+
+    if (!pages.length) {
+      return null;
+    }
+
+    const activePageIndex = clamp(openedCanvaPageIndex, 0, pages.length - 1);
+    const activePageSrc = pages[activePageIndex];
+    const editUrl = getEntryCanvaEditUrl(entry);
+
+    return (
+      <section className="mt-6 overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/15 bg-cream/50 px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-ink">{getEntryCanvaTitle(entry)}</p>
+            <p className="text-xs text-ink/50">
+              Page {activePageIndex + 1} of {pages.length}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {pages.length > 1 ? (
+              <div className="flex items-center gap-2 rounded-lg border border-gold/25 bg-white px-2">
+                <button
+                  type="button"
+                  aria-label="Previous saved Canva page"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-ink transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={activePageIndex === 0}
+                  onClick={() => turnOpenedCanvaToPage(pages.length, activePageIndex - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <span className="min-w-16 text-center text-xs font-semibold text-ink/60">
+                  {activePageIndex + 1} / {pages.length}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next saved Canva page"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-ink transition hover:bg-cream disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={activePageIndex >= pages.length - 1}
+                  onClick={() => turnOpenedCanvaToPage(pages.length, activePageIndex + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            {editUrl ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => window.open(editUrl, '_blank', 'noopener,noreferrer')}
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Canva
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <div className="bg-[#e8dcc2] p-4 [perspective:1800px] [background-image:linear-gradient(90deg,rgba(61,43,14,0.05)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.38),rgba(255,255,255,0))] sm:p-6">
+          <motion.figure
+            key={`${entry.id}-${activePageIndex}`}
+            initial={{
+              opacity: 0.82,
+              rotateY: openedCanvaTurnDirection === 'next' ? -14 : 14,
+              x: openedCanvaTurnDirection === 'next' ? 22 : -22,
+            }}
+            animate={{ opacity: 1, rotateY: 0, x: 0 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="relative mx-auto w-full max-w-3xl rounded-md border border-gold/20 bg-[#fbf4e5] p-2 shadow-[0_24px_54px_rgba(61,43,14,0.2)]"
+          >
+            <div aria-hidden="true" className="absolute inset-y-4 left-2 w-8 rounded-l-sm bg-gradient-to-r from-ink/12 via-ink/4 to-transparent" />
+            <div aria-hidden="true" className="absolute inset-y-5 right-2 w-5 rounded-r-sm bg-gradient-to-l from-white/70 to-transparent" />
+            <div
+              role="img"
+              aria-label={`${getEntryCanvaTitle(entry)} page ${activePageIndex + 1}`}
+              className="relative min-h-[420px] w-full rounded-sm border border-ink/10 bg-white bg-contain bg-center bg-no-repeat shadow-inner sm:min-h-[520px]"
+              style={{ backgroundImage: `url(${activePageSrc})` }}
+            />
+            <figcaption className="mt-2 flex items-center justify-between px-1 text-xs text-ink/45">
+              <span className="truncate pr-3">{getEntryCanvaTitle(entry)}</span>
+              <span>Page {activePageIndex + 1}</span>
+            </figcaption>
+          </motion.figure>
+        </div>
+        {pages.length > 1 ? (
+          <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
+            {pages.map((_, index) => (
+              <button
+                key={`${entry.id}-saved-canva-dot-${index}`}
+                type="button"
+                aria-label={`Go to saved Canva page ${index + 1}`}
+                className={[
+                  'h-2.5 rounded-full transition-all',
+                  activePageIndex === index ? 'w-8 bg-gold-deep' : 'w-2.5 bg-gold/35 hover:bg-gold/60',
+                ].join(' ')}
+                onClick={() => turnOpenedCanvaToPage(pages.length, index)}
+              />
+            ))}
+          </div>
+        ) : null}
+      </section>
     );
   };
 
@@ -2120,7 +2315,7 @@ export default function JournalPage() {
               <h3 className="mb-4 text-xl font-semibold text-ink">Entry Details</h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <Input
-                  label="Title"
+                  label="Journal name"
                   value={form.title}
                   onChange={(event) => setForm({ ...form, title: event.target.value })}
                   required
@@ -2249,11 +2444,11 @@ export default function JournalPage() {
 	                    <article
 	                      key={entry.id}
 	                      className="cursor-pointer rounded-lg border border-gold/20 bg-cream/55 p-4 transition hover:border-gold/45 hover:bg-cream/75"
-	                      onClick={() => setOpenedEntry(entry)}
+	                      onClick={() => openSavedEntry(entry)}
 	                      onKeyDown={(event) => {
 	                        if (event.key === 'Enter' || event.key === ' ') {
 	                          event.preventDefault();
-	                          setOpenedEntry(entry);
+	                          openSavedEntry(entry);
 	                        }
 	                      }}
 	                      role="button"
@@ -2270,6 +2465,11 @@ export default function JournalPage() {
 	                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
 	                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
 	                        {entry.mood ? <span>{entry.mood}</span> : null}
+	                        {getEntryCanvaPageCount(entry) ? (
+	                          <span className="rounded-full border border-gold/20 bg-white px-2 py-1">
+	                            {getEntryCanvaPageCount(entry)} Canva page{getEntryCanvaPageCount(entry) === 1 ? '' : 's'}
+	                          </span>
+	                        ) : null}
 	                        {entry.tags?.map((tag) => (
                           <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
                             {tag}
@@ -2283,7 +2483,7 @@ export default function JournalPage() {
 	                          variant="secondary"
 	                          onClick={(event) => {
 	                            event.stopPropagation();
-	                            setOpenedEntry(entry);
+	                            openSavedEntry(entry);
 	                          }}
 	                        >
 	                          Open
@@ -2450,7 +2650,7 @@ export default function JournalPage() {
 	            onClick={() => setOpenedEntry(null)}
 	          >
 	            <article
-	              className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gold/25 bg-white p-6 shadow-xl"
+	              className="max-h-[88vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-gold/25 bg-white p-6 shadow-xl"
 	              role="dialog"
 	              aria-modal="true"
 	              aria-labelledby="opened-entry-title"
@@ -2461,9 +2661,69 @@ export default function JournalPage() {
 	                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
 	                    Journal entry
 	                  </p>
-	                  <h2 id="opened-entry-title" className="mt-2 text-3xl font-serif font-semibold leading-tight text-ink">
-	                    {openedEntry.title}
-	                  </h2>
+	                  {renamingEntryId === openedEntry.id ? (
+	                    <div className="mt-2 max-w-xl">
+	                      <h2 id="opened-entry-title" className="sr-only">
+	                        {openedEntry.title}
+	                      </h2>
+	                      <Input
+	                        label="Journal name"
+	                        value={renameTitleDraft}
+	                        onChange={(event) => setRenameTitleDraft(event.target.value)}
+	                        onKeyDown={(event) => {
+	                          if (event.key === 'Enter') {
+	                            event.preventDefault();
+	                            void saveOpenedEntryTitle();
+	                          }
+	                        }}
+	                      />
+	                      <div className="mt-3 flex flex-wrap gap-2">
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          className="gap-2"
+	                          isLoading={renameSaving}
+	                          onClick={() => void saveOpenedEntryTitle()}
+	                        >
+	                          <Check className="h-4 w-4" aria-hidden="true" />
+	                          Save
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="ghost"
+	                          onClick={() => {
+	                            setRenameTitleDraft(openedEntry.title);
+	                            setRenamingEntryId(null);
+	                            setRenameError(null);
+	                          }}
+	                        >
+	                          Cancel
+	                        </Button>
+	                      </div>
+	                      {renameError ? <p className="mt-2 text-sm text-red-600">{renameError}</p> : null}
+	                    </div>
+	                  ) : (
+	                    <div className="mt-2 flex flex-wrap items-center gap-3">
+	                      <h2 id="opened-entry-title" className="text-3xl font-serif font-semibold leading-tight text-ink">
+	                        {openedEntry.title}
+	                      </h2>
+	                      <Button
+	                        type="button"
+	                        size="sm"
+	                        variant="ghost"
+	                        className="gap-2"
+	                        onClick={() => {
+	                          setRenameTitleDraft(openedEntry.title);
+	                          setRenamingEntryId(openedEntry.id);
+	                          setRenameError(null);
+	                        }}
+	                      >
+	                        <PencilLine className="h-4 w-4" aria-hidden="true" />
+	                        Rename
+	                      </Button>
+	                    </div>
+	                  )}
 	                </div>
 	                <button
 	                  type="button"
@@ -2500,6 +2760,8 @@ export default function JournalPage() {
 	                  ))}
 	                </div>
 	              ) : null}
+
+	              {renderSavedCanvaBook(openedEntry)}
 
 	              <div className="mt-6 whitespace-pre-wrap text-base leading-8 text-ink/78">
 	                {openedEntry.content}
