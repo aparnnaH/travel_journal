@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
-import { createCanvaDesign, getValidCanvaAccessToken, listCanvaDesigns } from '@/lib/server/canva';
+import {
+  createCanvaDesign,
+  getValidCanvaAccessToken,
+  listCanvaDesigns,
+  organizeCanvaDesignInTravelJournalFolder,
+} from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
 
@@ -35,8 +40,21 @@ export async function POST(request: NextRequest) {
     const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'Travel Journal Page';
     const accessToken = await getValidCanvaAccessToken(context.supabaseAdmin, context.user.id);
     const data = await createCanvaDesign(accessToken, title.slice(0, 255));
+    const organization: { folderId?: string; warning?: string } = await organizeCanvaDesignInTravelJournalFolder(
+      context.supabaseAdmin,
+      context.user.id,
+      accessToken,
+      data.design.id
+    ).catch((error) => ({
+      warning: error instanceof Error ? error.message : 'Could not organize this design in Canva.',
+    }));
 
-    return NextResponse.json({ success: true, data: data.design });
+    return NextResponse.json({
+      success: true,
+      data: data.design,
+      warning: organization.warning,
+      canvaFolderId: organization.folderId,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not create Canva design.';
     const status = message.includes('not connected') ? 409 : 500;

@@ -4,6 +4,8 @@ type ApiResponse<T> = {
   success: boolean;
   data?: T;
   error?: string;
+  warning?: string;
+  canvaFolderId?: string;
 };
 
 const readApiResponse = async <T>(response: Response): Promise<ApiResponse<T>> => {

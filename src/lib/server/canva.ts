@@ -5,7 +5,15 @@ import type { CanvaDesign, CanvaExportJob } from '@/types/canva';
 const CANVA_API_BASE_URL = 'https://api.canva.com/rest/v1';
 const CANVA_AUTHORIZE_URL = 'https://www.canva.com/api/oauth/authorize';
 const CANVA_OAUTH_COOKIE = 'canva-oauth';
-const CANVA_SCOPES = ['profile:read', 'design:meta:read', 'design:content:read', 'design:content:write'];
+const CANVA_FOLDER_SCOPES = ['folder:read', 'folder:write'];
+const CANVA_SCOPES = [
+  'profile:read',
+  'design:meta:read',
+  'design:content:read',
+  'design:content:write',
+  ...CANVA_FOLDER_SCOPES,
+];
+const TRAVEL_JOURNAL_FOLDER_NAME = 'Travel Journal';
 
 type CanvaConfig = {
   clientId: string;
@@ -32,10 +40,23 @@ type CanvaConnectionRow = {
   user_id: string;
   canva_user_id?: string | null;
   canva_team_id?: string | null;
+  travel_journal_folder_id?: string | null;
   access_token_encrypted: string;
   refresh_token_encrypted: string;
   expires_at: string;
   scopes?: string[] | null;
+};
+
+type CanvaFolder = {
+  id: string;
+  name: string;
+  created_at?: number;
+  updated_at?: number;
+  thumbnail?: {
+    width: number;
+    height: number;
+    url: string;
+  };
 };
 
 type CanvaUserProfile = {
@@ -214,6 +235,11 @@ async function loadCanvaConnection(supabaseAdmin: SupabaseClient, userId: string
   return data as CanvaConnectionRow | null;
 }
 
+function getMissingCanvaScopes(connection: CanvaConnectionRow, scopes: string[]) {
+  const grantedScopes = new Set(connection.scopes ?? []);
+  return scopes.filter((scope) => !grantedScopes.has(scope));
+}
+
 export async function getValidCanvaAccessToken(supabaseAdmin: SupabaseClient, userId: string) {
   const connection = await loadCanvaConnection(supabaseAdmin, userId);
 
@@ -241,7 +267,8 @@ export async function requestCanva<T>(path: string, accessToken: string, init: R
     ...init,
     headers,
   });
-  const data = await response.json();
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : {};
 
   if (!response.ok) {
     throw new Error(data?.message || 'Canva request failed.');
@@ -284,6 +311,76 @@ export async function createCanvaDesign(accessToken: string, title: string) {
       title,
     }),
   });
+}
+
+export async function createCanvaFolder(accessToken: string, name: string, parentFolderId = 'root') {
+  return requestCanva<{ folder?: CanvaFolder }>('/folders', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      name,
+      parent_folder_id: parentFolderId,
+    }),
+  });
+}
+
+export async function moveCanvaFolderItem(accessToken: string, itemId: string, toFolderId: string) {
+  return requestCanva('/folders/move', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      item_id: itemId,
+      to_folder_id: toFolderId,
+    }),
+  });
+}
+
+export async function organizeCanvaDesignInTravelJournalFolder(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  accessToken: string,
+  designId: string
+) {
+  const connection = await loadCanvaConnection(supabaseAdmin, userId);
+
+  if (!connection) {
+    return { warning: 'Canva is not connected yet.' };
+  }
+
+  const missingFolderScopes = getMissingCanvaScopes(connection, CANVA_FOLDER_SCOPES);
+
+  if (missingFolderScopes.length > 0) {
+    return {
+      warning: 'Reconnect Canva to organize new Travel Journal designs into a Canva folder.',
+    };
+  }
+
+  let folderId = connection.travel_journal_folder_id ?? null;
+
+  if (!folderId) {
+    const folderResponse = await createCanvaFolder(accessToken, TRAVEL_JOURNAL_FOLDER_NAME);
+    folderId = folderResponse.folder?.id ?? null;
+
+    if (!folderId) {
+      return { warning: 'Canva created the design, but did not return a Travel Journal folder id.' };
+    }
+
+    const { error } = await supabaseAdmin
+      .from('canva_connections')
+      .update({
+        travel_journal_folder_id: folderId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
+
+    if (error) {
+      return {
+        folderId,
+        warning: 'Run supabase/canva_folders.sql so the app can remember the Canva Travel Journal folder.',
+      };
+    }
+  }
+
+  await moveCanvaFolderItem(accessToken, designId, folderId);
+  return { folderId };
 }
 
 export async function createCanvaExportJob(accessToken: string, designId: string, format: 'png' | 'jpg' | 'pdf' = 'png') {

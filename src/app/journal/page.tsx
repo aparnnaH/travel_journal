@@ -1341,6 +1341,10 @@ export default function JournalPage() {
       return;
     }
 
+    if (response.warning) {
+      setCanvaError(response.warning);
+    }
+
     setCanvaImportedPreview(null);
     setLocalScrapbookBackupOpen(false);
     openCanvaPopup(response.data);
@@ -1981,11 +1985,6 @@ export default function JournalPage() {
                 Import finished page
               </Button>
             </div>
-          </div>
-          <div className="rounded-lg border border-gold/25 bg-white p-4">
-            <p className="text-sm font-semibold text-ink">Current draft</p>
-            <p className="mt-2 text-sm text-ink/65">{form.title || 'Untitled journal entry'}</p>
-            <p className="mt-1 text-xs text-ink/50">{scrapbookPages.length} imported page{scrapbookPages.length === 1 ? '' : 's'} available</p>
           </div>
         </div>
       </div>
