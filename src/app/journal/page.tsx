@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
-import { ExternalLink, Maximize2, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -262,9 +263,9 @@ export default function JournalPage() {
   const [canvaError, setCanvaError] = useState<string | null>(null);
   const [canvaImportingDesignId, setCanvaImportingDesignId] = useState<string | null>(null);
   const [canvaCreatingDesign, setCanvaCreatingDesign] = useState(false);
-  const [canvaWorkspaceDesign, setCanvaWorkspaceDesign] = useState<CanvaDesign | null>(null);
   const [canvaImportedPreview, setCanvaImportedPreview] = useState<CanvaImportedPreview | null>(null);
-  const [canvaFullscreenOpen, setCanvaFullscreenOpen] = useState(false);
+  const [canvaPreviewPageIndex, setCanvaPreviewPageIndex] = useState(0);
+  const [canvaPreviewTurnDirection, setCanvaPreviewTurnDirection] = useState<'next' | 'previous'>('next');
   const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
@@ -1250,12 +1251,33 @@ export default function JournalPage() {
     return editUrl.toString();
   };
 
-  const openCanvaInWorkspace = (design: CanvaDesign) => {
-    setCanvaWorkspaceDesign(design);
-    setCanvaImportedPreview(null);
-    setCanvaModalOpen(false);
-    setLocalScrapbookBackupOpen(false);
-    setCanvaError(null);
+  const openCanvaPopup = (design: CanvaDesign) => {
+    const popupWidth = Math.min(1440, Math.max(1024, window.screen.availWidth - 96));
+    const popupHeight = Math.min(980, Math.max(720, window.screen.availHeight - 96));
+    const left = Math.max(0, Math.round((window.screen.availWidth - popupWidth) / 2));
+    const top = Math.max(0, Math.round((window.screen.availHeight - popupHeight) / 2));
+    const popup = window.open(
+      getCanvaEditUrl(design),
+      `canva-journal-${design.id}`,
+      `popup=yes,width=${popupWidth},height=${popupHeight},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      window.open(getCanvaEditUrl(design), '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    popup.focus();
+  };
+
+  const turnCanvaPreviewToPage = (pageIndex: number) => {
+    if (!canvaImportedPreview) {
+      return;
+    }
+
+    const nextIndex = clamp(pageIndex, 0, canvaImportedPreview.dataUrls.length - 1);
+    setCanvaPreviewTurnDirection(nextIndex >= canvaPreviewPageIndex ? 'next' : 'previous');
+    setCanvaPreviewPageIndex(nextIndex);
   };
 
   const createCanvaJournalPage = async () => {
@@ -1271,7 +1293,9 @@ export default function JournalPage() {
       return;
     }
 
-    openCanvaInWorkspace(response.data);
+    setCanvaImportedPreview(null);
+    setLocalScrapbookBackupOpen(false);
+    openCanvaPopup(response.data);
   };
 
   const importCanvaDesign = async (design: CanvaDesign) => {
@@ -1353,9 +1377,8 @@ export default function JournalPage() {
       title: result.title,
       dataUrls,
     });
-    setCanvaWorkspaceDesign(design);
+    setCanvaPreviewPageIndex(0);
     setLocalScrapbookBackupOpen(false);
-    setCanvaFullscreenOpen(false);
     setCanvaImportingDesignId(null);
     setCanvaModalOpen(false);
   };
@@ -1585,81 +1608,104 @@ export default function JournalPage() {
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
   const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
 
-  const renderCanvaFrame = (design: CanvaDesign, fullscreen = false) => (
-    <div className={fullscreen ? 'flex h-full flex-col bg-cream' : 'flex min-h-[620px] flex-col bg-cream'}>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{design.title || 'Untitled Canva design'}</p>
-          <p className="text-xs text-ink/50">Canva editor</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {!fullscreen ? (
-            <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={() => setCanvaFullscreenOpen(true)}>
-              <Maximize2 className="h-4 w-4" aria-hidden="true" />
-              Fullscreen
-            </Button>
-          ) : null}
-          <a
-            href={getCanvaEditUrl(design)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
-          >
-            <ExternalLink className="h-4 w-4" aria-hidden="true" />
-            New Tab
-          </a>
-          <Button type="button" size="sm" onClick={() => void importCanvaDesign(design)} isLoading={canvaImportingDesignId === design.id}>
-            Import
-          </Button>
-        </div>
-      </div>
-      <iframe
-        title={design.title || 'Canva editor'}
-        src={getCanvaEditUrl(design)}
-        className={fullscreen ? 'min-h-0 flex-1 border-0' : 'h-[620px] w-full border-0'}
-        allow="clipboard-read; clipboard-write; fullscreen"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-      />
-    </div>
-  );
+  const renderCanvaImportedPreview = (preview: CanvaImportedPreview) => {
+    const activePageIndex = clamp(canvaPreviewPageIndex, 0, preview.dataUrls.length - 1);
+    const activePageSrc = preview.dataUrls[activePageIndex];
 
-  const renderCanvaImportedPreview = (preview: CanvaImportedPreview) => (
-    <div className="bg-cream">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-ink">{preview.title}</p>
-          <p className="text-xs text-ink/50">Imported Canva page</p>
+    return (
+      <div className="bg-cream">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-gold/15 text-gold-deep">
+              <Palette className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-ink">{preview.title}</p>
+              <p className="text-xs text-ink/50">
+                Page {activePageIndex + 1} of {preview.dataUrls.length}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {preview.dataUrls.length > 1 ? (
+              <div className="flex items-center gap-2 rounded-lg border border-gold/25 bg-cream px-2">
+                <button
+                  type="button"
+                  aria-label="Previous Canva page"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={activePageIndex === 0}
+                  onClick={() => turnCanvaPreviewToPage(activePageIndex - 1)}
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <span className="min-w-16 text-center text-xs font-semibold text-ink/60">
+                  {activePageIndex + 1} / {preview.dataUrls.length}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Next Canva page"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-ink transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={activePageIndex >= preview.dataUrls.length - 1}
+                  onClick={() => turnCanvaPreviewToPage(activePageIndex + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
+            <Button type="button" size="sm" variant="secondary" onClick={() => setCanvaImportedPreview(null)}>
+              Edit Again
+            </Button>
+            <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => openCanvaPopup(preview.design)}>
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              Pop-up
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="secondary" onClick={() => setCanvaImportedPreview(null)}>
-            Edit Again
-          </Button>
-          <a
-            href={getCanvaEditUrl(preview.design)}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
+        <div className="bg-[#e8dcc2] p-4 [perspective:1800px] [background-image:linear-gradient(90deg,rgba(61,43,14,0.05)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.38),rgba(255,255,255,0))] sm:p-6">
+          <motion.figure
+            key={`${preview.design.id}-${activePageIndex}`}
+            initial={{
+              opacity: 0.82,
+              rotateY: canvaPreviewTurnDirection === 'next' ? -14 : 14,
+              x: canvaPreviewTurnDirection === 'next' ? 22 : -22,
+            }}
+            animate={{ opacity: 1, rotateY: 0, x: 0 }}
+            transition={{ duration: 0.28, ease: 'easeOut' }}
+            className="relative mx-auto w-full max-w-4xl rounded-md border border-gold/20 bg-[#fbf4e5] p-2 shadow-[0_24px_54px_rgba(61,43,14,0.22)]"
           >
-            <ExternalLink className="h-4 w-4" aria-hidden="true" />
-            New Tab
-          </a>
-        </div>
-      </div>
-      <div className="grid max-h-[720px] gap-4 overflow-y-auto p-4">
-        {preview.dataUrls.map((src, index) => (
-          <figure key={`${preview.design.id}-${index}`} className="mx-auto w-full max-w-4xl overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+            <div aria-hidden="true" className="absolute inset-y-4 left-2 w-8 rounded-l-sm bg-gradient-to-r from-ink/12 via-ink/4 to-transparent" />
+            <div aria-hidden="true" className="absolute inset-y-5 right-2 w-5 rounded-r-sm bg-gradient-to-l from-white/70 to-transparent" />
             <div
               role="img"
-              aria-label={`${preview.title} page ${index + 1}`}
-              className="min-h-[520px] w-full bg-contain bg-center bg-no-repeat"
-              style={{ backgroundImage: `url(${src})` }}
+              aria-label={`${preview.title} page ${activePageIndex + 1}`}
+              className="relative min-h-[560px] w-full rounded-sm border border-ink/10 bg-white bg-contain bg-center bg-no-repeat shadow-inner"
+              style={{ backgroundImage: `url(${activePageSrc})` }}
             />
-          </figure>
-        ))}
+            <figcaption className="mt-2 flex items-center justify-between px-1 text-xs text-ink/45">
+              <span>{preview.title}</span>
+              <span>Page {activePageIndex + 1}</span>
+            </figcaption>
+          </motion.figure>
+        </div>
+        {preview.dataUrls.length > 1 ? (
+          <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
+            {preview.dataUrls.map((_, index) => (
+              <button
+                key={`${preview.design.id}-dot-${index}`}
+                type="button"
+                aria-label={`Go to Canva page ${index + 1}`}
+                className={[
+                  'h-2.5 rounded-full transition-all',
+                  activePageIndex === index ? 'w-8 bg-gold-deep' : 'w-2.5 bg-gold/35 hover:bg-gold/60',
+                ].join(' ')}
+                onClick={() => turnCanvaPreviewToPage(index)}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
@@ -1669,9 +1715,6 @@ export default function JournalPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
             <h2 className="mt-1 text-3xl font-serif text-ink">Design the page in Canva</h2>
           </div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setLocalScrapbookBackupOpen(true)}>
-            Local backup
-          </Button>
         </div>
       </div>
 
@@ -1679,12 +1722,6 @@ export default function JournalPage() {
         <div className="p-5">
           <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
             {renderCanvaImportedPreview(canvaImportedPreview)}
-          </div>
-        </div>
-      ) : canvaWorkspaceDesign ? (
-        <div className="p-5">
-          <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
-            {renderCanvaFrame(canvaWorkspaceDesign)}
           </div>
         </div>
       ) : (
@@ -1717,9 +1754,6 @@ export default function JournalPage() {
             <div className="mt-3 space-y-2">
               <Button type="button" variant="secondary" size="sm" className="w-full" onClick={openCanvaModal}>
                 Import finished page
-              </Button>
-              <Button type="button" variant="ghost" size="sm" className="w-full" onClick={() => setLocalScrapbookBackupOpen(true)}>
-                Local scrapbook backup
               </Button>
             </div>
           </div>
@@ -1830,10 +1864,10 @@ export default function JournalPage() {
                           size="sm"
                           className="gap-2"
                           variant="secondary"
-                          onClick={() => openCanvaInWorkspace(design)}
+                          onClick={() => openCanvaPopup(design)}
                         >
-                          <Palette className="h-4 w-4" aria-hidden="true" />
-                          Workspace
+                          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                          Edit
                         </Button>
                         <Button
                           type="button"
@@ -1845,15 +1879,6 @@ export default function JournalPage() {
                           <Palette className="h-4 w-4" aria-hidden="true" />
                           Import
                         </Button>
-                        <a
-                          href={getCanvaEditUrl(design)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
-                        >
-                          <ExternalLink className="h-4 w-4" aria-hidden="true" />
-                          Edit
-                        </a>
                       </div>
                     </div>
                   </article>
@@ -1866,27 +1891,6 @@ export default function JournalPage() {
             )}
           </div>
         </div>
-      </div>
-    );
-  };
-
-  const renderCanvaFullscreen = () => {
-    if (!canvaFullscreenOpen || !canvaWorkspaceDesign) {
-      return null;
-    }
-
-    return (
-      <div className="fixed inset-0 z-[70] flex flex-col bg-cream">
-        <div className="flex items-center justify-between gap-3 border-b border-gold/20 bg-white px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
-            <h2 className="text-lg font-semibold text-ink">{canvaWorkspaceDesign.title || 'Untitled Canva design'}</h2>
-          </div>
-          <Button type="button" variant="ghost" onClick={() => setCanvaFullscreenOpen(false)}>
-            Close
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1">{renderCanvaFrame(canvaWorkspaceDesign, true)}</div>
       </div>
     );
   };
@@ -2229,9 +2233,6 @@ export default function JournalPage() {
                   <Button type="button" variant="outline" className="w-full" onClick={connectCanva}>
                     Connect Canva
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full" onClick={() => setLocalScrapbookBackupOpen(true)}>
-                    Open local scrapbook backup
-                  </Button>
                 </div>
               </section>
             )}
@@ -2526,7 +2527,6 @@ export default function JournalPage() {
           onImport={handleTripImported}
         />
         {renderCanvaModal()}
-        {renderCanvaFullscreen()}
       </PageShell>
     </div>
   );
