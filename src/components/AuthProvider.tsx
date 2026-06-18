@@ -7,6 +7,7 @@ import { getSupabaseClient, setAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 import type { AuthUser } from '@/types';
+import MapCloudSync from './MapCloudSync';
 
 interface AuthProviderProps {
   children: React.ReactNode;
@@ -131,5 +132,10 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     };
   }, [setUser, setLoading, logout, router]);
 
-  return <>{children}</>;
+  return (
+    <>
+      <MapCloudSync />
+      {children}
+    </>
+  );
 }

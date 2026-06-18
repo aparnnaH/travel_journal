@@ -7,6 +7,7 @@ interface MapStore extends ScratchMapState {
   addVisitedCountry: (countryId: string) => void;
   removeVisitedCountry: (countryId: string) => void;
   setVisitedCountries: (countries: string[]) => void;
+  replaceMapState: (state: ScratchMapState) => void;
   setCountryColor: (countryId: string, color: string) => void;
   clearCountryColor: (countryId: string) => void;
   setCountryLabel: (countryId: string, label: string) => void;
@@ -16,16 +17,31 @@ interface MapStore extends ScratchMapState {
   reset: () => void;
 }
 
-const initialState: ScratchMapState = {
-  scratchPercentage: 0,
-  visitedCountries: [],
-  countryColors: {},
-  countryLabels: {},
-  countryCities: {},
-  lastUpdated: new Date().toISOString(),
-};
+export function createEmptyMapState(): ScratchMapState {
+  return {
+    scratchPercentage: 0,
+    visitedCountries: [],
+    countryColors: {},
+    countryLabels: {},
+    countryCities: {},
+    lastUpdated: new Date().toISOString(),
+  };
+}
 
-const storage = createJSONStorage(() => {
+export function selectPersistedMapState(state: ScratchMapState): ScratchMapState {
+  return {
+    scratchPercentage: state.scratchPercentage,
+    visitedCountries: state.visitedCountries,
+    countryColors: state.countryColors,
+    countryLabels: state.countryLabels,
+    countryCities: state.countryCities ?? {},
+    lastUpdated: state.lastUpdated,
+  };
+}
+
+const initialState = createEmptyMapState();
+
+const storage = createJSONStorage<ScratchMapState>(() => {
   if (typeof window === 'undefined') {
     return {
       getItem: () => null,
@@ -38,7 +54,7 @@ const storage = createJSONStorage(() => {
 });
 
 export const useMapStore = create<MapStore>()(
-  persist(
+  persist<MapStore, [], [], ScratchMapState>(
     (set) => ({
       ...initialState,
       setScratchPercentage: (scratchPercentage) =>
@@ -69,6 +85,11 @@ export const useMapStore = create<MapStore>()(
         set({
           visitedCountries,
           lastUpdated: new Date().toISOString(),
+        }),
+      replaceMapState: (mapState) =>
+        set({
+          ...createEmptyMapState(),
+          ...selectPersistedMapState(mapState),
         }),
       setCountryColor: (countryId, color) =>
         set((state) => ({
@@ -130,11 +151,12 @@ export const useMapStore = create<MapStore>()(
             lastUpdated: new Date().toISOString(),
           };
         }),
-      reset: () => set(initialState),
+      reset: () => set(createEmptyMapState()),
     }),
     {
       name: 'travel-journal-map',
       storage,
+      partialize: (state) => selectPersistedMapState(state),
     }
   )
 );
