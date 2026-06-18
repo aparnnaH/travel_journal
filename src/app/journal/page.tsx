@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
-import { MessageCircle, Send, Share2, UsersRound, X } from 'lucide-react';
+import { ExternalLink, MessageCircle, Palette, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -23,7 +23,9 @@ import {
   fetchSharedJournalEntries,
   saveJournalEntryShares,
 } from '@/lib/journalService';
+import { createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import { placeholderCountries } from '@/lib/placeholderData';
+import { createCanvaImportPages } from '@/services/import/canvaImportService';
 import {
   BOARD_FALLBACK_WIDTH,
   BOARD_HEIGHT,
@@ -54,6 +56,7 @@ import type { Friendship } from '@/types/friends';
 import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import type { TripImportResult } from '@/types/trips';
+import type { CanvaDesign } from '@/types/canva';
 import type {
   DrawingPoint,
   PhotoAsset,
@@ -71,6 +74,8 @@ type SavedEntry = JournalEntry & {
   country_id?: string;
   created_at?: string;
 };
+
+const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 
 type DragState = {
   id: string;
@@ -244,6 +249,12 @@ export default function JournalPage() {
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [canvaModalOpen, setCanvaModalOpen] = useState(false);
+  const [canvaDesigns, setCanvaDesigns] = useState<CanvaDesign[]>([]);
+  const [canvaQuery, setCanvaQuery] = useState('');
+  const [canvaLoading, setCanvaLoading] = useState(false);
+  const [canvaError, setCanvaError] = useState<string | null>(null);
+  const [canvaImportingDesignId, setCanvaImportingDesignId] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: '',
     content: '',
@@ -1197,6 +1208,108 @@ export default function JournalPage() {
     setStorageWarning(null);
   };
 
+  const loadCanvaDesigns = async (query = canvaQuery) => {
+    setCanvaLoading(true);
+    setCanvaError(null);
+
+    const response = await fetchCanvaDesigns(query);
+    setCanvaLoading(false);
+
+    if (response.success && response.data) {
+      setCanvaDesigns(response.data);
+      return;
+    }
+
+    setCanvaDesigns([]);
+    setCanvaError(response.error || 'Could not load Canva designs.');
+  };
+
+  const openCanvaModal = () => {
+    setCanvaModalOpen(true);
+    void loadCanvaDesigns('');
+  };
+
+  const connectCanva = () => {
+    window.location.href = `/api/canva/oauth/start?returnTo=${encodeURIComponent('/journal')}`;
+  };
+
+  const getCanvaEditUrl = (design: CanvaDesign) => {
+    const editUrl = new URL(design.urls.edit_url);
+    editUrl.searchParams.set('correlation_state', `journal-${design.id}`.slice(0, 50));
+    return editUrl.toString();
+  };
+
+  const importCanvaDesign = async (design: CanvaDesign) => {
+    setCanvaImportingDesignId(design.id);
+    setCanvaError(null);
+
+    const exportResponse = await createCanvaExport(design.id, 'png');
+
+    if (!exportResponse.success || !exportResponse.data) {
+      setCanvaImportingDesignId(null);
+      setCanvaError(exportResponse.error || 'Could not start Canva export.');
+      return;
+    }
+
+    let completedExport = null as Awaited<ReturnType<typeof fetchCanvaExport>>['data'] | null;
+
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const includeDataUrls = attempt > 0;
+      const exportStatusResponse = await fetchCanvaExport(exportResponse.data.id, includeDataUrls);
+
+      if (!exportStatusResponse.success || !exportStatusResponse.data) {
+        setCanvaImportingDesignId(null);
+        setCanvaError(exportStatusResponse.error || 'Could not load Canva export.');
+        return;
+      }
+
+      if (exportStatusResponse.data.status === 'failed') {
+        setCanvaImportingDesignId(null);
+        setCanvaError(exportStatusResponse.data.error?.message || 'Canva export failed.');
+        return;
+      }
+
+      if (exportStatusResponse.data.status === 'success') {
+        completedExport = exportStatusResponse.data;
+        break;
+      }
+
+      await wait(1500);
+    }
+
+    const dataUrls = completedExport?.dataUrls || [];
+
+    if (!dataUrls.length) {
+      setCanvaImportingDesignId(null);
+      setCanvaError('Canva export finished, but no downloadable pages were returned.');
+      return;
+    }
+
+    const result = createCanvaImportPages({
+      design,
+      dataUrls,
+      startPageNumber: scrapbookPages.length + 1,
+      boardWidth: visibleBoardWidth,
+    });
+
+    setScrapbookPages((current) => [...current, ...result.scrapbookPages]);
+    setActivePageId(result.scrapbookPages[0].id);
+    setSelectedItemId(null);
+    setDrawingMode(false);
+    setActiveTool('select');
+    setForm((current) => ({
+      ...current,
+      title: result.title,
+      content: current.content || `Imported Canva design: ${result.title}`,
+      tags: current.tags ? `${current.tags}, canva` : 'canva',
+    }));
+    setImportNotice(
+      `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
+    );
+    setCanvaImportingDesignId(null);
+    setCanvaModalOpen(false);
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -1420,6 +1533,133 @@ export default function JournalPage() {
     dictationTarget.itemId === selectedItem.id;
   const visibleBoardWidth = boardWidth || BOARD_FALLBACK_WIDTH;
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
+  const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
+
+  const renderCanvaModal = () => {
+    if (!canvaModalOpen) {
+      return null;
+    }
+
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-8">
+        <div className="max-h-[88vh] w-full max-w-5xl overflow-hidden rounded-lg border border-gold/30 bg-cream shadow-xl">
+          <div className="flex items-start justify-between gap-4 border-b border-gold/20 bg-[#fff8ea] px-5 py-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva</p>
+              <h2 className="mt-1 text-2xl font-serif text-ink">Import Canva Design</h2>
+              <p className="mt-1 max-w-2xl text-sm text-ink/65">
+                Pick a Canva design, export it as a PNG, and add it to your scrapbook pages.
+              </p>
+            </div>
+            <button
+              type="button"
+              aria-label="Close Canva import"
+              className="rounded-full p-2 text-ink/65 transition hover:bg-white hover:text-ink"
+              onClick={() => setCanvaModalOpen(false)}
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="max-h-[calc(88vh-112px)] overflow-y-auto p-5">
+            <form
+              className="mb-4 flex flex-col gap-3 sm:flex-row"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void loadCanvaDesigns(canvaQuery);
+              }}
+            >
+              <Input
+                value={canvaQuery}
+                onChange={(event) => setCanvaQuery(event.target.value)}
+                placeholder="Search Canva designs..."
+                aria-label="Search Canva designs"
+              />
+              <Button type="submit" variant="secondary" className="gap-2" isLoading={canvaLoading}>
+                <Search className="h-4 w-4" aria-hidden="true" />
+                Search
+              </Button>
+              <Button type="button" variant="outline" className="gap-2" onClick={connectCanva}>
+                <Palette className="h-4 w-4" aria-hidden="true" />
+                Connect
+              </Button>
+            </form>
+
+            {canvaError ? (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span>{canvaError}</span>
+                  {canvaNeedsConnection ? (
+                    <Button type="button" size="sm" onClick={connectCanva}>
+                      Connect Canva
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {canvaLoading ? (
+              <div className="rounded-lg border border-gold/20 bg-white px-4 py-10 text-center text-ink/60">
+                Loading Canva designs...
+              </div>
+            ) : canvaDesigns.length ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {canvaDesigns.map((design) => (
+                  <article key={design.id} className="overflow-hidden rounded-lg border border-gold/25 bg-white shadow-soft">
+                    <div className="aspect-[4/3] bg-cream">
+                      {design.thumbnail?.url ? (
+                        <div
+                          role="img"
+                          aria-label={design.title || 'Canva design'}
+                          className="h-full w-full bg-cover bg-center"
+                          style={{ backgroundImage: `url(${design.thumbnail.url})` }}
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-ink/45">No preview</div>
+                      )}
+                    </div>
+                    <div className="space-y-3 p-4">
+                      <div>
+                        <h3 className="line-clamp-2 text-base font-semibold text-ink">{design.title || 'Untitled Canva design'}</h3>
+                        <p className="mt-1 text-xs text-ink/55">
+                          {design.page_count ? `${design.page_count} page${design.page_count === 1 ? '' : 's'}` : 'Canva design'}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="gap-2"
+                          isLoading={canvaImportingDesignId === design.id}
+                          onClick={() => void importCanvaDesign(design)}
+                        >
+                          <Palette className="h-4 w-4" aria-hidden="true" />
+                          Import
+                        </Button>
+                        <a
+                          href={getCanvaEditUrl(design)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-ink px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-ink/5"
+                        >
+                          <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                          Edit
+                        </a>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-gold/20 bg-white px-4 py-10 text-center text-ink/60">
+                No Canva designs found.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-cream">
@@ -1428,9 +1668,15 @@ export default function JournalPage() {
         title="Travel Journal"
         description="Build each trip as a scrapbook page with photos, notes, and saved memories."
         actions={
-          <Button type="button" onClick={() => setImportModalOpen(true)}>
-            Import Trip
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
+              <Palette className="h-4 w-4" aria-hidden="true" />
+              Import Canva
+            </Button>
+            <Button type="button" onClick={() => setImportModalOpen(true)}>
+              Import Trip
+            </Button>
+          </div>
         }
       >
         <DndContext onDragEnd={handleDndDragEnd}>
@@ -2014,6 +2260,7 @@ export default function JournalPage() {
           onClose={() => setImportModalOpen(false)}
           onImport={handleTripImported}
         />
+        {renderCanvaModal()}
       </PageShell>
     </div>
   );
