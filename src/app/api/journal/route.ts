@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
@@ -79,7 +80,43 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     if (isMissingCanvaJournalColumnError(error.message)) {
-      return NextResponse.json({ success: false, error: CANVA_SCHEMA_ERROR_MESSAGE }, { status: 500 });
+      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+        .from('journal_entries')
+        .insert([
+          {
+            user_id: userId,
+            country_id: countryId,
+            title,
+            content: encodeJournalContentWithCanva(content, {
+              designId: canvaDesignId || null,
+              designTitle: canvaDesignTitle || null,
+              designEditUrl: canvaDesignEditUrl || null,
+              pages: cleanCanvaPages,
+            }),
+            mood,
+            tags,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ])
+        .select('*');
+
+      if (fallbackError) {
+        return NextResponse.json({ success: false, error: CANVA_SCHEMA_ERROR_MESSAGE }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...fallbackData?.[0],
+          content,
+          canva_design_id: canvaDesignId || null,
+          canva_design_title: canvaDesignTitle || null,
+          canva_design_edit_url: canvaDesignEditUrl || null,
+          canva_pages: cleanCanvaPages,
+          canva_page_count: cleanCanvaPages.length || null,
+        },
+      });
     }
 
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });

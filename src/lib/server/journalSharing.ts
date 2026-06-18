@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import type { JournalEntry } from '@/types';
 import type { JournalComment } from '@/types/journalComments';
 import type { JournalSharePermission, JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
@@ -45,26 +46,30 @@ type JournalCommentRow = {
 };
 
 function mapEntry(row: JournalEntryRow): JournalEntry & { country_id: string; created_at: string } {
+  const decodedContent = decodeJournalContentWithCanva(row.content);
+  const fallbackCanva = decodedContent.canva;
+  const fallbackPages = fallbackCanva?.pages ?? [];
+
   return {
     id: row.id,
     userId: row.user_id,
     countryId: row.country_id,
     country_id: row.country_id,
     title: row.title,
-    content: row.content,
+    content: decodedContent.content,
     mood: row.mood,
     tags: row.tags ?? [],
     photos: [],
-    canvaDesignId: row.canva_design_id ?? null,
-    canvaDesignTitle: row.canva_design_title ?? null,
-    canvaDesignEditUrl: row.canva_design_edit_url ?? null,
-    canvaPages: row.canva_pages ?? [],
-    canvaPageCount: row.canva_page_count ?? row.canva_pages?.length ?? null,
-    canva_design_id: row.canva_design_id ?? null,
-    canva_design_title: row.canva_design_title ?? null,
-    canva_design_edit_url: row.canva_design_edit_url ?? null,
-    canva_pages: row.canva_pages ?? [],
-    canva_page_count: row.canva_page_count ?? row.canva_pages?.length ?? null,
+    canvaDesignId: row.canva_design_id ?? fallbackCanva?.designId ?? null,
+    canvaDesignTitle: row.canva_design_title ?? fallbackCanva?.designTitle ?? null,
+    canvaDesignEditUrl: row.canva_design_edit_url ?? fallbackCanva?.designEditUrl ?? null,
+    canvaPages: row.canva_pages ?? fallbackPages,
+    canvaPageCount: row.canva_page_count ?? row.canva_pages?.length ?? fallbackPages.length ?? null,
+    canva_design_id: row.canva_design_id ?? fallbackCanva?.designId ?? null,
+    canva_design_title: row.canva_design_title ?? fallbackCanva?.designTitle ?? null,
+    canva_design_edit_url: row.canva_design_edit_url ?? fallbackCanva?.designEditUrl ?? null,
+    canva_pages: row.canva_pages ?? fallbackPages,
+    canva_page_count: row.canva_page_count ?? row.canva_pages?.length ?? fallbackPages.length ?? null,
     createdAt: row.created_at,
     created_at: row.created_at,
     updatedAt: row.updated_at,

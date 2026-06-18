@@ -7,7 +7,16 @@ type ApiResponse<T> = {
 };
 
 const readApiResponse = async <T>(response: Response): Promise<ApiResponse<T>> => {
-  const data = (await response.json()) as ApiResponse<T>;
+  let data: ApiResponse<T> | null = null;
+
+  try {
+    data = (await response.json()) as ApiResponse<T>;
+  } catch {
+    return {
+      success: false,
+      error: response.ok ? 'Canva returned an empty response.' : `Canva request failed (${response.status}).`,
+    };
+  }
 
   if (!response.ok && !data.error) {
     return { success: false, error: 'Canva request failed.' };
@@ -50,10 +59,12 @@ export async function createCanvaExport(designId: string, format: 'png' | 'jpg' 
 export async function fetchCanvaExport(exportId: string, includeDataUrls = false) {
   const params = new URLSearchParams();
 
+  params.set('exportId', exportId);
+
   if (includeDataUrls) {
     params.set('includeDataUrls', 'true');
   }
 
-  const response = await fetch(`/api/canva/exports/${encodeURIComponent(exportId)}${params.toString() ? `?${params}` : ''}`);
+  const response = await fetch(`/api/canva/exports?${params}`);
   return readApiResponse<CanvaExportJob & { dataUrls?: string[] }>(response);
 }

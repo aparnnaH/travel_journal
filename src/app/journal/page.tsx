@@ -25,6 +25,7 @@ import {
   saveJournalEntryShares,
   updateJournalEntryTitle,
 } from '@/lib/journalService';
+import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { createCanvaImportPages } from '@/services/import/canvaImportService';
@@ -186,7 +187,8 @@ const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_
 const formatEntryCountry = (countryId: string) =>
   placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
 const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
-  const pages = entry?.canvaPages ?? entry?.canva_pages ?? [];
+  const fallbackPages = entry ? decodeJournalContentWithCanva(entry.content).canva?.pages : [];
+  const pages = entry?.canvaPages ?? entry?.canva_pages ?? fallbackPages ?? [];
   return Array.isArray(pages)
     ? pages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
     : [];
@@ -194,9 +196,17 @@ const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
 const getEntryCanvaPageCount = (entry: SavedEntry | SharedJournalEntry) =>
   getEntryCanvaPages(entry).length || entry.canvaPageCount || entry.canva_page_count || 0;
 const getEntryCanvaTitle = (entry: SavedEntry | SharedJournalEntry) =>
-  entry.canvaDesignTitle || entry.canva_design_title || entry.title;
+  entry.canvaDesignTitle ||
+  entry.canva_design_title ||
+  decodeJournalContentWithCanva(entry.content).canva?.designTitle ||
+  entry.title;
 const getEntryCanvaEditUrl = (entry: SavedEntry | SharedJournalEntry) =>
-  entry.canvaDesignEditUrl || entry.canva_design_edit_url || null;
+  entry.canvaDesignEditUrl ||
+  entry.canva_design_edit_url ||
+  decodeJournalContentWithCanva(entry.content).canva?.designEditUrl ||
+  null;
+const getEntryContent = (entry: SavedEntry | SharedJournalEntry) =>
+  decodeJournalContentWithCanva(entry.content).content;
 
 const getSpeechRecognition = () => {
   if (typeof window === 'undefined') {
@@ -1340,90 +1350,93 @@ export default function JournalPage() {
     setCanvaImportingDesignId(design.id);
     setCanvaError(null);
 
-    const exportResponse = await createCanvaExport(design.id, 'png');
+    try {
+      const exportResponse = await createCanvaExport(design.id, 'png');
 
-    if (!exportResponse.success || !exportResponse.data) {
-      setCanvaImportingDesignId(null);
-      setCanvaError(exportResponse.error || 'Could not start Canva export.');
-      return;
-    }
-
-    let completedExport = null as Awaited<ReturnType<typeof fetchCanvaExport>>['data'] | null;
-
-    for (let attempt = 0; attempt < 18; attempt += 1) {
-      const exportStatusResponse = await fetchCanvaExport(exportResponse.data.id);
-
-      if (!exportStatusResponse.success || !exportStatusResponse.data) {
+      if (!exportResponse.success || !exportResponse.data) {
         setCanvaImportingDesignId(null);
-        setCanvaError(exportStatusResponse.error || 'Could not load Canva export.');
+        setCanvaError(exportResponse.error || 'Could not start Canva export.');
         return;
       }
 
-      if (exportStatusResponse.data.status === 'failed') {
-        setCanvaImportingDesignId(null);
-        setCanvaError(exportStatusResponse.data.error?.message || 'Canva export failed.');
-        return;
-      }
+      let completedExport = null as Awaited<ReturnType<typeof fetchCanvaExport>>['data'] | null;
 
-      if (exportStatusResponse.data.status === 'success') {
-        const downloadableExportResponse = await fetchCanvaExport(exportResponse.data.id, true);
+      for (let attempt = 0; attempt < 18; attempt += 1) {
+        const exportStatusResponse = await fetchCanvaExport(exportResponse.data.id);
 
-        if (!downloadableExportResponse.success || !downloadableExportResponse.data) {
+        if (!exportStatusResponse.success || !exportStatusResponse.data) {
           setCanvaImportingDesignId(null);
-          setCanvaError(downloadableExportResponse.error || 'Could not download the exported Canva page.');
+          setCanvaError(exportStatusResponse.error || 'Could not load Canva export.');
           return;
         }
 
-        completedExport = downloadableExportResponse.data;
-        break;
+        if (exportStatusResponse.data.status === 'failed') {
+          setCanvaImportingDesignId(null);
+          setCanvaError(exportStatusResponse.data.error?.message || 'Canva export failed.');
+          return;
+        }
+
+        if (exportStatusResponse.data.status === 'success') {
+          const downloadableExportResponse = await fetchCanvaExport(exportResponse.data.id, true);
+
+          if (!downloadableExportResponse.success || !downloadableExportResponse.data) {
+            setCanvaImportingDesignId(null);
+            setCanvaError(downloadableExportResponse.error || 'Could not download the exported Canva page.');
+            return;
+          }
+
+          completedExport = downloadableExportResponse.data;
+          break;
+        }
+
+        await wait(1500);
       }
 
-      await wait(1500);
-    }
+      const dataUrls = completedExport?.dataUrls || [];
 
-    const dataUrls = completedExport?.dataUrls || [];
+      if (!dataUrls.length) {
+        setCanvaImportingDesignId(null);
+        setCanvaError('Canva export is still preparing. Try Import again in a few seconds.');
+        return;
+      }
 
-    if (!dataUrls.length) {
+      const result = createCanvaImportPages({
+        design,
+        dataUrls,
+        startPageNumber: scrapbookPages.length + 1,
+        boardWidth: visibleBoardWidth,
+      });
+
+      setScrapbookPages((current) => [...current, ...result.scrapbookPages]);
+      setActivePageId(result.scrapbookPages[0].id);
+      setSelectedItemId(null);
+      setDrawingMode(false);
+      setActiveTool('select');
+      setForm((current) => ({
+        ...current,
+        title: result.title,
+        content: current.content || `Imported Canva design: ${result.title}`,
+        tags: current.tags ? `${current.tags}, canva` : 'canva',
+      }));
+      setImportNotice(
+        `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
+      );
+      setCanvaImportedPreview({
+        design,
+        title: result.title,
+        dataUrls,
+      });
+      setCanvaPreviewPageIndex(0);
+      setLocalScrapbookBackupOpen(false);
       setCanvaImportingDesignId(null);
-      setCanvaError('Canva export finished, but no downloadable pages were returned.');
-      return;
+      setCanvaModalOpen(false);
+    } catch (error) {
+      setCanvaImportingDesignId(null);
+      setCanvaError(error instanceof Error ? error.message : 'Could not import this Canva design.');
     }
-
-    const result = createCanvaImportPages({
-      design,
-      dataUrls,
-      startPageNumber: scrapbookPages.length + 1,
-      boardWidth: visibleBoardWidth,
-    });
-
-    setScrapbookPages((current) => [...current, ...result.scrapbookPages]);
-    setActivePageId(result.scrapbookPages[0].id);
-    setSelectedItemId(null);
-    setDrawingMode(false);
-    setActiveTool('select');
-    setForm((current) => ({
-      ...current,
-      title: result.title,
-      content: current.content || `Imported Canva design: ${result.title}`,
-      tags: current.tags ? `${current.tags}, canva` : 'canva',
-    }));
-    setImportNotice(
-      `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
-    );
-    setCanvaImportedPreview({
-      design,
-      title: result.title,
-      dataUrls,
-    });
-    setCanvaPreviewPageIndex(0);
-    setLocalScrapbookBackupOpen(false);
-    setCanvaImportingDesignId(null);
-    setCanvaModalOpen(false);
   };
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-
+  const saveCurrentJournalEntry = async () => {
     if (!user) {
       return;
     }
@@ -1456,6 +1469,11 @@ export default function JournalPage() {
     }
 
     setError(response.error || 'Could not save entry.');
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void saveCurrentJournalEntry();
   };
 
   const saveOpenedEntryTitle = async () => {
@@ -1709,7 +1727,16 @@ export default function JournalPage() {
               <Palette className="h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-ink">{preview.title}</p>
+              <label className="text-xs font-semibold uppercase tracking-wide text-ink/50" htmlFor="canva-journal-name">
+                Journal name
+              </label>
+              <input
+                id="canva-journal-name"
+                value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                className="mt-1 w-full min-w-[220px] rounded-md border border-gold/25 bg-cream px-3 py-2 text-sm font-semibold text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/25"
+                required
+              />
               <p className="text-xs text-ink/50">
                 Page {activePageIndex + 1} of {preview.dataUrls.length}
               </p>
@@ -1747,6 +1774,9 @@ export default function JournalPage() {
             <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => openCanvaPopup(preview.design)}>
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Pop-up
+            </Button>
+            <Button type="button" size="sm" isLoading={saving} onClick={() => void saveCurrentJournalEntry()}>
+              Save Entry
             </Button>
           </div>
         </div>
@@ -2461,7 +2491,7 @@ export default function JournalPage() {
                           {new Date(getEntryDate(entry)).toLocaleDateString()}
                         </time>
 	                      </div>
-	                      <p className="mt-2 line-clamp-3 text-ink/70">{entry.content}</p>
+	                      <p className="mt-2 line-clamp-3 text-ink/70">{getEntryContent(entry)}</p>
 	                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
 	                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
 	                        {entry.mood ? <span>{entry.mood}</span> : null}
@@ -2618,7 +2648,7 @@ export default function JournalPage() {
                       <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">
                         From {entry.sharedBy.displayName || entry.sharedBy.email}
                       </p>
-                      <p className="mt-2 line-clamp-3 text-ink/70">{entry.content}</p>
+                      <p className="mt-2 line-clamp-3 text-ink/70">{getEntryContent(entry)}</p>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
                         {getEntryCountry(entry) ? <span>{getEntryCountry(entry)}</span> : null}
                         {entry.mood ? <span>{entry.mood}</span> : null}
@@ -2764,7 +2794,7 @@ export default function JournalPage() {
 	              {renderSavedCanvaBook(openedEntry)}
 
 	              <div className="mt-6 whitespace-pre-wrap text-base leading-8 text-ink/78">
-	                {openedEntry.content}
+	                {getEntryContent(openedEntry)}
 	              </div>
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
