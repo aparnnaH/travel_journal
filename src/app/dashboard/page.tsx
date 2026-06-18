@@ -24,6 +24,7 @@ import { fetchJournalEntries } from '@/lib/journalService';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import type { JournalEntry } from '@/types';
 import type { FriendsResponse, Friendship } from '@/types/friends';
 
@@ -42,6 +43,7 @@ type DashboardAction = {
 };
 
 const countryNameLookup = new Map(placeholderCountries.map((country) => [country.id, country.name]));
+const atlasCountryLookup = new Map(ATLAS_STAMP_COUNTRIES.map((country) => [country.atlas_id, country]));
 const emptyFriends: FriendsResponse = {
   friends: [],
   incoming: [],
@@ -72,7 +74,27 @@ const formatDate = (value?: string) => {
   }).format(date);
 };
 
-const formatCountryName = (countryId: string) => countryNameLookup.get(countryId) || countryId || 'Unplaced';
+const formatCountryName = (countryId: string) => countryNameLookup.get(countryId) || atlasCountryLookup.get(countryId)?.name || countryId || 'Unplaced';
+const getCountryInitials = (countryName: string) => {
+  const words = countryName.match(/[A-Za-z]+/g) ?? [];
+
+  if (words.length > 1) {
+    return words
+      .slice(0, 3)
+      .map((word) => word[0])
+      .join('')
+      .toUpperCase();
+  }
+
+  return countryName.slice(0, 2).toUpperCase();
+};
+
+const formatCountryBadge = (countryId: string) => {
+  const atlasCountry = atlasCountryLookup.get(countryId);
+  const alphaAlias = atlasCountry?.aliases?.find((alias) => /^[A-Z]{2,3}$/.test(alias));
+
+  return alphaAlias || (atlasCountry ? getCountryInitials(atlasCountry.name) : countryId);
+};
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
@@ -161,6 +183,7 @@ export default function DashboardPage() {
         .map((countryId) => ({
           id: countryId,
           label: countryLabels[countryId] || formatCountryName(countryId),
+          badge: formatCountryBadge(countryId),
           cityCount: countryCities[countryId]?.length ?? 0,
         })),
     [countryCities, countryLabels, visitedCountries]
@@ -408,7 +431,11 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     </div>
-                    <Button variant="secondary" onClick={() => router.push('/passport')} className="w-full gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => router.push('/passport')}
+                      className="w-full gap-2 border-gold bg-cream text-ink hover:bg-gold hover:text-ink hover:shadow-md-soft"
+                    >
                       <Stamp className="h-4 w-4" aria-hidden="true" />
                       View passport
                     </Button>
@@ -546,7 +573,7 @@ export default function DashboardPage() {
                             {country.cityCount} city pin{country.cityCount === 1 ? '' : 's'}
                           </p>
                         </div>
-                        <span className="rounded-full bg-cream px-2.5 py-1 text-xs font-semibold text-ink/58">{country.id}</span>
+                        <span className="rounded-full bg-cream px-2.5 py-1 text-xs font-semibold text-ink/58">{country.badge}</span>
                       </div>
                     ))}
                   </div>

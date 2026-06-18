@@ -170,6 +170,8 @@ const readPhotoFile = (file: File) =>
 
 const getEntryDate = (entry: SavedEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_id || '';
+const formatEntryCountry = (countryId: string) =>
+  placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
 
 const getSpeechRecognition = () => {
   if (typeof window === 'undefined') {
@@ -207,6 +209,7 @@ export default function JournalPage() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
   const [entries, setEntries] = useState<SavedEntry[]>([]);
+  const [openedEntry, setOpenedEntry] = useState<SavedEntry | null>(null);
   const [sharedEntries, setSharedEntries] = useState<SharedJournalEntry[]>([]);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
@@ -1233,6 +1236,7 @@ export default function JournalPage() {
   };
 
   const openSharePanel = async (entry: SavedEntry) => {
+    setOpenedEntry(null);
     setSharingEntryId(entry.id);
     setShareLoading(true);
     setShareError(null);
@@ -1285,6 +1289,7 @@ export default function JournalPage() {
   };
 
   const openCommentPanel = async (entryId: string) => {
+    setOpenedEntry(null);
     setCommentEntryId(entryId);
     setCommentError(null);
     setCommentsLoading(true);
@@ -1342,7 +1347,7 @@ export default function JournalPage() {
     const comments = commentsByEntry[entryId] ?? [];
 
     return (
-      <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3">
+      <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3" onClick={(event) => event.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-ink">Comments</p>
@@ -1728,33 +1733,73 @@ export default function JournalPage() {
                 ) : entries.length === 0 ? (
                   <p className="text-ink/60">No journal entries yet.</p>
                 ) : (
-                  entries.map((entry) => (
-                    <article key={entry.id} className="rounded-lg border border-gold/20 bg-cream/55 p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <h4 className="font-semibold text-ink">{entry.title}</h4>
-                        <time className="shrink-0 text-xs text-ink/60" dateTime={getEntryDate(entry)}>
+	                  entries.map((entry) => (
+	                    <article
+	                      key={entry.id}
+	                      className="cursor-pointer rounded-lg border border-gold/20 bg-cream/55 p-4 transition hover:border-gold/45 hover:bg-cream/75"
+	                      onClick={() => setOpenedEntry(entry)}
+	                      onKeyDown={(event) => {
+	                        if (event.key === 'Enter' || event.key === ' ') {
+	                          event.preventDefault();
+	                          setOpenedEntry(entry);
+	                        }
+	                      }}
+	                      role="button"
+	                      tabIndex={0}
+	                      aria-label={`Open journal entry ${entry.title}`}
+	                    >
+	                      <div className="flex items-start justify-between gap-3">
+	                        <h4 className="font-semibold text-ink">{entry.title}</h4>
+	                        <time className="shrink-0 text-xs text-ink/60" dateTime={getEntryDate(entry)}>
                           {new Date(getEntryDate(entry)).toLocaleDateString()}
                         </time>
-                      </div>
-                      <p className="mt-2 line-clamp-3 text-ink/70">{entry.content}</p>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-                        {getEntryCountry(entry) ? <span>{getEntryCountry(entry)}</span> : null}
-                        {entry.mood ? <span>{entry.mood}</span> : null}
-                        {entry.tags?.map((tag) => (
+	                      </div>
+	                      <p className="mt-2 line-clamp-3 text-ink/70">{entry.content}</p>
+	                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
+	                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
+	                        {entry.mood ? <span>{entry.mood}</span> : null}
+	                        {entry.tags?.map((tag) => (
                           <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
                             {tag}
                           </span>
                         ))}
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(entry)}>
-                          <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                          Share
-                        </Button>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => openCommentPanel(entry.id)}>
-                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-                          Comments
-                        </Button>
+	                      </div>
+	                      <div className="mt-3 flex flex-wrap items-center gap-2">
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="secondary"
+	                          onClick={(event) => {
+	                            event.stopPropagation();
+	                            setOpenedEntry(entry);
+	                          }}
+	                        >
+	                          Open
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="secondary"
+	                          onClick={(event) => {
+	                            event.stopPropagation();
+	                            openSharePanel(entry);
+	                          }}
+	                        >
+	                          <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+	                          Share
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="ghost"
+	                          onClick={(event) => {
+	                            event.stopPropagation();
+	                            openCommentPanel(entry.id);
+	                          }}
+	                        >
+	                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+	                          Comments
+	                        </Button>
                         {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
                           <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1 text-xs font-semibold text-ink/55">
                             Shared with {shareRecipientsByEntry[entry.id].length}
@@ -1762,7 +1807,7 @@ export default function JournalPage() {
                         ) : null}
                       </div>
                       {sharingEntryId === entry.id ? (
-                        <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3">
+	                        <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3" onClick={(event) => event.stopPropagation()}>
                           <div className="mb-3 flex items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-ink">Share with friends</p>
@@ -1886,8 +1931,84 @@ export default function JournalPage() {
           </aside>
         </div>
         </DndContext>
-        <ImportTripModal
-          open={importModalOpen}
+	        {openedEntry ? (
+	          <div
+	            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm"
+	            role="presentation"
+	            onClick={() => setOpenedEntry(null)}
+	          >
+	            <article
+	              className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gold/25 bg-white p-6 shadow-xl"
+	              role="dialog"
+	              aria-modal="true"
+	              aria-labelledby="opened-entry-title"
+	              onClick={(event) => event.stopPropagation()}
+	            >
+	              <div className="flex items-start justify-between gap-4">
+	                <div className="min-w-0">
+	                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
+	                    Journal entry
+	                  </p>
+	                  <h2 id="opened-entry-title" className="mt-2 text-3xl font-serif font-semibold leading-tight text-ink">
+	                    {openedEntry.title}
+	                  </h2>
+	                </div>
+	                <button
+	                  type="button"
+	                  onClick={() => setOpenedEntry(null)}
+	                  className="rounded-md p-2 text-ink/45 transition hover:bg-cream hover:text-ink"
+	                  aria-label="Close journal entry"
+	                >
+	                  <X className="h-5 w-5" aria-hidden="true" />
+	                </button>
+	              </div>
+
+	              <div className="mt-4 flex flex-wrap gap-2 text-sm text-ink/68">
+	                <time className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1" dateTime={getEntryDate(openedEntry)}>
+	                  {new Date(getEntryDate(openedEntry)).toLocaleDateString()}
+	                </time>
+	                {getEntryCountry(openedEntry) ? (
+	                  <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
+	                    {formatEntryCountry(getEntryCountry(openedEntry))}
+	                  </span>
+	                ) : null}
+	                {openedEntry.mood ? (
+	                  <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1 capitalize">
+	                    {openedEntry.mood}
+	                  </span>
+	                ) : null}
+	              </div>
+
+	              {openedEntry.tags?.length ? (
+	                <div className="mt-4 flex flex-wrap gap-2">
+	                  {openedEntry.tags.map((tag) => (
+	                    <span key={tag} className="rounded-full border border-gold/20 bg-cream px-2.5 py-1 text-xs font-semibold text-ink/62">
+	                      {tag}
+	                    </span>
+	                  ))}
+	                </div>
+	              ) : null}
+
+	              <div className="mt-6 whitespace-pre-wrap text-base leading-8 text-ink/78">
+	                {openedEntry.content}
+	              </div>
+
+	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
+	                <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(openedEntry)}>
+	                  <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+	                  Share
+	                </Button>
+	                <Button type="button" size="sm" variant="ghost" onClick={() => openCommentPanel(openedEntry.id)}>
+	                  <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+	                  Comments
+	                </Button>
+	              </div>
+	            </article>
+	          </div>
+	        ) : null}
+
+	        <ImportTripModal
+	          open={importModalOpen}
           startPageNumber={scrapbookPages.length + 1}
           boardWidth={visibleBoardWidth}
           onClose={() => setImportModalOpen(false)}
