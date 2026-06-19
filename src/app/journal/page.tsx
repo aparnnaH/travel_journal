@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Palette, PencilLine, Search, Send, Share2, Type, UsersRound, X } from 'lucide-react';
+import { BookOpen, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Palette, PencilLine, Search, Send, Share2, Type, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -25,6 +25,7 @@ import {
   fetchJournalEntryShares,
   fetchSharedJournalEntries,
   saveJournalEntryShares,
+  updateJournalEntry,
   updateJournalEntryTitle,
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
@@ -91,6 +92,14 @@ type InsertedJournalPhoto = {
   src: string;
   alt: string;
   caption?: string;
+};
+
+type EditEntryForm = {
+  title: string;
+  content: string;
+  countryId: string;
+  mood: string;
+  tags: string;
 };
 
 type VisitedJournalCountry = {
@@ -313,6 +322,16 @@ export default function JournalPage() {
   const [sharedEntries, setSharedEntries] = useState<SharedJournalEntry[]>([]);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<SavedEntry | null>(null);
+  const [editForm, setEditForm] = useState<EditEntryForm>({
+    title: '',
+    content: '',
+    countryId: '',
+    mood: '',
+    tags: '',
+  });
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const [entryPendingDelete, setEntryPendingDelete] = useState<SavedEntry | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -411,6 +430,25 @@ export default function JournalPage() {
 
     return countryOptions.slice(0, 8);
   }, [countrySearch, visitedJournalCountries]);
+  const editCountryOptions = useMemo(() => {
+    const countryOptions = new Map(visitedJournalCountries.map((country) => [country.id, country]));
+
+    if (editingEntry) {
+      const currentCountryId = getEntryCountry(editingEntry);
+
+      if (currentCountryId && !countryOptions.has(currentCountryId)) {
+        countryOptions.set(currentCountryId, {
+          id: currentCountryId,
+          name: formatEntryCountry(currentCountryId),
+          searchText: normalizeCountrySearchText(`${formatEntryCountry(currentCountryId)} ${currentCountryId}`),
+        });
+      }
+    }
+
+    return Array.from(countryOptions.values()).sort((firstCountry, secondCountry) =>
+      firstCountry.name.localeCompare(secondCountry.name, undefined, { sensitivity: 'base' })
+    );
+  }, [editingEntry, visitedJournalCountries]);
   const suggestedVisitedCountry = useMemo(() => {
     if (selectedVisitedCountry) {
       return null;
@@ -453,6 +491,30 @@ export default function JournalPage() {
     setRenameTitleDraft(entry.title);
     setRenameError(null);
     setOpenedEntry(entry);
+  };
+
+  const openEditEntry = (entry: SavedEntry) => {
+    setEditingEntry(entry);
+    setEditForm({
+      title: entry.title,
+      content: getEntryContent(entry),
+      countryId: getEntryCountry(entry),
+      mood: entry.mood || '',
+      tags: entry.tags?.join(', ') || '',
+    });
+    setEditError(null);
+    setOpenedEntry(null);
+    setSharingEntryId(null);
+    setCommentEntryId(null);
+  };
+
+  const closeEditEntry = () => {
+    if (editSaving) {
+      return;
+    }
+
+    setEditingEntry(null);
+    setEditError(null);
   };
 
   useEffect(() => {
@@ -1719,6 +1781,52 @@ export default function JournalPage() {
     setRenamingEntryId(null);
   };
 
+  const saveEditedEntry = async () => {
+    if (!user || !editingEntry) {
+      return;
+    }
+
+    const cleanTitle = editForm.title.trim();
+    const cleanContent = editForm.content.trim();
+    const cleanCountryId = editForm.countryId.trim();
+    const cleanMood = editForm.mood.trim();
+
+    if (!cleanTitle || !cleanContent || !cleanCountryId || !cleanMood) {
+      setEditError('Add a journal name, story, country, and mood before saving.');
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError(null);
+
+    const response = await updateJournalEntry({
+      entryId: editingEntry.id,
+      title: cleanTitle,
+      content: cleanContent,
+      countryId: cleanCountryId,
+      mood: cleanMood,
+      tags: editForm.tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+    });
+
+    setEditSaving(false);
+
+    if (!response.success || !response.data) {
+      setEditError(response.error || 'Could not update this journal entry.');
+      return;
+    }
+
+    const updatedEntry = response.data as SavedEntry;
+
+    setEntries((current) =>
+      current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry))
+    );
+    setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
+    setEditingEntry(null);
+  };
+
   const requestDeleteEntry = (entry: SavedEntry) => {
     setEntryPendingDelete(entry);
     setDeleteError(null);
@@ -2522,6 +2630,23 @@ export default function JournalPage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
             <h2 className="mt-1 text-3xl font-serif text-ink">Design the page in Canva</h2>
+            <p className="mt-2 max-w-2xl text-sm text-ink/62">
+              Start a fresh journal page, bring in a finished Canva design, then add the story and country before saving.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
+              <Palette className="h-4 w-4" aria-hidden="true" />
+              New Canva Page
+            </Button>
+            <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
+              <Search className="h-4 w-4" aria-hidden="true" />
+              Choose Existing
+            </Button>
+            <Button type="button" variant="ghost" className="gap-2" onClick={() => setLocalScrapbookBackupOpen(true)}>
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
+              Classic Scrapbook
+            </Button>
           </div>
         </div>
       </div>
@@ -2533,36 +2658,18 @@ export default function JournalPage() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="p-5">
         <div className="relative min-h-[520px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
           <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_14%,rgba(255,255,255,0.62),transparent_20%),radial-gradient(circle_at_78%_72%,rgba(47,111,109,0.14),transparent_26%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.7),rgba(47,111,109,0.08)_44%,rgba(193,154,91,0.12))]" />
           <div className="relative flex min-h-[520px] items-center justify-center px-5 text-center">
-            <div className="max-w-xl rounded-lg border border-gold/25 bg-white/85 p-6 shadow-soft">
+            <div className="max-w-2xl rounded-lg border border-gold/25 bg-white/88 p-6 shadow-soft">
               <Palette className="mx-auto h-10 w-10 text-gold-deep" aria-hidden="true" />
-              <h3 className="mt-4 text-2xl font-serif text-ink">Canva is now the design surface</h3>
-              <div className="mt-5 flex flex-wrap justify-center gap-3">
-                <Button type="button" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
-                  <Palette className="h-4 w-4" aria-hidden="true" />
-                  New Canva Page
-                </Button>
-                <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
-                  <Search className="h-4 w-4" aria-hidden="true" />
-                  Choose Existing
-                </Button>
-              </div>
+              <h3 className="mt-4 text-2xl font-serif text-ink">Your next journal page starts here</h3>
+              <p className="mt-3 text-sm leading-6 text-ink/64">
+                Use the buttons above to create a page in Canva or import a design you already finished.
+              </p>
               {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="rounded-lg border border-gold/25 bg-white p-4">
-            <p className="text-sm font-semibold text-ink">Canva actions</p>
-            <div className="mt-3 space-y-2">
-              <Button type="button" variant="secondary" size="sm" className="w-full" onClick={openCanvaModal}>
-                Import finished page
-              </Button>
             </div>
           </div>
         </div>
@@ -2698,19 +2805,128 @@ export default function JournalPage() {
     );
   };
 
+  const renderEditEntryModal = () => {
+    if (!editingEntry) {
+      return null;
+    }
+
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+        role="presentation"
+        onClick={closeEditEntry}
+      >
+        <section
+          className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gold/25 bg-white p-6 shadow-xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-entry-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Edit journal</p>
+              <h2 id="edit-entry-title" className="mt-2 text-3xl font-serif font-semibold text-ink">
+                Update entry
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={closeEditEntry}
+              className="rounded-md p-2 text-ink/45 transition hover:bg-cream hover:text-ink"
+              aria-label="Close edit journal"
+            >
+              <X className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveEditedEntry();
+            }}
+          >
+            <Input
+              label="Journal name"
+              value={editForm.title}
+              onChange={(event) => setEditForm((current) => ({ ...current, title: event.target.value }))}
+              required
+            />
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-ink" htmlFor="edit-entry-country">
+                Country
+              </label>
+              <select
+                id="edit-entry-country"
+                value={editForm.countryId}
+                onChange={(event) => setEditForm((current) => ({ ...current, countryId: event.target.value }))}
+                className="w-full rounded-lg border-2 border-gold/30 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
+                required
+              >
+                <option value="">Choose a country</option>
+                {editCountryOptions.map((country) => (
+                  <option key={country.id} value={country.id}>
+                    {country.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Input
+              label="Mood"
+              value={editForm.mood}
+              onChange={(event) => setEditForm((current) => ({ ...current, mood: event.target.value }))}
+              required
+            />
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-ink" htmlFor="edit-entry-story">
+                Story
+              </label>
+              <textarea
+                id="edit-entry-story"
+                value={editForm.content}
+                onChange={(event) => setEditForm((current) => ({ ...current, content: event.target.value }))}
+                rows={8}
+                className="w-full resize-y rounded-lg border-2 border-gold/30 bg-cream/50 px-4 py-3 text-ink placeholder-ink/50 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30"
+                required
+              />
+            </div>
+
+            <Input
+              label="Tags"
+              value={editForm.tags}
+              onChange={(event) => setEditForm((current) => ({ ...current, tags: event.target.value }))}
+              placeholder="market, sunset, train"
+            />
+
+            {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
+
+            <div className="flex flex-wrap justify-end gap-2 border-t border-gold/16 pt-4">
+              <Button type="button" variant="ghost" onClick={closeEditEntry} disabled={editSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={editSaving}>
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </section>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
       <PageShell
         title="Travel Journal"
-        description="Build each trip as a scrapbook page with photos, notes, and saved memories."
+        description="Design Canva journal pages, save travel stories, and revisit shared memories."
         actions={
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
-              <Palette className="h-4 w-4" aria-hidden="true" />
-              Import Canva
-            </Button>
-            <Button type="button" onClick={() => setImportModalOpen(true)}>
+            <Button type="button" variant="secondary" onClick={() => setImportModalOpen(true)}>
               Import Trip
             </Button>
           </div>
@@ -3014,27 +3230,18 @@ export default function JournalPage() {
               )}
             </section>
               </>
-            ) : (
-              <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
-                <h3 className="text-xl font-semibold text-ink">Canva Page Tools</h3>
-                <div className="mt-4 space-y-3">
-                  <Button type="button" className="w-full gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
-                    <Palette className="h-4 w-4" aria-hidden="true" />
-                    New Canva Page
-                  </Button>
-                  <Button type="button" variant="secondary" className="w-full gap-2" onClick={openCanvaModal}>
-                    <Search className="h-4 w-4" aria-hidden="true" />
-                    Choose Existing Design
-                  </Button>
-                  <Button type="button" variant="outline" className="w-full" onClick={connectCanva}>
-                    Connect Canva
-                  </Button>
-                </div>
-              </section>
-            )}
+            ) : null}
 
             <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
-              <h3 className="mb-4 text-xl font-semibold text-ink">Recent Entries</h3>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Library</p>
+                  <h3 className="text-xl font-semibold text-ink">Recent Entries</h3>
+                </div>
+                <span className="rounded-full border border-gold/20 bg-cream px-2.5 py-1 text-xs font-semibold text-ink/55">
+                  {entries.length}
+                </span>
+              </div>
               <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
                 {entriesLoading ? (
                   <p className="text-ink/60">Loading entries...</p>
@@ -3085,15 +3292,16 @@ export default function JournalPage() {
 	                          variant="secondary"
 	                          onClick={(event) => {
 	                            event.stopPropagation();
-	                            openSavedEntry(entry);
+	                            openEditEntry(entry);
 	                          }}
 	                        >
-	                          Open
+	                          <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
+	                          Edit
 	                        </Button>
 	                        <Button
 	                          type="button"
 	                          size="sm"
-	                          variant="secondary"
+	                          variant="ghost"
 	                          onClick={(event) => {
 	                            event.stopPropagation();
 	                            openSharePanel(entry);
@@ -3395,6 +3603,10 @@ export default function JournalPage() {
 	              ) : null}
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
+	                <Button type="button" size="sm" variant="secondary" onClick={() => openEditEntry(openedEntry)}>
+	                  <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
+	                  Edit
+	                </Button>
 	                <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(openedEntry)}>
 	                  <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Share
@@ -3468,6 +3680,7 @@ export default function JournalPage() {
           onImport={handleTripImported}
         />
         {renderCanvaModal()}
+        {renderEditEntryModal()}
       </PageShell>
     </div>
   );

@@ -48,6 +48,23 @@ export async function updateJournalEntryTitle(entry: {
   return response.json() as Promise<{ success: boolean; data?: JournalEntry; error?: string }>;
 }
 
+export async function updateJournalEntry(entry: {
+  entryId: string;
+  countryId: string;
+  title: string;
+  content: string;
+  mood: string;
+  tags: string[];
+}) {
+  const response = await fetch('/api/journal', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+
+  return response.json() as Promise<{ success: boolean; data?: JournalEntry; error?: string }>;
+}
+
 export async function deleteJournalEntry(entryId: string) {
   const response = await fetch('/api/journal', {
     method: 'DELETE',

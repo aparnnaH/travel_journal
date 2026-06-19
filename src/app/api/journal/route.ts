@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
@@ -172,19 +172,58 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { entryId, title } = body;
+  const { entryId, countryId, title, content, mood, tags } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
+  const hasFullEntryUpdate = 'countryId' in body || 'content' in body || 'mood' in body || 'tags' in body;
+  const cleanCountryId = typeof countryId === 'string' ? countryId.trim() : '';
+  const cleanContent = typeof content === 'string' ? content.trim() : '';
+  const cleanMood = typeof mood === 'string' ? mood.trim() : '';
+  const cleanTags = Array.isArray(tags)
+    ? tags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.trim()).filter(Boolean)
+    : [];
 
   if (!entryId || !cleanTitle) {
     return NextResponse.json({ success: false, error: 'Missing required journal title fields.' }, { status: 400 });
   }
 
+  if (hasFullEntryUpdate && (!cleanCountryId || !cleanContent || !cleanMood)) {
+    return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    title: cleanTitle,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasFullEntryUpdate) {
+    const { data: existingEntry, error: lookupError } = await context.supabaseAdmin
+      .from('journal_entries')
+      .select('content')
+      .eq('id', entryId)
+      .eq('user_id', context.user.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      return NextResponse.json({ success: false, error: lookupError.message }, { status: 500 });
+    }
+
+    if (!existingEntry) {
+      return NextResponse.json({ success: false, error: 'Journal entry not found.' }, { status: 404 });
+    }
+
+    const decodedExistingContent = decodeJournalContentWithCanva(String(existingEntry.content || ''));
+
+    updatePayload.country_id = cleanCountryId;
+    updatePayload.content = decodedExistingContent.canva
+      ? encodeJournalContentWithCanva(cleanContent, decodedExistingContent.canva)
+      : cleanContent;
+    updatePayload.mood = cleanMood;
+    updatePayload.tags = cleanTags;
+  }
+
   const { data, error } = await context.supabaseAdmin
     .from('journal_entries')
-    .update({
-      title: cleanTitle,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', entryId)
     .eq('user_id', context.user.id)
     .select('*')
