@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { BookOpen, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Palette, PencilLine, Search, Send, Share2, Type, UsersRound, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -20,16 +20,22 @@ import {
   createJournalComment,
   createJournalEntry,
   deleteJournalEntry,
+  fetchJournalEntry,
   fetchJournalComments,
-  fetchJournalEntries,
   fetchJournalEntryShares,
-  fetchSharedJournalEntries,
   saveJournalEntryShares,
   updateJournalEntry,
   updateJournalEntryTitle,
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
+import {
+  formatJournalDateRange,
+  getJournalDateRangeError,
+  getJournalDateRangeErrors,
+  getTodayJournalDate,
+  normalizeJournalDate,
+} from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { createCanvaImportPages } from '@/services/import/canvaImportService';
 import {
@@ -100,6 +106,13 @@ type EditEntryForm = {
   countryId: string;
   mood: string;
   tags: string;
+  tripStartDate: string;
+  tripEndDate: string;
+};
+
+type SavedEntryNotice = {
+  entry: SavedEntry;
+  message: string;
 };
 
 type VisitedJournalCountry = {
@@ -213,28 +226,38 @@ const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_
 const formatEntryCountry = (countryId: string) =>
   placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
 const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
-  const fallbackPages = entry ? decodeJournalContentWithCanva(entry.content).canva?.pages : [];
+  const fallbackPages = entry ? decodeJournalContentWithCanva(String(entry.content || '')).canva?.pages : [];
   const pages = entry?.canvaPages ?? entry?.canva_pages ?? fallbackPages ?? [];
   return Array.isArray(pages)
     ? pages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
     : [];
 };
-const getEntryCanvaPageCount = (entry: SavedEntry | SharedJournalEntry) =>
-  getEntryCanvaPages(entry).length || entry.canvaPageCount || entry.canva_page_count || 0;
 const getEntryCanvaTitle = (entry: SavedEntry | SharedJournalEntry) =>
   entry.canvaDesignTitle ||
   entry.canva_design_title ||
-  decodeJournalContentWithCanva(entry.content).canva?.designTitle ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.designTitle ||
   entry.title;
 const getEntryCanvaEditUrl = (entry: SavedEntry | SharedJournalEntry) =>
   entry.canvaDesignEditUrl ||
   entry.canva_design_edit_url ||
-  decodeJournalContentWithCanva(entry.content).canva?.designEditUrl ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.designEditUrl ||
   null;
 const getEntryContent = (entry: SavedEntry | SharedJournalEntry) =>
-  decodeJournalContentWithCanva(entry.content).content;
+  decodeJournalContentWithCanva(String(entry.content || '')).content;
+const getEntryFallbackTripDate = (entry: SavedEntry | SharedJournalEntry) =>
+  normalizeJournalDate(entry.createdAt || entry.created_at || new Date().toISOString());
+const getEntryTripStartDate = (entry: SavedEntry | SharedJournalEntry) =>
+  entry.tripStartDate ||
+  entry.trip_start_date ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.tripStartDate ||
+  getEntryFallbackTripDate(entry);
+const getEntryTripEndDate = (entry: SavedEntry | SharedJournalEntry) =>
+  entry.tripEndDate ||
+  entry.trip_end_date ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.tripEndDate ||
+  getEntryTripStartDate(entry);
 const getEntryCoverPageIndex = (entry: SavedEntry | SharedJournalEntry) => {
-  const decodedCoverIndex = decodeJournalContentWithCanva(entry.content).canva?.coverPageIndex;
+  const decodedCoverIndex = decodeJournalContentWithCanva(String(entry.content || '')).canva?.coverPageIndex;
 
   return typeof entry.coverPageIndex === 'number'
     ? entry.coverPageIndex
@@ -243,14 +266,14 @@ const getEntryCoverPageIndex = (entry: SavedEntry | SharedJournalEntry) => {
       : 0;
 };
 const getEntryCoverPhoto = (entry: SavedEntry | SharedJournalEntry) => {
-  const decodedCanva = decodeJournalContentWithCanva(entry.content).canva;
+  const decodedCanva = decodeJournalContentWithCanva(String(entry.content || '')).canva;
   const pages = getEntryCanvaPages(entry);
   const coverPageIndex = clamp(getEntryCoverPageIndex(entry), 0, Math.max(0, pages.length - 1));
 
   return entry.coverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || null;
 };
 const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
-  const decodedPhotos = decodeJournalContentWithCanva(entry.content).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];
+  const decodedPhotos = decodeJournalContentWithCanva(String(entry.content || '')).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];
 
   return Array.isArray(decodedPhotos)
     ? decodedPhotos.filter(
@@ -317,11 +340,9 @@ export default function JournalPage() {
   const insertedPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
-  const [entries, setEntries] = useState<SavedEntry[]>([]);
   const [openedEntry, setOpenedEntry] = useState<SavedEntry | null>(null);
-  const [sharedEntries, setSharedEntries] = useState<SharedJournalEntry[]>([]);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
-  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [savedEntryNotice, setSavedEntryNotice] = useState<SavedEntryNotice | null>(null);
   const [editingEntry, setEditingEntry] = useState<SavedEntry | null>(null);
   const [editForm, setEditForm] = useState<EditEntryForm>({
     title: '',
@@ -329,6 +350,8 @@ export default function JournalPage() {
     countryId: '',
     mood: '',
     tags: '',
+    tripStartDate: getTodayJournalDate(),
+    tripEndDate: getTodayJournalDate(),
   });
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -393,6 +416,8 @@ export default function JournalPage() {
     countryId: '',
     mood: 'nostalgic',
     tags: '',
+    tripStartDate: getTodayJournalDate(),
+    tripEndDate: getTodayJournalDate(),
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -484,23 +509,46 @@ export default function JournalPage() {
     [user]
   );
 
-  const openSavedEntry = (entry: SavedEntry) => {
+  const loadFullEntry = async (entry: SavedEntry) => {
+    if (typeof entry.content === 'string' && entry.content.length > 0) {
+      return entry;
+    }
+
+    const response = await fetchJournalEntry(entry.id);
+
+    if (!response.success || !response.data) {
+      setError(response.error || 'Could not load this journal entry.');
+      return entry;
+    }
+
+    const fullEntry = response.data as SavedEntry;
+
+    return fullEntry;
+  };
+
+  const openSavedEntry = async (entry: SavedEntry) => {
+    const fullEntry = await loadFullEntry(entry);
+
     setOpenedCanvaPageIndex(0);
     setOpenedCanvaTurnDirection('next');
     setRenamingEntryId(null);
-    setRenameTitleDraft(entry.title);
+    setRenameTitleDraft(fullEntry.title);
     setRenameError(null);
-    setOpenedEntry(entry);
+    setOpenedEntry(fullEntry);
   };
 
-  const openEditEntry = (entry: SavedEntry) => {
-    setEditingEntry(entry);
+  const openEditEntry = async (entry: SavedEntry) => {
+    const fullEntry = await loadFullEntry(entry);
+
+    setEditingEntry(fullEntry);
     setEditForm({
-      title: entry.title,
-      content: getEntryContent(entry),
-      countryId: getEntryCountry(entry),
-      mood: entry.mood || '',
-      tags: entry.tags?.join(', ') || '',
+      title: fullEntry.title,
+      content: getEntryContent(fullEntry),
+      countryId: getEntryCountry(fullEntry),
+      mood: fullEntry.mood || '',
+      tags: fullEntry.tags?.join(', ') || '',
+      tripStartDate: normalizeJournalDate(getEntryTripStartDate(fullEntry)),
+      tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
     });
     setEditError(null);
     setOpenedEntry(null);
@@ -527,29 +575,14 @@ export default function JournalPage() {
       return;
     }
 
-    const loadEntries = async () => {
-      setEntriesLoading(true);
-      const [entriesResponse, sharedResponse, friendsResponse] = await Promise.all([
-        fetchJournalEntries(),
-        fetchSharedJournalEntries(),
-        fetchFriends(),
-      ]);
-      setEntriesLoading(false);
-
-      if (entriesResponse.success && entriesResponse.data) {
-        setEntries(entriesResponse.data as SavedEntry[]);
-      }
-
-      if (sharedResponse.success && sharedResponse.data) {
-        setSharedEntries(sharedResponse.data);
-      }
-
+    const loadFriends = async () => {
+      const friendsResponse = await fetchFriends();
       if (friendsResponse.success && friendsResponse.data) {
         setAcceptedFriends(friendsResponse.data.friends);
       }
     };
 
-    loadEntries();
+    loadFriends();
   }, [router, user, isLoading]);
 
   useEffect(() => {
@@ -1479,12 +1512,17 @@ export default function JournalPage() {
     setSelectedItemId(null);
     setDrawingMode(false);
     setActiveTool('select');
+    const importedStartDate = normalizeJournalDate(result.trip.dateRange?.start);
+    const importedEndDate = normalizeJournalDate(result.trip.dateRange?.end, importedStartDate);
+
     setForm({
       title: result.journalDraft.title,
       content: result.journalDraft.content,
       countryId: result.journalDraft.countryId,
       mood: result.journalDraft.mood,
       tags: result.journalDraft.tags.join(', '),
+      tripStartDate: importedStartDate,
+      tripEndDate: importedEndDate,
     });
     setCountrySearch(
       visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId)?.name || ''
@@ -1693,6 +1731,13 @@ export default function JournalPage() {
       return;
     }
 
+    const tripDateError = getJournalDateRangeError(form.tripStartDate, form.tripEndDate);
+
+    if (tripDateError) {
+      setError(tripDateError);
+      return;
+    }
+
     if (!selectedVisitedCountry) {
       setError('Pick a country you have marked on the map before saving this journal.');
       return;
@@ -1711,6 +1756,8 @@ export default function JournalPage() {
       canvaDesignTitle: canvaImportedPreview?.title,
       canvaDesignEditUrl: canvaImportedPreview ? getCanvaEditUrl(canvaImportedPreview.design) : undefined,
       canvaPages: canvaImportedPreview?.dataUrls,
+      tripStartDate: form.tripStartDate,
+      tripEndDate: form.tripEndDate,
       coverPhoto: canvaImportedPreview?.dataUrls[canvaCoverPageIndex] || canvaImportedPreview?.dataUrls[0] || null,
       coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
       insertedPhotos: insertedJournalPhotos,
@@ -1719,8 +1766,14 @@ export default function JournalPage() {
     setSaving(false);
 
     if (response.success && response.data) {
-      setEntries((current) => [response.data as SavedEntry, ...current]);
-      setForm({ ...form, title: '', content: '', countryId: '', tags: '' });
+      const savedEntry = response.data as SavedEntry;
+
+      setSavedEntryNotice({
+        entry: savedEntry,
+        message: 'Saved',
+      });
+      const today = getTodayJournalDate();
+      setForm({ ...form, title: '', content: '', countryId: '', tags: '', tripStartDate: today, tripEndDate: today });
       setCountrySearch('');
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
@@ -1773,9 +1826,6 @@ export default function JournalPage() {
 
     const updatedEntry = response.data as SavedEntry;
 
-    setEntries((current) =>
-      current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry))
-    );
     setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
     setRenameTitleDraft(updatedEntry.title);
     setRenamingEntryId(null);
@@ -1790,9 +1840,15 @@ export default function JournalPage() {
     const cleanContent = editForm.content.trim();
     const cleanCountryId = editForm.countryId.trim();
     const cleanMood = editForm.mood.trim();
+    const tripDateError = getJournalDateRangeError(editForm.tripStartDate, editForm.tripEndDate);
 
     if (!cleanTitle || !cleanContent || !cleanCountryId || !cleanMood) {
       setEditError('Add a journal name, story, country, and mood before saving.');
+      return;
+    }
+
+    if (tripDateError) {
+      setEditError(tripDateError);
       return;
     }
 
@@ -1809,6 +1865,8 @@ export default function JournalPage() {
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean),
+      tripStartDate: editForm.tripStartDate,
+      tripEndDate: editForm.tripEndDate,
     });
 
     setEditSaving(false);
@@ -1820,10 +1878,11 @@ export default function JournalPage() {
 
     const updatedEntry = response.data as SavedEntry;
 
-    setEntries((current) =>
-      current.map((entry) => (entry.id === updatedEntry.id ? { ...entry, ...updatedEntry } : entry))
-    );
     setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
+    setSavedEntryNotice({
+      entry: updatedEntry,
+      message: 'Updated',
+    });
     setEditingEntry(null);
   };
 
@@ -1859,7 +1918,6 @@ export default function JournalPage() {
       return;
     }
 
-    setEntries((current) => current.filter((entry) => entry.id !== entryPendingDelete.id));
     setShareRecipientsByEntry((current) => {
       const nextRecipients = { ...current };
       delete nextRecipients[entryPendingDelete.id];
@@ -1876,15 +1934,8 @@ export default function JournalPage() {
       return nextDrafts;
     });
     setOpenedEntry((current) => (current?.id === entryPendingDelete.id ? null : current));
+    setSavedEntryNotice((current) => (current?.entry.id === entryPendingDelete.id ? null : current));
     setEntryPendingDelete(null);
-  };
-
-  const refreshSharedEntries = async () => {
-    const response = await fetchSharedJournalEntries();
-
-    if (response.success && response.data) {
-      setSharedEntries(response.data);
-    }
   };
 
   const openSharePanel = async (entry: SavedEntry) => {
@@ -1937,11 +1988,9 @@ export default function JournalPage() {
       [entryId]: response.data ?? [],
     }));
     setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
-    await refreshSharedEntries();
   };
 
   const openCommentPanel = async (entryId: string) => {
-    setOpenedEntry(null);
     setCommentEntryId(entryId);
     setCommentError(null);
     setCommentsLoading(true);
@@ -2074,7 +2123,16 @@ export default function JournalPage() {
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
   const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
   const hasVisitedCountryLink = Boolean(selectedVisitedCountry);
-  const canSaveCurrentEntry = form.title.trim().length > 0 && form.content.trim().length > 0 && hasVisitedCountryLink;
+  const dateRangeErrors = getJournalDateRangeErrors(form.tripStartDate, form.tripEndDate);
+  const editDateRangeErrors = getJournalDateRangeErrors(editForm.tripStartDate, editForm.tripEndDate);
+  const hasValidDateRange = !dateRangeErrors.startDate && !dateRangeErrors.endDate;
+  const canSaveCurrentEntry =
+    form.title.trim().length > 0 &&
+    form.content.trim().length > 0 &&
+    form.tripStartDate.length > 0 &&
+    form.tripEndDate.length > 0 &&
+    hasVisitedCountryLink &&
+    hasValidDateRange;
 
   const renderCanvaPolaroidStrip = ({
     pages,
@@ -2190,14 +2248,14 @@ export default function JournalPage() {
       <div className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
           <ImagePlus className="h-4 w-4 text-gold-deep" aria-hidden="true" />
-          <span>Inserted photos</span>
+          <span>Memory photos</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {photos.map((photo, index) => (
             <figure key={photo.id} className="overflow-hidden rounded-md border border-gold/20 bg-cream/45">
               <div
                 role="img"
-                aria-label={photo.alt || `Inserted photo ${index + 1}`}
+                aria-label={photo.alt || `Memory photo ${index + 1}`}
                 className="aspect-[4/3] bg-cream bg-cover bg-center"
                 style={{ backgroundImage: `url(${photo.src})` }}
               />
@@ -2207,7 +2265,7 @@ export default function JournalPage() {
                     <input
                       value={photo.caption ?? ''}
                       onChange={(event) => updateInsertedPhotoCaption(photo.id, event.target.value)}
-                      aria-label={`Caption for inserted photo ${index + 1}`}
+                      aria-label={`Caption for memory photo ${index + 1}`}
                       placeholder="Caption"
                       className="w-full rounded-md border border-gold/25 bg-white px-2 py-1.5 text-xs text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/20"
                     />
@@ -2229,6 +2287,83 @@ export default function JournalPage() {
       </div>
     );
   };
+
+  const renderMemoryPhotoTray = () => (
+    <section className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+      <input
+        ref={insertedPhotoInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="sr-only"
+        disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
+        onChange={handleInsertedPhotoUpload}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-gold/15 text-gold-deep">
+            <ImagePlus className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-ink">Memory photos</h3>
+            <p className="text-xs font-semibold text-ink/50">
+              {insertedJournalPhotos.length} / {MAX_INSERTED_JOURNAL_PHOTOS} photos
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="gap-2"
+          disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
+          onClick={() => insertedPhotoInputRef.current?.click()}
+        >
+          <ImagePlus className="h-4 w-4" aria-hidden="true" />
+          Add Photos
+        </Button>
+      </div>
+
+      {insertedJournalPhotos.length ? (
+        <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+          {insertedJournalPhotos.map((photo, index) => (
+            <figure key={photo.id} className="w-44 shrink-0 overflow-hidden rounded-md border border-gold/20 bg-cream/45">
+              <div
+                role="img"
+                aria-label={photo.alt || `Memory photo ${index + 1}`}
+                className="aspect-[4/3] bg-cream bg-cover bg-center"
+                style={{ backgroundImage: `url(${photo.src})` }}
+              />
+              <figcaption className="space-y-2 p-2">
+                <input
+                  value={photo.caption ?? ''}
+                  onChange={(event) => updateInsertedPhotoCaption(photo.id, event.target.value)}
+                  aria-label={`Caption for memory photo ${index + 1}`}
+                  placeholder="Caption"
+                  className="w-full rounded-md border border-gold/25 bg-white px-2 py-1.5 text-xs text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/20"
+                />
+                <button
+                  type="button"
+                  className="text-xs font-semibold text-ink/55 transition hover:text-red-600"
+                  onClick={() => removeInsertedPhoto(photo.id)}
+                >
+                  Remove
+                </button>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="mt-4 flex w-full items-center justify-center rounded-lg border border-dashed border-gold/30 bg-cream/45 px-4 py-8 text-sm font-semibold text-ink/62 transition hover:border-gold hover:bg-gold/10 focus:outline-none focus:ring-2 focus:ring-gold"
+          onClick={() => insertedPhotoInputRef.current?.click()}
+        >
+          Add memory photos
+        </button>
+      )}
+    </section>
+  );
 
   const renderCountrySearch = (inputId: string) => (
     <div>
@@ -2427,10 +2562,22 @@ export default function JournalPage() {
           })}
           <div className="mx-auto mt-4 grid max-w-4xl gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
             <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
-              <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-page-story">
-                <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
-                Story below this page
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-page-story">
+                  <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+                  Story below this page
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isStoryDictating ? 'secondary' : 'ghost'}
+                  className="gap-2"
+                  onClick={() => toggleDictation({ type: 'story' })}
+                >
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                  {isStoryDictating ? 'Stop' : 'Dictate'}
+                </Button>
+              </div>
               <textarea
                 id="canva-page-story"
                 value={form.content}
@@ -2440,20 +2587,13 @@ export default function JournalPage() {
                 className="mt-3 w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
                 required
               />
+              {isStoryDictating ? <p className="mt-2 text-sm font-semibold text-gold-deep">Listening...</p> : null}
+              {dictationError ? <p className="mt-2 text-sm text-red-600">{dictationError}</p> : null}
             </div>
             <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
               <label className="text-sm font-semibold text-ink" htmlFor="canva-page-tags">
                 Tags
               </label>
-              <input
-                ref={insertedPhotoInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="sr-only"
-                disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
-                onChange={handleInsertedPhotoUpload}
-              />
               <Input
                 id="canva-page-tags"
                 value={form.tags}
@@ -2461,23 +2601,29 @@ export default function JournalPage() {
                 placeholder="market, sunset, train"
                 className="mt-3"
               />
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Trip start"
+                  type="date"
+                  value={form.tripStartDate}
+                  max={form.tripEndDate}
+                  error={dateRangeErrors.startDate}
+                  onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                  required
+                />
+                <Input
+                  label="Trip end"
+                  type="date"
+                  value={form.tripEndDate}
+                  min={form.tripStartDate}
+                  error={dateRangeErrors.endDate}
+                  onChange={(event) => setForm({ ...form, tripEndDate: event.target.value })}
+                  required
+                />
+              </div>
               <div className="mt-3">
                 {renderCountrySearch('canva-page-country')}
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="mt-3 w-full gap-2"
-                disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
-                onClick={() => insertedPhotoInputRef.current?.click()}
-              >
-                <ImagePlus className="h-4 w-4" aria-hidden="true" />
-                Insert Photo
-              </Button>
-              <p className="mt-2 text-xs font-semibold text-ink/50">
-                {insertedJournalPhotos.length} / {MAX_INSERTED_JOURNAL_PHOTOS} photos
-              </p>
               {!canSaveCurrentEntry ? (
                 <p className="mt-3 text-xs font-semibold text-gold-deep">
                   Add a journal name, story, and visited country to save.
@@ -2485,7 +2631,7 @@ export default function JournalPage() {
               ) : null}
             </div>
           </div>
-          {renderInsertedPhotoGrid(insertedJournalPhotos, { editable: true })}
+          {renderMemoryPhotoTray()}
         </div>
         {preview.dataUrls.length > 1 ? (
           <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
@@ -2881,6 +3027,27 @@ export default function JournalPage() {
               required
             />
 
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Trip start"
+                type="date"
+                value={editForm.tripStartDate}
+                max={editForm.tripEndDate}
+                error={editDateRangeErrors.startDate}
+                onChange={(event) => setEditForm((current) => ({ ...current, tripStartDate: event.target.value }))}
+                required
+              />
+              <Input
+                label="Trip end"
+                type="date"
+                value={editForm.tripEndDate}
+                min={editForm.tripStartDate}
+                error={editDateRangeErrors.endDate}
+                onChange={(event) => setEditForm((current) => ({ ...current, tripEndDate: event.target.value }))}
+                required
+              />
+            </div>
+
             <div>
               <label className="mb-2 block text-sm font-medium text-ink" htmlFor="edit-entry-story">
                 Story
@@ -2914,6 +3081,49 @@ export default function JournalPage() {
             </div>
           </form>
         </section>
+      </div>
+    );
+  };
+
+  const renderSavedEntryNotice = () => {
+    if (!savedEntryNotice) {
+      return null;
+    }
+
+    return (
+      <div
+        className="fixed bottom-4 left-4 right-4 z-[60] mx-auto max-w-md rounded-lg border border-gold/25 bg-white p-4 shadow-xl sm:left-auto sm:mx-0"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold-deep">
+            <Check className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-ink">
+              {savedEntryNotice.message} “{savedEntryNotice.entry.title}”
+            </p>
+            <button
+              type="button"
+              className="mt-2 text-sm font-semibold text-gold-deep underline-offset-4 transition hover:text-ink hover:underline"
+              onClick={() => {
+                void openSavedEntry(savedEntryNotice.entry);
+                setSavedEntryNotice(null);
+              }}
+            >
+              See saved entry
+            </button>
+          </div>
+          <button
+            type="button"
+            className="rounded-md p-1 text-ink/45 transition hover:bg-cream hover:text-ink"
+            aria-label="Dismiss saved entry message"
+            onClick={() => setSavedEntryNotice(null)}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
     );
   };
@@ -3150,6 +3360,26 @@ export default function JournalPage() {
                   value={form.mood}
                   onChange={(event) => setForm({ ...form, mood: event.target.value })}
                 />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Trip start"
+                    type="date"
+                    value={form.tripStartDate}
+                    max={form.tripEndDate}
+                    error={dateRangeErrors.startDate}
+                    onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                    required
+                  />
+                  <Input
+                    label="Trip end"
+                    type="date"
+                    value={form.tripEndDate}
+                    min={form.tripStartDate}
+                    error={dateRangeErrors.endDate}
+                    onChange={(event) => setForm({ ...form, tripEndDate: event.target.value })}
+                    required
+                  />
+                </div>
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="block text-sm font-medium text-ink">Story</label>
@@ -3184,7 +3414,7 @@ export default function JournalPage() {
                     Pick a country you have marked on the map before saving.
                   </p>
                 ) : null}
-                <Button type="submit" isLoading={saving} disabled={!hasVisitedCountryLink} className="w-full">
+                <Button type="submit" isLoading={saving} disabled={!canSaveCurrentEntry} className="w-full">
                   Save Entry
                 </Button>
               </form>
@@ -3231,238 +3461,6 @@ export default function JournalPage() {
             </section>
               </>
             ) : null}
-
-            <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Library</p>
-                  <h3 className="text-xl font-semibold text-ink">Recent Entries</h3>
-                </div>
-                <span className="rounded-full border border-gold/20 bg-cream px-2.5 py-1 text-xs font-semibold text-ink/55">
-                  {entries.length}
-                </span>
-              </div>
-              <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
-                {entriesLoading ? (
-                  <p className="text-ink/60">Loading entries...</p>
-                ) : entries.length === 0 ? (
-                  <p className="text-ink/60">No journal entries yet.</p>
-                ) : (
-	                  entries.map((entry) => (
-	                    <article
-	                      key={entry.id}
-	                      className="cursor-pointer rounded-lg border border-gold/20 bg-cream/55 p-4 transition hover:border-gold/45 hover:bg-cream/75"
-	                      onClick={() => openSavedEntry(entry)}
-	                      onKeyDown={(event) => {
-	                        if (event.key === 'Enter' || event.key === ' ') {
-	                          event.preventDefault();
-	                          openSavedEntry(entry);
-	                        }
-	                      }}
-	                      role="button"
-	                      tabIndex={0}
-	                      aria-label={`Open journal entry ${entry.title}`}
-	                    >
-                        {renderEntryAlbumCover(entry)}
-	                      <div className="flex items-start justify-between gap-3">
-	                        <h4 className="font-semibold text-ink">{entry.title}</h4>
-	                        <time className="shrink-0 text-xs text-ink/60" dateTime={getEntryDate(entry)}>
-                          {new Date(getEntryDate(entry)).toLocaleDateString()}
-                        </time>
-	                      </div>
-	                      <p className="mt-2 line-clamp-3 text-ink/70">{getEntryContent(entry)}</p>
-	                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-	                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
-	                        {entry.mood ? <span>{entry.mood}</span> : null}
-	                        {getEntryCanvaPageCount(entry) ? (
-	                          <span className="rounded-full border border-gold/20 bg-white px-2 py-1">
-	                            {getEntryCanvaPageCount(entry)} Canva page{getEntryCanvaPageCount(entry) === 1 ? '' : 's'}
-	                          </span>
-	                        ) : null}
-	                        {entry.tags?.map((tag) => (
-                          <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
-                            {tag}
-                          </span>
-                        ))}
-	                      </div>
-	                      <div className="mt-3 flex flex-wrap items-center gap-2">
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="secondary"
-	                          onClick={(event) => {
-	                            event.stopPropagation();
-	                            openEditEntry(entry);
-	                          }}
-	                        >
-	                          <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
-	                          Edit
-	                        </Button>
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="ghost"
-	                          onClick={(event) => {
-	                            event.stopPropagation();
-	                            openSharePanel(entry);
-	                          }}
-	                        >
-	                          <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
-	                          Share
-	                        </Button>
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="ghost"
-	                          onClick={(event) => {
-	                            event.stopPropagation();
-	                            openCommentPanel(entry.id);
-	                          }}
-	                        >
-	                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-	                          Comments
-	                        </Button>
-	                        <Button
-	                          type="button"
-	                          size="sm"
-	                          variant="ghost"
-	                          className="text-red-700 hover:bg-red-50"
-	                          onClick={(event) => {
-	                            event.stopPropagation();
-	                            requestDeleteEntry(entry);
-	                          }}
-	                        >
-	                          Delete
-	                        </Button>
-                        {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
-                          <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1 text-xs font-semibold text-ink/55">
-                            Shared with {shareRecipientsByEntry[entry.id].length}
-                          </span>
-                        ) : null}
-                      </div>
-                      {sharingEntryId === entry.id ? (
-	                        <div className="mt-3 rounded-lg border border-gold/18 bg-white/75 p-3" onClick={(event) => event.stopPropagation()}>
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold text-ink">Share with friends</p>
-                              <p className="text-xs text-ink/55">Friends get view-only access to this entry.</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setSharingEntryId(null)}
-                              className="rounded-md p-1 text-ink/45 transition hover:bg-cream hover:text-ink"
-                              aria-label="Close sharing panel"
-                            >
-                              <X className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                          </div>
-                          {shareLoading ? (
-                            <p className="text-sm text-ink/60">Loading sharing settings...</p>
-                          ) : acceptedFriends.length === 0 ? (
-                            <div className="rounded-md border border-dashed border-gold/25 bg-cream/40 p-3">
-                              <p className="text-sm font-semibold text-ink">No friends in your Travel Circle yet.</p>
-                              <p className="mt-1 text-sm text-ink/60">
-                                Add friends first, then come back here to share this journal entry.
-                              </p>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                className="mt-3"
-                                onClick={() => router.push('/friends')}
-                              >
-                                Open Travel Circle
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="space-y-2">
-                              {acceptedFriends.map((friendship) => {
-                                const label = friendship.profile.displayName || friendship.profile.email;
-                                const checked = selectedShareFriendIds.includes(friendship.profile.id);
-
-                                return (
-                                  <label
-                                    key={friendship.id}
-                                    className="flex cursor-pointer items-center gap-3 rounded-md border border-gold/14 bg-cream/35 px-3 py-2 text-sm text-ink transition hover:border-gold/35"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="h-4 w-4 accent-gold"
-                                      checked={checked}
-                                      onChange={() => toggleShareFriend(friendship.profile.id)}
-                                    />
-                                    <span className="min-w-0 flex-1 truncate">{label}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {shareError ? <p className="mt-3 text-sm text-red-600">{shareError}</p> : null}
-                          {shareNotice ? <p className="mt-3 text-sm text-emerald-700">{shareNotice}</p> : null}
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="mt-3 w-full"
-                            isLoading={shareSaving}
-                            disabled={shareLoading || acceptedFriends.length === 0}
-                            onClick={() => saveEntryShares(entry.id)}
-                          >
-                            Save sharing
-                          </Button>
-                        </div>
-                      ) : null}
-                      {renderCommentPanel(entry.id)}
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h3 className="text-xl font-semibold text-ink">Shared With Me</h3>
-                <UsersRound className="h-5 w-5 text-gold-deep" aria-hidden="true" />
-              </div>
-              <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-                {entriesLoading ? (
-                  <p className="text-ink/60">Loading shared entries...</p>
-                ) : sharedEntries.length === 0 ? (
-                  <p className="text-ink/60">No shared journal entries yet.</p>
-                ) : (
-                  sharedEntries.map((entry) => (
-                    <article key={`${entry.id}-${entry.sharedBy.id}`} className="rounded-lg border border-gold/20 bg-cream/55 p-4">
-                      {renderEntryAlbumCover(entry)}
-                      <div className="flex items-start justify-between gap-3">
-                        <h4 className="font-semibold text-ink">{entry.title}</h4>
-                        <time className="shrink-0 text-xs text-ink/60" dateTime={entry.sharedAt}>
-                          {new Date(entry.sharedAt).toLocaleDateString()}
-                        </time>
-                      </div>
-                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">
-                        From {entry.sharedBy.displayName || entry.sharedBy.email}
-                      </p>
-                      <p className="mt-2 line-clamp-3 text-ink/70">{getEntryContent(entry)}</p>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
-                        {entry.mood ? <span>{entry.mood}</span> : null}
-                        {entry.tags?.slice(0, 3).map((tag) => (
-                          <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="mt-3">
-                        <Button type="button" size="sm" variant="secondary" onClick={() => openCommentPanel(entry.id)}>
-                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-                          Comments
-                        </Button>
-                      </div>
-                      {renderCommentPanel(entry.id)}
-                    </article>
-                  ))
-                )}
-              </div>
-            </section>
           </aside>
         </div>
         </DndContext>
@@ -3562,6 +3560,10 @@ export default function JournalPage() {
 	                <time className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1" dateTime={getEntryDate(openedEntry)}>
 	                  {new Date(getEntryDate(openedEntry)).toLocaleDateString()}
 	                </time>
+	                <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
+	                  <CalendarDays className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+	                  {formatJournalDateRange(getEntryTripStartDate(openedEntry), getEntryTripEndDate(openedEntry))}
+	                </span>
 	                {getEntryCountry(openedEntry) ? (
 	                  <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
 	                    {formatEntryCountry(getEntryCountry(openedEntry))}
@@ -3603,7 +3605,7 @@ export default function JournalPage() {
 	              ) : null}
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
-	                <Button type="button" size="sm" variant="secondary" onClick={() => openEditEntry(openedEntry)}>
+	                <Button type="button" size="sm" variant="secondary" onClick={() => void openEditEntry(openedEntry)}>
 	                  <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Edit
 	                </Button>
@@ -3625,6 +3627,78 @@ export default function JournalPage() {
 	                  Delete
 	                </Button>
 	              </div>
+	              {renderCommentPanel(openedEntry.id)}
+	              {sharingEntryId === openedEntry.id ? (
+	                <div className="mt-4 rounded-lg border border-gold/18 bg-cream/40 p-4">
+	                  <div className="mb-3 flex items-start justify-between gap-3">
+	                    <div>
+	                      <p className="text-sm font-semibold text-ink">Share with friends</p>
+	                      <p className="text-xs text-ink/55">Friends get view-only access to this entry.</p>
+	                    </div>
+	                    <button
+	                      type="button"
+	                      onClick={() => setSharingEntryId(null)}
+	                      className="rounded-md p-1 text-ink/45 transition hover:bg-white hover:text-ink"
+	                      aria-label="Close sharing panel"
+	                    >
+	                      <X className="h-4 w-4" aria-hidden="true" />
+	                    </button>
+	                  </div>
+	                  {shareLoading ? (
+	                    <p className="text-sm text-ink/60">Loading sharing settings...</p>
+	                  ) : acceptedFriends.length === 0 ? (
+	                    <div className="rounded-md border border-dashed border-gold/25 bg-white/70 p-3">
+	                      <p className="text-sm font-semibold text-ink">No friends in your Travel Circle yet.</p>
+	                      <p className="mt-1 text-sm text-ink/60">
+	                        Add friends first, then come back here to share this journal entry.
+	                      </p>
+	                      <Button
+	                        type="button"
+	                        variant="secondary"
+	                        size="sm"
+	                        className="mt-3"
+	                        onClick={() => router.push('/friends')}
+	                      >
+	                        Open Travel Circle
+	                      </Button>
+	                    </div>
+	                  ) : (
+	                    <div className="space-y-2">
+	                      {acceptedFriends.map((friendship) => {
+	                        const label = friendship.profile.displayName || friendship.profile.email;
+	                        const checked = selectedShareFriendIds.includes(friendship.profile.id);
+
+	                        return (
+	                          <label
+	                            key={friendship.id}
+	                            className="flex cursor-pointer items-center gap-3 rounded-md border border-gold/14 bg-white/70 px-3 py-2 text-sm text-ink transition hover:border-gold/35"
+	                          >
+	                            <input
+	                              type="checkbox"
+	                              className="h-4 w-4 accent-gold"
+	                              checked={checked}
+	                              onChange={() => toggleShareFriend(friendship.profile.id)}
+	                            />
+	                            <span className="min-w-0 flex-1 truncate">{label}</span>
+	                          </label>
+	                        );
+	                      })}
+	                    </div>
+	                  )}
+	                  {shareError ? <p className="mt-3 text-sm text-red-600">{shareError}</p> : null}
+	                  {shareNotice ? <p className="mt-3 text-sm text-emerald-700">{shareNotice}</p> : null}
+	                  <Button
+	                    type="button"
+	                    size="sm"
+	                    className="mt-3 w-full"
+	                    isLoading={shareSaving}
+	                    disabled={shareLoading || acceptedFriends.length === 0}
+	                    onClick={() => saveEntryShares(openedEntry.id)}
+	                  >
+	                    Save sharing
+	                  </Button>
+	                </div>
+	              ) : null}
 	            </article>
 	          </div>
 	        ) : null}
@@ -3681,6 +3755,7 @@ export default function JournalPage() {
         />
         {renderCanvaModal()}
         {renderEditEntryModal()}
+        {renderSavedEntryNotice()}
       </PageShell>
     </div>
   );

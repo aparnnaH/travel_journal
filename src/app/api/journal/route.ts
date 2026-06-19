@@ -1,14 +1,91 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } from '@/lib/journalDates';
+import { placeholderCountries } from '@/lib/placeholderData';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
   'Canva journal fields are not installed yet. Run supabase/canva_journal_entries.sql in Supabase, then try saving again.';
+const JOURNAL_METADATA_SCHEMA_ERROR_MESSAGE =
+  'Journal metadata fields are not installed yet. Run the Supabase journal metadata migrations, then try saving again.';
 const MAX_INSERTED_JOURNAL_PHOTOS = 8;
+const JOURNAL_SEARCH_SCOPES = new Set(['all', 'title', 'country', 'tag', 'text']);
+const JOURNAL_SUMMARY_FIELDS =
+  'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count,trip_start_date,trip_end_date';
+const JOURNAL_LEGACY_SUMMARY_FIELDS =
+  'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
 
 const isMissingCanvaJournalColumnError = (message: string) =>
   /canva_(design|pages|page)/i.test(message) &&
   /(column|schema cache|could not find)/i.test(message);
+
+const isMissingJournalMetadataColumnError = (message: string) =>
+  isMissingCanvaJournalColumnError(message) ||
+  /trip_(start|end)_date/i.test(message) &&
+    /(column|schema cache|could not find)/i.test(message);
+
+type JournalSearchScope = 'all' | 'title' | 'country' | 'tag' | 'text';
+
+type JournalEntryRow = {
+  country_id?: string | null;
+  title?: string | null;
+  content?: string | null;
+  tags?: string[] | null;
+};
+
+const normalizeSearchValue = (value: string) => value.trim().toLocaleLowerCase();
+
+const getCountrySearchValues = (countryId?: string | null) => {
+  const cleanCountryId = countryId?.trim();
+
+  if (!cleanCountryId) {
+    return [];
+  }
+
+  const country = placeholderCountries.find(
+    (candidate) =>
+      candidate.id.toLocaleLowerCase() === cleanCountryId.toLocaleLowerCase() ||
+      candidate.code.toLocaleLowerCase() === cleanCountryId.toLocaleLowerCase()
+  );
+
+  return [cleanCountryId, country?.name, country?.code].filter((value): value is string => Boolean(value));
+};
+
+const entryMatchesSearch = (entry: JournalEntryRow, rawSearch: string, scope: JournalSearchScope) => {
+  const search = normalizeSearchValue(rawSearch);
+
+  if (!search) {
+    return true;
+  }
+
+  const decodedContent = decodeJournalContentWithCanva(String(entry.content || '')).content;
+  const searchableValues = {
+    title: [entry.title ?? ''],
+    country: getCountrySearchValues(entry.country_id),
+    tag: entry.tags ?? [],
+    text: [decodedContent],
+  };
+
+  const matches = (values: string[]) =>
+    values.some((value) => normalizeSearchValue(value).includes(search));
+
+  if (scope === 'all') {
+    return Object.values(searchableValues).some(matches);
+  }
+
+  return matches(searchableValues[scope]);
+};
+
+const summarizeJournalEntry = <T extends Record<string, unknown>>(entry: T) => {
+  const decodedContent = decodeJournalContentWithCanva(String(entry.content || '')).content.trim();
+
+  return {
+    ...entry,
+    content: decodedContent ? decodedContent.slice(0, 360) : '',
+    canva_pages: undefined,
+    isSummary: true,
+  };
+};
 
 export async function GET(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'journal');
@@ -17,17 +94,110 @@ export async function GET(request: NextRequest) {
     return context;
   }
 
-  const { data, error } = await context.supabaseAdmin
+  const entryId = request.nextUrl.searchParams.get('entryId');
+  const summary = request.nextUrl.searchParams.get('summary') === 'true';
+
+  if (entryId) {
+    const { data, error } = await context.supabaseAdmin
+      .from('journal_entries')
+      .select('*')
+      .eq('id', entryId)
+      .eq('user_id', context.user.id)
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    if (!data) {
+      return NextResponse.json({ success: false, error: 'Journal entry not found.' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data, count: 1, hasMore: false });
+  }
+
+  const limitParam = request.nextUrl.searchParams.get('limit');
+  const offsetParam = request.nextUrl.searchParams.get('offset');
+  const limit = limitParam ? Math.min(Math.max(Number.parseInt(limitParam, 10) || 0, 1), 50) : null;
+  const offset = offsetParam ? Math.max(Number.parseInt(offsetParam, 10) || 0, 0) : 0;
+  const search = request.nextUrl.searchParams.get('search')?.trim().slice(0, 120) ?? '';
+  const searchScopeParam = request.nextUrl.searchParams.get('searchScope') ?? 'all';
+  const searchScope = (JOURNAL_SEARCH_SCOPES.has(searchScopeParam) ? searchScopeParam : 'all') as JournalSearchScope;
+  const selectFields = summary ? JOURNAL_SUMMARY_FIELDS : '*';
+
+  if (search) {
+    const { data, error } = await context.supabaseAdmin
+      .from('journal_entries')
+      .select('*')
+      .eq('user_id', context.user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    const filteredData = (data ?? []).filter((entry) => entryMatchesSearch(entry, search, searchScope));
+    const pagedData = limit ? filteredData.slice(offset, offset + limit) : filteredData;
+
+    return NextResponse.json({
+      success: true,
+      data: summary ? pagedData.map((entry) => summarizeJournalEntry(entry)) : pagedData,
+      count: filteredData.length,
+      hasMore: limit ? offset + pagedData.length < filteredData.length : false,
+    });
+  }
+
+  let query = context.supabaseAdmin
     .from('journal_entries')
-    .select('*')
+    .select(selectFields, { count: 'exact' })
     .eq('user_id', context.user.id)
     .order('created_at', { ascending: false });
 
+  if (limit) {
+    query = query.range(offset, offset + limit - 1);
+  }
+
+  const { data, error, count } = await query;
+
   if (error) {
+    if (summary && isMissingJournalMetadataColumnError(error.message)) {
+      let legacyQuery = context.supabaseAdmin
+        .from('journal_entries')
+        .select(JOURNAL_LEGACY_SUMMARY_FIELDS, { count: 'exact' })
+        .eq('user_id', context.user.id)
+        .order('created_at', { ascending: false });
+
+      if (limit) {
+        legacyQuery = legacyQuery.range(offset, offset + limit - 1);
+      }
+
+      const { data: legacyData, error: legacyError, count: legacyCount } = await legacyQuery;
+
+      if (legacyError) {
+        return NextResponse.json({ success: false, error: legacyError.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: summary
+          ? (legacyData ?? []).map((entry) => summarizeJournalEntry(entry as unknown as Record<string, unknown>))
+          : legacyData,
+        count: legacyCount ?? legacyData?.length ?? 0,
+        hasMore: limit ? offset + (legacyData?.length ?? 0) < (legacyCount ?? 0) : false,
+      });
+    }
+
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, data });
+  return NextResponse.json({
+    success: true,
+    data: summary
+      ? (data ?? []).map((entry) => summarizeJournalEntry(entry as unknown as Record<string, unknown>))
+      : data,
+    count: count ?? data?.length ?? 0,
+    hasMore: limit ? offset + (data?.length ?? 0) < (count ?? 0) : false,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -51,10 +221,21 @@ export async function POST(request: NextRequest) {
     coverPhoto,
     coverPageIndex,
     insertedPhotos,
+    tripStartDate,
+    tripEndDate,
   } = body;
 
   if (!countryId || !title || !content) {
     return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
+  }
+
+  const fallbackDate = getTodayJournalDate();
+  const cleanTripStartDate = normalizeJournalDate(tripStartDate, fallbackDate);
+  const cleanTripEndDate = normalizeJournalDate(tripEndDate, cleanTripStartDate);
+  const tripDateError = getJournalDateRangeError(cleanTripStartDate, cleanTripEndDate);
+
+  if (tripDateError) {
+    return NextResponse.json({ success: false, error: tripDateError }, { status: 400 });
   }
 
   const cleanCanvaPages = Array.isArray(canvaPages)
@@ -76,6 +257,16 @@ export async function POST(request: NextRequest) {
           caption: typeof photo.caption === 'string' ? photo.caption : '',
         }))
     : [];
+  const canvaPayload = {
+    designId: canvaDesignId || null,
+    designTitle: canvaDesignTitle || null,
+    designEditUrl: canvaDesignEditUrl || null,
+    coverPhoto: cleanCoverPhoto,
+    coverPageIndex: cleanCoverPageIndex,
+    insertedPhotos: cleanInsertedPhotos,
+    tripStartDate: cleanTripStartDate,
+    tripEndDate: cleanTripEndDate,
+  };
   const shouldEncodeCanvaPayload = Boolean(cleanCoverPhoto || cleanInsertedPhotos.length);
 
   const insertPayload: Record<string, unknown> = {
@@ -83,17 +274,12 @@ export async function POST(request: NextRequest) {
     country_id: countryId,
     title,
     content: shouldEncodeCanvaPayload
-      ? encodeJournalContentWithCanva(content, {
-          designId: canvaDesignId || null,
-          designTitle: canvaDesignTitle || null,
-          designEditUrl: canvaDesignEditUrl || null,
-          coverPhoto: cleanCoverPhoto,
-          coverPageIndex: cleanCoverPageIndex,
-          insertedPhotos: cleanInsertedPhotos,
-        })
+      ? encodeJournalContentWithCanva(content, canvaPayload)
       : content,
     mood,
     tags,
+    trip_start_date: cleanTripStartDate,
+    trip_end_date: cleanTripEndDate,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -112,7 +298,7 @@ export async function POST(request: NextRequest) {
     .select('*');
 
   if (error) {
-    if (isMissingCanvaJournalColumnError(error.message)) {
+    if (isMissingJournalMetadataColumnError(error.message)) {
       const { data: fallbackData, error: fallbackError } = await context.supabaseAdmin
         .from('journal_entries')
         .insert([
@@ -121,13 +307,8 @@ export async function POST(request: NextRequest) {
             country_id: countryId,
             title,
             content: encodeJournalContentWithCanva(content, {
-              designId: canvaDesignId || null,
-              designTitle: canvaDesignTitle || null,
-              designEditUrl: canvaDesignEditUrl || null,
+              ...canvaPayload,
               pages: cleanCanvaPages,
-              coverPhoto: cleanCoverPhoto,
-              coverPageIndex: cleanCoverPageIndex,
-              insertedPhotos: cleanInsertedPhotos,
             }),
             mood,
             tags,
@@ -138,7 +319,15 @@ export async function POST(request: NextRequest) {
         .select('*');
 
       if (fallbackError) {
-        return NextResponse.json({ success: false, error: CANVA_SCHEMA_ERROR_MESSAGE }, { status: 500 });
+        return NextResponse.json(
+          {
+            success: false,
+            error: isMissingCanvaJournalColumnError(error.message)
+              ? CANVA_SCHEMA_ERROR_MESSAGE
+              : JOURNAL_METADATA_SCHEMA_ERROR_MESSAGE,
+          },
+          { status: 500 }
+        );
       }
 
       return NextResponse.json({
@@ -154,6 +343,10 @@ export async function POST(request: NextRequest) {
           coverPhoto: cleanCoverPhoto,
           coverPageIndex: cleanCoverPageIndex,
           insertedPhotos: cleanInsertedPhotos,
+          trip_start_date: cleanTripStartDate,
+          trip_end_date: cleanTripEndDate,
+          tripStartDate: cleanTripStartDate,
+          tripEndDate: cleanTripEndDate,
         },
       });
     }
@@ -172,9 +365,15 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { entryId, countryId, title, content, mood, tags } = body;
+  const { entryId, countryId, title, content, mood, tags, tripStartDate, tripEndDate } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
-  const hasFullEntryUpdate = 'countryId' in body || 'content' in body || 'mood' in body || 'tags' in body;
+  const hasFullEntryUpdate =
+    'countryId' in body ||
+    'content' in body ||
+    'mood' in body ||
+    'tags' in body ||
+    'tripStartDate' in body ||
+    'tripEndDate' in body;
   const cleanCountryId = typeof countryId === 'string' ? countryId.trim() : '';
   const cleanContent = typeof content === 'string' ? content.trim() : '';
   const cleanMood = typeof mood === 'string' ? mood.trim() : '';
@@ -188,6 +387,15 @@ export async function PATCH(request: NextRequest) {
 
   if (hasFullEntryUpdate && (!cleanCountryId || !cleanContent || !cleanMood)) {
     return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
+  }
+
+  const fallbackDate = getTodayJournalDate();
+  const cleanTripStartDate = normalizeJournalDate(tripStartDate, fallbackDate);
+  const cleanTripEndDate = normalizeJournalDate(tripEndDate, cleanTripStartDate);
+  const tripDateError = getJournalDateRangeError(cleanTripStartDate, cleanTripEndDate);
+
+  if (hasFullEntryUpdate && tripDateError) {
+    return NextResponse.json({ success: false, error: tripDateError }, { status: 400 });
   }
 
   const updatePayload: Record<string, unknown> = {
@@ -212,24 +420,74 @@ export async function PATCH(request: NextRequest) {
     }
 
     const decodedExistingContent = decodeJournalContentWithCanva(String(existingEntry.content || ''));
+    const nextCanvaPayload = decodedExistingContent.canva
+      ? {
+          ...decodedExistingContent.canva,
+          tripStartDate: cleanTripStartDate,
+          tripEndDate: cleanTripEndDate,
+        }
+      : null;
 
     updatePayload.country_id = cleanCountryId;
-    updatePayload.content = decodedExistingContent.canva
-      ? encodeJournalContentWithCanva(cleanContent, decodedExistingContent.canva)
+    updatePayload.content = nextCanvaPayload
+      ? encodeJournalContentWithCanva(cleanContent, nextCanvaPayload)
       : cleanContent;
     updatePayload.mood = cleanMood;
     updatePayload.tags = cleanTags;
+    updatePayload.trip_start_date = cleanTripStartDate;
+    updatePayload.trip_end_date = cleanTripEndDate;
   }
 
-  const { data, error } = await context.supabaseAdmin
+  const updateQuery = context.supabaseAdmin
     .from('journal_entries')
     .update(updatePayload)
     .eq('id', entryId)
     .eq('user_id', context.user.id)
     .select('*')
     .maybeSingle();
+  const { data, error } = await updateQuery;
 
   if (error) {
+    if (hasFullEntryUpdate && isMissingJournalMetadataColumnError(error.message)) {
+      const fallbackUpdatePayload = { ...updatePayload };
+      delete fallbackUpdatePayload.trip_start_date;
+      delete fallbackUpdatePayload.trip_end_date;
+
+      if (typeof fallbackUpdatePayload.content === 'string' && !decodeJournalContentWithCanva(fallbackUpdatePayload.content).canva) {
+        fallbackUpdatePayload.content = encodeJournalContentWithCanva(cleanContent, {
+          tripStartDate: cleanTripStartDate,
+          tripEndDate: cleanTripEndDate,
+        });
+      }
+
+      const { data: fallbackData, error: fallbackError } = await context.supabaseAdmin
+        .from('journal_entries')
+        .update(fallbackUpdatePayload)
+        .eq('id', entryId)
+        .eq('user_id', context.user.id)
+        .select('*')
+        .maybeSingle();
+
+      if (fallbackError) {
+        return NextResponse.json({ success: false, error: fallbackError.message }, { status: 500 });
+      }
+
+      if (!fallbackData) {
+        return NextResponse.json({ success: false, error: 'Journal entry not found.' }, { status: 404 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...fallbackData,
+          trip_start_date: cleanTripStartDate,
+          trip_end_date: cleanTripEndDate,
+          tripStartDate: cleanTripStartDate,
+          tripEndDate: cleanTripEndDate,
+        },
+      });
+    }
+
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 
@@ -270,7 +528,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const { error: commentsError } = await context.supabaseAdmin
-    .from('journal_comments')
+    .from('journal_share_comments')
     .delete()
     .eq('journal_entry_id', entryId);
 

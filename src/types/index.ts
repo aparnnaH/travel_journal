@@ -28,6 +28,8 @@ export interface JournalEntry {
   canvaPageCount?: number | null;
   coverPhoto?: string | null;
   coverPageIndex?: number | null;
+  tripStartDate?: string | null;
+  tripEndDate?: string | null;
   insertedPhotos?: Array<{
     id: string;
     src: string;
@@ -39,6 +41,8 @@ export interface JournalEntry {
   canva_design_edit_url?: string | null;
   canva_pages?: string[] | null;
   canva_page_count?: number | null;
+  trip_start_date?: string | null;
+  trip_end_date?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -5,6 +5,8 @@ export type JournalCanvaPayload = {
   pages?: string[];
   coverPhoto?: string | null;
   coverPageIndex?: number | null;
+  tripStartDate?: string | null;
+  tripEndDate?: string | null;
   insertedPhotos?: Array<{
     id: string;
     src: string;

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { placeholderCountries } from '@/lib/placeholderData';
 import type { JournalEntry } from '@/types';
 import type { JournalComment } from '@/types/journalComments';
 import type { JournalSharePermission, JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
@@ -9,7 +10,7 @@ type JournalEntryRow = {
   user_id: string;
   country_id: string;
   title: string;
-  content: string;
+  content?: string | null;
   mood: JournalEntry['mood'];
   tags?: string[];
   canva_design_id?: string | null;
@@ -17,6 +18,8 @@ type JournalEntryRow = {
   canva_design_edit_url?: string | null;
   canva_pages?: string[] | null;
   canva_page_count?: number | null;
+  trip_start_date?: string | null;
+  trip_end_date?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -45,10 +48,78 @@ type JournalCommentRow = {
   created_at: string;
 };
 
-function mapEntry(row: JournalEntryRow): JournalEntry & { country_id: string; created_at: string } {
-  const decodedContent = decodeJournalContentWithCanva(row.content);
+type JournalSearchScope = 'all' | 'title' | 'country' | 'tag' | 'text';
+
+type JournalSearchableEntry = {
+  country_id?: string | null;
+  countryId?: string | null;
+  title?: string | null;
+  content?: string | null;
+  tags?: string[] | null;
+};
+
+type SharedEntryQueryOptions = {
+  limit?: number | null;
+  offset?: number;
+  summary?: boolean;
+  search?: string;
+  searchScope?: JournalSearchScope;
+};
+
+const normalizeSearchValue = (value: string) => value.trim().toLocaleLowerCase();
+
+const getCountrySearchValues = (countryId?: string | null) => {
+  const cleanCountryId = countryId?.trim();
+
+  if (!cleanCountryId) {
+    return [];
+  }
+
+  const country = placeholderCountries.find(
+    (candidate) =>
+      candidate.id.toLocaleLowerCase() === cleanCountryId.toLocaleLowerCase() ||
+      candidate.code.toLocaleLowerCase() === cleanCountryId.toLocaleLowerCase()
+  );
+
+  return [cleanCountryId, country?.name, country?.code].filter((value): value is string => Boolean(value));
+};
+
+const entryMatchesSearch = (entry: JournalSearchableEntry, rawSearch: string, scope: JournalSearchScope) => {
+  const search = normalizeSearchValue(rawSearch);
+
+  if (!search) {
+    return true;
+  }
+
+  const decodedContent = decodeJournalContentWithCanva(String(entry.content || '')).content;
+  const searchableValues = {
+    title: [entry.title ?? ''],
+    country: getCountrySearchValues(entry.country_id ?? entry.countryId),
+    tag: entry.tags ?? [],
+    text: [decodedContent],
+  };
+
+  const matches = (values: string[]) =>
+    values.some((value) => normalizeSearchValue(value).includes(search));
+
+  if (scope === 'all') {
+    return Object.values(searchableValues).some(matches);
+  }
+
+  return matches(searchableValues[scope]);
+};
+
+function mapEntry(
+  row: JournalEntryRow,
+  options: { summary?: boolean } = {}
+): JournalEntry & { country_id: string; created_at: string; isSummary?: boolean } {
+  const decodedContent = decodeJournalContentWithCanva(String(row.content || ''));
   const fallbackCanva = decodedContent.canva;
   const fallbackPages = fallbackCanva?.pages ?? [];
+  const canvaPages = options.summary ? [] : row.canva_pages ?? fallbackPages;
+  const content = options.summary
+    ? decodedContent.content.trim().slice(0, 360)
+    : decodedContent.content;
 
   return {
     id: row.id,
@@ -56,26 +127,43 @@ function mapEntry(row: JournalEntryRow): JournalEntry & { country_id: string; cr
     countryId: row.country_id,
     country_id: row.country_id,
     title: row.title,
-    content: decodedContent.content,
+    content,
     mood: row.mood,
     tags: row.tags ?? [],
     photos: [],
     canvaDesignId: row.canva_design_id ?? fallbackCanva?.designId ?? null,
     canvaDesignTitle: row.canva_design_title ?? fallbackCanva?.designTitle ?? null,
     canvaDesignEditUrl: row.canva_design_edit_url ?? fallbackCanva?.designEditUrl ?? null,
-    canvaPages: row.canva_pages ?? fallbackPages,
+    canvaPages,
     canvaPageCount: row.canva_page_count ?? row.canva_pages?.length ?? fallbackPages.length ?? null,
-    coverPhoto: fallbackCanva?.coverPhoto ?? fallbackPages[0] ?? row.canva_pages?.[0] ?? null,
-    coverPageIndex: fallbackCanva?.coverPageIndex ?? null,
-    insertedPhotos: fallbackCanva?.insertedPhotos ?? [],
+    coverPhoto: options.summary ? null : fallbackCanva?.coverPhoto ?? fallbackPages[0] ?? row.canva_pages?.[0] ?? null,
+    coverPageIndex: options.summary ? null : fallbackCanva?.coverPageIndex ?? null,
+    tripStartDate: row.trip_start_date ?? fallbackCanva?.tripStartDate ?? null,
+    tripEndDate: row.trip_end_date ?? fallbackCanva?.tripEndDate ?? null,
+    insertedPhotos: options.summary ? [] : fallbackCanva?.insertedPhotos ?? [],
     canva_design_id: row.canva_design_id ?? fallbackCanva?.designId ?? null,
     canva_design_title: row.canva_design_title ?? fallbackCanva?.designTitle ?? null,
     canva_design_edit_url: row.canva_design_edit_url ?? fallbackCanva?.designEditUrl ?? null,
-    canva_pages: row.canva_pages ?? fallbackPages,
+    canva_pages: canvaPages,
     canva_page_count: row.canva_page_count ?? row.canva_pages?.length ?? fallbackPages.length ?? null,
+    trip_start_date: row.trip_start_date ?? fallbackCanva?.tripStartDate ?? null,
+    trip_end_date: row.trip_end_date ?? fallbackCanva?.tripEndDate ?? null,
     createdAt: row.created_at,
     created_at: row.created_at,
     updatedAt: row.updated_at,
+    isSummary: options.summary ? true : undefined,
+  };
+}
+
+function summarizeMappedEntry<T extends JournalEntry & { canva_pages?: string[] | null; isSummary?: boolean }>(entry: T) {
+  return {
+    ...entry,
+    content: String(entry.content || '').trim().slice(0, 360),
+    canvaPages: [],
+    canva_pages: [],
+    coverPhoto: null,
+    insertedPhotos: [],
+    isSummary: true,
   };
 }
 
@@ -239,12 +327,27 @@ export async function replaceJournalShares({
   return loadJournalShareRecipients(supabaseAdmin, entryId, sharedBy);
 }
 
-export async function loadSharedJournalEntries(supabaseAdmin: SupabaseClient, userId: string) {
-  const { data, error } = await supabaseAdmin
+export async function loadSharedJournalEntries(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  options: SharedEntryQueryOptions = {}
+) {
+  const limit = options.limit ?? null;
+  const offset = options.offset ?? 0;
+  const summary = options.summary ?? false;
+  const search = options.search?.trim() ?? '';
+  const searchScope = options.searchScope ?? 'all';
+  let sharesQuery = supabaseAdmin
     .from('journal_shares')
-    .select('*')
+    .select('*', { count: 'exact' })
     .eq('shared_with', userId)
     .order('created_at', { ascending: false });
+
+  if (!search && limit) {
+    sharesQuery = sharesQuery.range(offset, offset + limit - 1);
+  }
+
+  const { data, error, count } = await sharesQuery;
 
   if (error) {
     throw new Error(error.message);
@@ -253,7 +356,7 @@ export async function loadSharedJournalEntries(supabaseAdmin: SupabaseClient, us
   const shares = (data ?? []) as JournalShareRow[];
 
   if (shares.length === 0) {
-    return [];
+    return { data: [], count: count ?? 0, hasMore: false };
   }
 
   const entryIds = [...new Set(shares.map((share) => share.journal_entry_id))];
@@ -275,7 +378,7 @@ export async function loadSharedJournalEntries(supabaseAdmin: SupabaseClient, us
   const entryLookup = new Map((entryData ?? []).map((entry) => [String(entry.id), entry as JournalEntryRow]));
   const profileLookup = new Map((profileData ?? []).map((profile) => [String(profile.id), profile as ProfileRow]));
 
-  return shares.flatMap<SharedJournalEntry>((share) => {
+  const sharedEntries = shares.flatMap<SharedJournalEntry>((share) => {
     const entry = entryLookup.get(share.journal_entry_id);
 
     if (!entry) {
@@ -284,13 +387,77 @@ export async function loadSharedJournalEntries(supabaseAdmin: SupabaseClient, us
 
     return [
       {
-        ...mapEntry(entry),
+        ...mapEntry(entry, { summary: summary && !search }),
         sharedBy: mapProfile(profileLookup.get(share.shared_by)),
         sharedAt: share.created_at,
         permission: share.permission,
       },
     ];
   });
+
+  if (search) {
+    const filteredEntries = sharedEntries.filter((entry) => entryMatchesSearch(entry, search, searchScope));
+    const pagedEntries = limit ? filteredEntries.slice(offset, offset + limit) : filteredEntries;
+
+    return {
+      data: summary ? pagedEntries.map((entry) => summarizeMappedEntry(entry)) : pagedEntries,
+      count: filteredEntries.length,
+      hasMore: limit ? offset + pagedEntries.length < filteredEntries.length : false,
+    };
+  }
+
+  return {
+    data: sharedEntries,
+    count: count ?? sharedEntries.length,
+    hasMore: limit ? offset + sharedEntries.length < (count ?? sharedEntries.length) : false,
+  };
+}
+
+export async function loadSharedJournalEntry(
+  supabaseAdmin: SupabaseClient,
+  userId: string,
+  entryId: string
+) {
+  const { data: shareData, error: shareError } = await supabaseAdmin
+    .from('journal_shares')
+    .select('*')
+    .eq('shared_with', userId)
+    .eq('journal_entry_id', entryId)
+    .maybeSingle();
+
+  if (shareError) {
+    throw new Error(shareError.message);
+  }
+
+  const share = shareData as JournalShareRow | null;
+
+  if (!share) {
+    return null;
+  }
+
+  const [{ data: entryData, error: entryError }, { data: profileData, error: profileError }] = await Promise.all([
+    supabaseAdmin.from('journal_entries').select('*').eq('id', entryId).maybeSingle(),
+    supabaseAdmin.from('profiles').select('id,email,display_name,avatar_url').eq('id', share.shared_by).maybeSingle(),
+  ]);
+
+  if (entryError) {
+    throw new Error(entryError.message);
+  }
+
+  if (profileError) {
+    throw new Error(profileError.message);
+  }
+
+  if (!entryData) {
+    return null;
+  }
+
+  return {
+    ...mapEntry(entryData as JournalEntryRow),
+    sharedBy: mapProfile((profileData ?? undefined) as ProfileRow | undefined),
+    sharedAt: share.created_at,
+    permission: share.permission,
+  };
 }
 
 export async function loadJournalComments(supabaseAdmin: SupabaseClient, entryId: string, userId: string) {

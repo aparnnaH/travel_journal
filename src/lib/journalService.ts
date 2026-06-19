@@ -2,9 +2,52 @@ import type { JournalEntry } from '@/types';
 import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 
-export async function fetchJournalEntries() {
-  const response = await fetch('/api/journal');
-  return response.json() as Promise<{ success: boolean; data?: JournalEntry[]; error?: string }>;
+export async function fetchJournalEntries(options?: {
+  limit?: number;
+  offset?: number;
+  summary?: boolean;
+  search?: string;
+  searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
+}) {
+  const params = new URLSearchParams();
+
+  if (typeof options?.limit === 'number') {
+    params.set('limit', String(options.limit));
+  }
+
+  if (typeof options?.offset === 'number') {
+    params.set('offset', String(options.offset));
+  }
+
+  if (options?.summary) {
+    params.set('summary', 'true');
+  }
+
+  if (options?.search?.trim()) {
+    params.set('search', options.search.trim());
+    params.set('searchScope', options.searchScope ?? 'all');
+  }
+
+  const query = params.toString();
+  const response = await fetch(`/api/journal${query ? `?${query}` : ''}`);
+
+  return response.json() as Promise<{
+    success: boolean;
+    data?: JournalEntry[];
+    count?: number;
+    hasMore?: boolean;
+    error?: string;
+  }>;
+}
+
+export async function fetchJournalEntry(entryId: string) {
+  const response = await fetch(`/api/journal?entryId=${encodeURIComponent(entryId)}`);
+
+  return response.json() as Promise<{
+    success: boolean;
+    data?: JournalEntry;
+    error?: string;
+  }>;
 }
 
 export async function createJournalEntry(entry: {
@@ -17,6 +60,8 @@ export async function createJournalEntry(entry: {
   canvaDesignTitle?: string;
   canvaDesignEditUrl?: string;
   canvaPages?: string[];
+  tripStartDate?: string;
+  tripEndDate?: string;
   coverPhoto?: string | null;
   coverPageIndex?: number | null;
   insertedPhotos?: Array<{
@@ -55,6 +100,8 @@ export async function updateJournalEntry(entry: {
   content: string;
   mood: string;
   tags: string[];
+  tripStartDate?: string;
+  tripEndDate?: string;
 }) {
   const response = await fetch('/api/journal', {
     method: 'PATCH',
@@ -94,9 +141,52 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
   return response.json() as Promise<{ success: boolean; data?: JournalShareRecipient[]; error?: string }>;
 }
 
-export async function fetchSharedJournalEntries() {
-  const response = await fetch('/api/journal/shared');
-  return response.json() as Promise<{ success: boolean; data?: SharedJournalEntry[]; error?: string }>;
+export async function fetchSharedJournalEntries(options?: {
+  limit?: number;
+  offset?: number;
+  summary?: boolean;
+  search?: string;
+  searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
+}) {
+  const params = new URLSearchParams();
+
+  if (typeof options?.limit === 'number') {
+    params.set('limit', String(options.limit));
+  }
+
+  if (typeof options?.offset === 'number') {
+    params.set('offset', String(options.offset));
+  }
+
+  if (options?.summary) {
+    params.set('summary', 'true');
+  }
+
+  if (options?.search?.trim()) {
+    params.set('search', options.search.trim());
+    params.set('searchScope', options.searchScope ?? 'all');
+  }
+
+  const query = params.toString();
+  const response = await fetch(`/api/journal/shared${query ? `?${query}` : ''}`);
+
+  return response.json() as Promise<{
+    success: boolean;
+    data?: SharedJournalEntry[];
+    count?: number;
+    hasMore?: boolean;
+    error?: string;
+  }>;
+}
+
+export async function fetchSharedJournalEntry(entryId: string) {
+  const response = await fetch(`/api/journal/shared?entryId=${encodeURIComponent(entryId)}`);
+
+  return response.json() as Promise<{
+    success: boolean;
+    data?: SharedJournalEntry;
+    error?: string;
+  }>;
 }
 
 export async function fetchJournalComments(entryId: string) {

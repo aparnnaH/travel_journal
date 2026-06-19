@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  BookOpen,
   ChevronDown,
   Compass,
   LogOut,
@@ -20,7 +21,7 @@ import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { signOut } from '@/lib/supabase';
 
-type HeaderMenu = 'explore' | 'account' | null;
+type HeaderMenu = 'explore' | 'journal' | 'account' | null;
 
 interface HeaderLink {
   label: string;
@@ -34,6 +35,11 @@ const exploreLinks = [
   { label: 'Passport', href: '/passport', description: 'Browse unlocked stamps from your travels.', icon: Stamp },
   { label: 'Travel Audit', href: '/compare', description: 'Compare map visits with passport stamps.', icon: Compass },
   { label: 'Companion', href: '/companion', description: 'Draft and polish travel memories with AI.', icon: Sparkles },
+] satisfies HeaderLink[];
+
+const journalLinks = [
+  { label: 'Journal Workspace', href: '/journal', description: 'Design new Canva pages and save travel stories.', icon: Sparkles },
+  { label: 'All Entries', href: '/journal/entries', description: 'Browse, edit, share, and manage saved entries.', icon: BookOpen },
 ] satisfies HeaderLink[];
 
 const accountLinks = [
@@ -196,13 +202,43 @@ export default function AppHeader() {
             ) : null}
           </div>
 
-          <Link
-            href="/journal"
-            className="inline-flex h-10 items-center rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
-            onClick={closeMenus}
+          <div
+            className="relative"
+            onMouseEnter={() => openHeaderMenu('journal')}
+            onMouseLeave={() => handleMenuLeave('journal')}
           >
-            Journal
-          </Link>
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-1 rounded-md px-4 py-2 font-medium text-ink/72 transition-colors hover:bg-white hover:text-ink"
+              onClick={() => pinHeaderMenu('journal')}
+              aria-expanded={openMenu === 'journal'}
+              aria-haspopup="menu"
+            >
+              Journal
+              <ChevronDown className={`h-4 w-4 transition ${openMenu === 'journal' ? 'rotate-180' : ''}`} aria-hidden="true" />
+            </button>
+            {openMenu === 'journal' ? (
+              <div className="absolute left-0 top-full w-80 pt-3" role="menu">
+                <div className="rounded-xl border border-gold/16 bg-white p-3 shadow-xl">
+                  {journalLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="flex select-none gap-4 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-cream hover:text-ink"
+                      role="menuitem"
+                      onClick={closeMenus}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                        <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
 
           <div
             className="relative"
@@ -381,9 +417,25 @@ export default function AppHeader() {
                 </div>
               </div>
 
-              <Link href="/journal" className="font-semibold" onClick={closeMenus}>
-                Journal
-              </Link>
+              <div>
+                <p className="font-semibold text-ink">Journal</p>
+                <div className="mt-2 grid gap-1">
+                  {journalLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="flex select-none gap-4 rounded-md p-3 leading-none outline-none transition-colors hover:bg-white"
+                      onClick={closeMenus}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-semibold text-ink">{item.label}</span>
+                        <span className="mt-1 block text-sm leading-snug text-ink/58">{item.description}</span>
+                      </span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
 
               <div className="border-t border-gold/16 pt-5">
                 <p className="font-semibold text-ink">Account</p>
