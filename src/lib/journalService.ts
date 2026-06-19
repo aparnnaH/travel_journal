@@ -17,6 +17,14 @@ export async function createJournalEntry(entry: {
   canvaDesignTitle?: string;
   canvaDesignEditUrl?: string;
   canvaPages?: string[];
+  coverPhoto?: string | null;
+  coverPageIndex?: number | null;
+  insertedPhotos?: Array<{
+    id: string;
+    src: string;
+    alt: string;
+    caption?: string;
+  }>;
 }) {
   const response = await fetch('/api/journal', {
     method: 'POST',
@@ -38,6 +46,16 @@ export async function updateJournalEntryTitle(entry: {
   });
 
   return response.json() as Promise<{ success: boolean; data?: JournalEntry; error?: string }>;
+}
+
+export async function deleteJournalEntry(entryId: string) {
+  const response = await fetch('/api/journal', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entryId }),
+  });
+
+  return response.json() as Promise<{ success: boolean; error?: string }>;
 }
 
 export async function fetchJournalEntryShares(entryId: string) {

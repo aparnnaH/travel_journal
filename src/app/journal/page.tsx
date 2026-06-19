@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { Check, ChevronLeft, ChevronRight, ExternalLink, MessageCircle, Palette, PencilLine, Search, Send, Share2, UsersRound, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Palette, PencilLine, Search, Send, Share2, Type, UsersRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -14,10 +14,12 @@ import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
 import { appendImportedTripToStorage, getScrapbookStorageKey } from '@/lib/ai/storage';
 import { useAuthStore } from '@/store/authStore';
+import { useMapStore } from '@/store/mapStore';
 import { fetchFriends } from '@/lib/friendService';
 import {
   createJournalComment,
   createJournalEntry,
+  deleteJournalEntry,
   fetchJournalComments,
   fetchJournalEntries,
   fetchJournalEntryShares,
@@ -84,8 +86,22 @@ type CanvaImportedPreview = {
   dataUrls: string[];
 };
 
+type InsertedJournalPhoto = {
+  id: string;
+  src: string;
+  alt: string;
+  caption?: string;
+};
+
+type VisitedJournalCountry = {
+  id: string;
+  name: string;
+  searchText: string;
+};
+
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 const SCRAPBOOK_STORAGE_WARNING_BYTES = 3_500_000;
+const MAX_INSERTED_JOURNAL_PHOTOS = 8;
 
 type DragState = {
   id: string;
@@ -208,6 +224,51 @@ const getEntryCanvaEditUrl = (entry: SavedEntry | SharedJournalEntry) =>
   null;
 const getEntryContent = (entry: SavedEntry | SharedJournalEntry) =>
   decodeJournalContentWithCanva(entry.content).content;
+const getEntryCoverPageIndex = (entry: SavedEntry | SharedJournalEntry) => {
+  const decodedCoverIndex = decodeJournalContentWithCanva(entry.content).canva?.coverPageIndex;
+
+  return typeof entry.coverPageIndex === 'number'
+    ? entry.coverPageIndex
+    : typeof decodedCoverIndex === 'number'
+      ? decodedCoverIndex
+      : 0;
+};
+const getEntryCoverPhoto = (entry: SavedEntry | SharedJournalEntry) => {
+  const decodedCanva = decodeJournalContentWithCanva(entry.content).canva;
+  const pages = getEntryCanvaPages(entry);
+  const coverPageIndex = clamp(getEntryCoverPageIndex(entry), 0, Math.max(0, pages.length - 1));
+
+  return entry.coverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || null;
+};
+const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
+  const decodedPhotos = decodeJournalContentWithCanva(entry.content).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];
+
+  return Array.isArray(decodedPhotos)
+    ? decodedPhotos.filter(
+        (photo): photo is InsertedJournalPhoto =>
+          Boolean(photo) && typeof photo.src === 'string' && photo.src.startsWith('data:image/')
+      )
+    : [];
+};
+
+const normalizeCountrySearchText = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const getRegionDisplayName = (countryId: string) => {
+  if (!/^[A-Z]{2}$/i.test(countryId)) {
+    return null;
+  }
+
+  try {
+    const displayName = new Intl.DisplayNames(['en'], { type: 'region' }).of(countryId.toUpperCase());
+    return displayName && displayName !== countryId.toUpperCase() ? displayName : null;
+  } catch {
+    return null;
+  }
+};
 
 const getSpeechRecognition = () => {
   if (typeof window === 'undefined') {
@@ -237,11 +298,14 @@ const isSameDictationTarget = (firstTarget: DictationTarget | null, secondTarget
 export default function JournalPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const visitedMapCountries = useMapStore((state) => state.visitedCountries);
+  const mapCountryLabels = useMapStore((state) => state.countryLabels);
   const activeTool = useJournalLayoutStore((state) => state.activeTool);
   const setActiveTool = useJournalLayoutStore((state) => state.setActiveTool);
   const router = useRouter();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const insertedPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
   const [entries, setEntries] = useState<SavedEntry[]>([]);
@@ -249,6 +313,9 @@ export default function JournalPage() {
   const [sharedEntries, setSharedEntries] = useState<SharedJournalEntry[]>([]);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(false);
+  const [entryPendingDelete, setEntryPendingDelete] = useState<SavedEntry | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [sharingEntryId, setSharingEntryId] = useState<string | null>(null);
   const [shareRecipientsByEntry, setShareRecipientsByEntry] = useState<Record<string, JournalShareRecipient[]>>({});
   const [selectedShareFriendIds, setSelectedShareFriendIds] = useState<string[]>([]);
@@ -290,6 +357,8 @@ export default function JournalPage() {
   const [canvaImportedPreview, setCanvaImportedPreview] = useState<CanvaImportedPreview | null>(null);
   const [canvaPreviewPageIndex, setCanvaPreviewPageIndex] = useState(0);
   const [canvaPreviewTurnDirection, setCanvaPreviewTurnDirection] = useState<'next' | 'previous'>('next');
+  const [canvaCoverPageIndex, setCanvaCoverPageIndex] = useState(0);
+  const [insertedJournalPhotos, setInsertedJournalPhotos] = useState<InsertedJournalPhoto[]>([]);
   const [openedCanvaPageIndex, setOpenedCanvaPageIndex] = useState(0);
   const [openedCanvaTurnDirection, setOpenedCanvaTurnDirection] = useState<'next' | 'previous'>('next');
   const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
@@ -297,10 +366,12 @@ export default function JournalPage() {
   const [renameSaving, setRenameSaving] = useState(false);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [localScrapbookBackupOpen, setLocalScrapbookBackupOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false);
   const [form, setForm] = useState({
     title: '',
     content: '',
-    countryId: 'US',
+    countryId: '',
     mood: 'nostalgic',
     tags: '',
   });
@@ -310,6 +381,56 @@ export default function JournalPage() {
     () => placeholderCountries.find((country) => country.id === form.countryId),
     [form.countryId]
   );
+  const visitedJournalCountries = useMemo<VisitedJournalCountry[]>(() => {
+    const countryOptions = new Map<string, VisitedJournalCountry>();
+
+    visitedMapCountries.forEach((countryId) => {
+      const knownCountry = placeholderCountries.find((country) => country.id === countryId);
+      const name = mapCountryLabels[countryId] || knownCountry?.name || getRegionDisplayName(countryId) || countryId;
+
+      countryOptions.set(countryId, {
+        id: countryId,
+        name,
+        searchText: normalizeCountrySearchText(`${name} ${countryId}`),
+      });
+    });
+
+    return Array.from(countryOptions.values()).sort((firstCountry, secondCountry) =>
+      firstCountry.name.localeCompare(secondCountry.name, undefined, { sensitivity: 'base' })
+    );
+  }, [mapCountryLabels, visitedMapCountries]);
+  const selectedVisitedCountry = useMemo(
+    () => visitedJournalCountries.find((country) => country.id === form.countryId) || null,
+    [form.countryId, visitedJournalCountries]
+  );
+  const filteredVisitedCountries = useMemo(() => {
+    const query = normalizeCountrySearchText(countrySearch);
+    const countryOptions = query
+      ? visitedJournalCountries.filter((country) => country.searchText.includes(query))
+      : visitedJournalCountries;
+
+    return countryOptions.slice(0, 8);
+  }, [countrySearch, visitedJournalCountries]);
+  const suggestedVisitedCountry = useMemo(() => {
+    if (selectedVisitedCountry) {
+      return null;
+    }
+
+    const journalText = normalizeCountrySearchText(`${form.title} ${form.content} ${form.tags}`);
+
+    if (!journalText) {
+      return null;
+    }
+
+    const searchableJournalText = ` ${journalText} `;
+    return (
+      visitedJournalCountries.find((country) => {
+        const countryName = normalizeCountrySearchText(country.name);
+
+        return countryName.length >= 3 && searchableJournalText.includes(` ${countryName} `);
+      }) || null
+    );
+  }, [form.content, form.tags, form.title, selectedVisitedCountry, visitedJournalCountries]);
   const currentPage = useMemo(
     () => scrapbookPages.find((page) => page.id === activePageId) || scrapbookPages[0],
     [activePageId, scrapbookPages]
@@ -966,6 +1087,54 @@ export default function JournalPage() {
     }
   };
 
+  const handleInsertedPhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []).filter((file) => file.type.startsWith('image/'));
+    const remainingPhotoSlots = MAX_INSERTED_JOURNAL_PHOTOS - insertedJournalPhotos.length;
+
+    if (files.length === 0) {
+      return;
+    }
+
+    if (remainingPhotoSlots <= 0) {
+      setStorageWarning(`You can insert up to ${MAX_INSERTED_JOURNAL_PHOTOS} photos per journal for now.`);
+      event.target.value = '';
+      return;
+    }
+
+    const acceptedFiles = files.slice(0, remainingPhotoSlots);
+
+    try {
+      const photoSources = await Promise.all(acceptedFiles.map(readPhotoFile));
+      const newPhotos = photoSources.map<InsertedJournalPhoto>((src, index) => ({
+        id: createId(),
+        src,
+        alt: acceptedFiles[index].name,
+        caption: acceptedFiles[index].name.replace(/\.[^/.]+$/, ''),
+      }));
+
+      setInsertedJournalPhotos((current) => [...current, ...newPhotos]);
+      setStorageWarning(
+        files.length > remainingPhotoSlots
+          ? `Added ${remainingPhotoSlots} photo${remainingPhotoSlots === 1 ? '' : 's'}. You can insert up to ${MAX_INSERTED_JOURNAL_PHOTOS} photos per journal for now.`
+          : null
+      );
+    } catch {
+      setStorageWarning('One of those photos could not be inserted.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const updateInsertedPhotoCaption = (photoId: string, caption: string) => {
+    setInsertedJournalPhotos((current) =>
+      current.map((photo) => (photo.id === photoId ? { ...photo, caption } : photo))
+    );
+  };
+
+  const removeInsertedPhoto = (photoId: string) => {
+    setInsertedJournalPhotos((current) => current.filter((photo) => photo.id !== photoId));
+  };
+
   const addNote = () => {
     const itemNumber = scrapbookItems.length;
     const boardWidth = boardRef.current?.clientWidth || BOARD_FALLBACK_WIDTH;
@@ -1255,6 +1424,9 @@ export default function JournalPage() {
       mood: result.journalDraft.mood,
       tags: result.journalDraft.tags.join(', '),
     });
+    setCountrySearch(
+      visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId)?.name || ''
+    );
     setImportNotice(
       `Imported ${result.scrapbookPages.length} draft page${
         result.scrapbookPages.length === 1 ? '' : 's'
@@ -1358,6 +1530,7 @@ export default function JournalPage() {
     }
 
     setCanvaImportedPreview(null);
+    setCanvaCoverPageIndex(0);
     setLocalScrapbookBackupOpen(false);
     openCanvaPopup(response.data);
   };
@@ -1443,6 +1616,7 @@ export default function JournalPage() {
         dataUrls,
       });
       setCanvaPreviewPageIndex(0);
+      setCanvaCoverPageIndex(0);
       setLocalScrapbookBackupOpen(false);
       setCanvaImportingDesignId(null);
       setCanvaModalOpen(false);
@@ -1454,6 +1628,11 @@ export default function JournalPage() {
 
   const saveCurrentJournalEntry = async () => {
     if (!user) {
+      return;
+    }
+
+    if (!selectedVisitedCountry) {
+      setError('Pick a country you have marked on the map before saving this journal.');
       return;
     }
 
@@ -1470,14 +1649,20 @@ export default function JournalPage() {
       canvaDesignTitle: canvaImportedPreview?.title,
       canvaDesignEditUrl: canvaImportedPreview ? getCanvaEditUrl(canvaImportedPreview.design) : undefined,
       canvaPages: canvaImportedPreview?.dataUrls,
+      coverPhoto: canvaImportedPreview?.dataUrls[canvaCoverPageIndex] || canvaImportedPreview?.dataUrls[0] || null,
+      coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
+      insertedPhotos: insertedJournalPhotos,
     });
 
     setSaving(false);
 
     if (response.success && response.data) {
       setEntries((current) => [response.data as SavedEntry, ...current]);
-      setForm({ ...form, title: '', content: '', tags: '' });
+      setForm({ ...form, title: '', content: '', countryId: '', tags: '' });
+      setCountrySearch('');
       setCanvaImportedPreview(null);
+      setCanvaCoverPageIndex(0);
+      setInsertedJournalPhotos([]);
       setCanvaPreviewPageIndex(0);
       setCanvaPreviewTurnDirection('next');
       return;
@@ -1532,6 +1717,58 @@ export default function JournalPage() {
     setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
     setRenameTitleDraft(updatedEntry.title);
     setRenamingEntryId(null);
+  };
+
+  const requestDeleteEntry = (entry: SavedEntry) => {
+    setEntryPendingDelete(entry);
+    setDeleteError(null);
+    setSharingEntryId(null);
+    setCommentEntryId(null);
+  };
+
+  const cancelDeleteEntry = () => {
+    if (deleteSaving) {
+      return;
+    }
+
+    setEntryPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const confirmDeleteEntry = async () => {
+    if (!entryPendingDelete) {
+      return;
+    }
+
+    setDeleteSaving(true);
+    setDeleteError(null);
+
+    const response = await deleteJournalEntry(entryPendingDelete.id);
+    setDeleteSaving(false);
+
+    if (!response.success) {
+      setDeleteError(response.error || 'Could not delete this journal entry.');
+      return;
+    }
+
+    setEntries((current) => current.filter((entry) => entry.id !== entryPendingDelete.id));
+    setShareRecipientsByEntry((current) => {
+      const nextRecipients = { ...current };
+      delete nextRecipients[entryPendingDelete.id];
+      return nextRecipients;
+    });
+    setCommentsByEntry((current) => {
+      const nextComments = { ...current };
+      delete nextComments[entryPendingDelete.id];
+      return nextComments;
+    });
+    setCommentDrafts((current) => {
+      const nextDrafts = { ...current };
+      delete nextDrafts[entryPendingDelete.id];
+      return nextDrafts;
+    });
+    setOpenedEntry((current) => (current?.id === entryPendingDelete.id ? null : current));
+    setEntryPendingDelete(null);
   };
 
   const refreshSharedEntries = async () => {
@@ -1728,6 +1965,244 @@ export default function JournalPage() {
   const visibleBoardWidth = boardWidth || BOARD_FALLBACK_WIDTH;
   const hasPageContent = scrapbookItems.length > 0 || (currentPage?.drawings.length || 0) > 0;
   const canvaNeedsConnection = canvaError?.toLowerCase().includes('not connected');
+  const hasVisitedCountryLink = Boolean(selectedVisitedCountry);
+  const canSaveCurrentEntry = form.title.trim().length > 0 && form.content.trim().length > 0 && hasVisitedCountryLink;
+
+  const renderCanvaPolaroidStrip = ({
+    pages,
+    activePageIndex,
+    title,
+    idBase,
+    onSelect,
+    coverPageIndex,
+    onSetCover,
+  }: {
+    pages: string[];
+    activePageIndex: number;
+    title: string;
+    idBase: string;
+    onSelect: (pageIndex: number) => void;
+    coverPageIndex?: number | null;
+    onSetCover?: (pageIndex: number) => void;
+  }) => {
+    if (!pages.length) {
+      return null;
+    }
+
+    return (
+      <div className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/82 p-3 shadow-soft">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <ImagePlus className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+          <span>Memory polaroids</span>
+        </div>
+        <div className="flex gap-3 overflow-x-auto px-1 pb-2 pt-1">
+          {pages.map((page, index) => {
+            const selected = activePageIndex === index;
+            const isCover = coverPageIndex === index;
+            const rotationClass = ['-rotate-2', 'rotate-[1.5deg]', '-rotate-1', 'rotate-2'][index % 4];
+
+            return (
+              <article
+                key={`${idBase}-polaroid-${index}`}
+                className={[
+                  'relative shrink-0 rounded-sm bg-white p-2 pb-3 shadow-[0_10px_22px_rgba(61,43,14,0.16)] transition-transform hover:-translate-y-1',
+                  rotationClass,
+                  selected ? 'ring-2 ring-gold-deep' : 'ring-1 ring-gold/18',
+                ].join(' ')}
+              >
+                {isCover ? (
+                  <span className="absolute -right-2 -top-2 rounded-full bg-gold-deep px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-cream shadow-soft">
+                    Cover
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Open ${title} page ${index + 1}`}
+                  className="block focus:outline-none focus:ring-2 focus:ring-gold"
+                  onClick={() => onSelect(index)}
+                >
+                  <span
+                    role="img"
+                    aria-label={`${title} polaroid ${index + 1}`}
+                    className="block h-24 w-20 rounded-[2px] bg-cream bg-cover bg-center sm:h-28 sm:w-24"
+                    style={{ backgroundImage: `url(${page})` }}
+                  />
+                </button>
+                <span className="mt-2 block max-w-24 truncate text-center text-xs font-semibold text-ink/62">
+                  Page {index + 1}
+                </span>
+                {onSetCover ? (
+                  <button
+                    type="button"
+                    className="mt-2 w-full rounded-md border border-gold/25 bg-cream/70 px-2 py-1 text-[11px] font-semibold text-ink transition hover:bg-gold/15 focus:outline-none focus:ring-2 focus:ring-gold"
+                    onClick={() => onSetCover(index)}
+                  >
+                    {isCover ? 'Cover photo' : 'Set cover'}
+                  </button>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderEntryAlbumCover = (entry: SavedEntry | SharedJournalEntry, className = 'mb-3 aspect-[4/3]') => {
+    const coverPhoto = getEntryCoverPhoto(entry);
+
+    if (!coverPhoto) {
+      return null;
+    }
+
+    return (
+      <div
+        role="img"
+        aria-label={`${entry.title} album cover`}
+        className={[
+          className,
+          'rounded-md border border-gold/20 bg-cream bg-cover bg-center shadow-inner',
+        ].join(' ')}
+        style={{ backgroundImage: `url(${coverPhoto})` }}
+      />
+    );
+  };
+
+  const renderInsertedPhotoGrid = (
+    photos: InsertedJournalPhoto[],
+    options?: {
+      editable?: boolean;
+    }
+  ) => {
+    if (!photos.length) {
+      return null;
+    }
+
+    return (
+      <div className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+          <ImagePlus className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+          <span>Inserted photos</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {photos.map((photo, index) => (
+            <figure key={photo.id} className="overflow-hidden rounded-md border border-gold/20 bg-cream/45">
+              <div
+                role="img"
+                aria-label={photo.alt || `Inserted photo ${index + 1}`}
+                className="aspect-[4/3] bg-cream bg-cover bg-center"
+                style={{ backgroundImage: `url(${photo.src})` }}
+              />
+              <figcaption className="space-y-2 p-2">
+                {options?.editable ? (
+                  <>
+                    <input
+                      value={photo.caption ?? ''}
+                      onChange={(event) => updateInsertedPhotoCaption(photo.id, event.target.value)}
+                      aria-label={`Caption for inserted photo ${index + 1}`}
+                      placeholder="Caption"
+                      className="w-full rounded-md border border-gold/25 bg-white px-2 py-1.5 text-xs text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/20"
+                    />
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-ink/55 transition hover:text-red-600"
+                      onClick={() => removeInsertedPhoto(photo.id)}
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : photo.caption ? (
+                  <span className="block text-xs font-semibold text-ink/62">{photo.caption}</span>
+                ) : null}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCountrySearch = (inputId: string) => (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-ink" htmlFor={inputId}>
+        Country
+      </label>
+      <div className="relative">
+        <input
+          id={inputId}
+          value={countrySearch}
+          onChange={(event) => {
+            setCountrySearch(event.target.value);
+            setCountryPickerOpen(true);
+            setForm((current) => ({
+              ...current,
+              countryId: selectedVisitedCountry?.name === event.target.value ? current.countryId : '',
+            }));
+          }}
+          onFocus={() => setCountryPickerOpen(true)}
+          onBlur={() => {
+            window.setTimeout(() => setCountryPickerOpen(false), 120);
+          }}
+          placeholder="Search your visited countries"
+          className="w-full rounded-lg border-2 border-gold/30 bg-white px-4 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/30"
+          role="combobox"
+          aria-expanded={countryPickerOpen}
+          aria-controls={`${inputId}-options`}
+          aria-autocomplete="list"
+        />
+        {countryPickerOpen ? (
+          <div
+            id={`${inputId}-options`}
+            className="absolute z-20 mt-2 max-h-56 w-full overflow-y-auto rounded-lg border border-gold/25 bg-white p-1 shadow-soft"
+            role="listbox"
+          >
+            {filteredVisitedCountries.length ? (
+              filteredVisitedCountries.map((country) => (
+                <button
+                  key={`${inputId}-${country.id}`}
+                  type="button"
+                  className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm text-ink transition hover:bg-cream focus:bg-cream focus:outline-none"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setForm((current) => ({ ...current, countryId: country.id }));
+                    setCountrySearch(country.name);
+                    setCountryPickerOpen(false);
+                  }}
+                  role="option"
+                  aria-selected={form.countryId === country.id}
+                >
+                  <span className="min-w-0 truncate">{country.name}</span>
+                  <span className="shrink-0 text-xs font-semibold text-ink/45">{country.id}</span>
+                </button>
+              ))
+            ) : (
+              <p className="px-3 py-2 text-sm text-ink/60">No visited countries match.</p>
+            )}
+          </div>
+        ) : null}
+      </div>
+      {suggestedVisitedCountry ? (
+        <div className="mt-2 rounded-lg border border-gold/25 bg-gold/10 px-3 py-2 text-sm text-ink">
+          <p className="font-semibold">Suggestion: is this journal linked to {suggestedVisitedCountry.name}?</p>
+          <button
+            type="button"
+            className="mt-2 rounded-md border border-gold/30 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              setForm((current) => ({ ...current, countryId: suggestedVisitedCountry.id }));
+              setCountrySearch(suggestedVisitedCountry.name);
+              setCountryPickerOpen(false);
+            }}
+          >
+            Link to {suggestedVisitedCountry.name}
+          </button>
+        </div>
+      ) : null}
+      <p className="mt-2 text-xs leading-5 text-ink/55">
+        If the country does not appear, please select it on the map first.
+      </p>
+    </div>
+  );
 
   const renderCanvaImportedPreview = (preview: CanvaImportedPreview) => {
     const activePageIndex = clamp(canvaPreviewPageIndex, 0, preview.dataUrls.length - 1);
@@ -1782,14 +2257,28 @@ export default function JournalPage() {
                 </button>
               </div>
             ) : null}
-            <Button type="button" size="sm" variant="secondary" onClick={() => setCanvaImportedPreview(null)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setCanvaImportedPreview(null);
+                setCanvaCoverPageIndex(0);
+              }}
+            >
               Edit Again
             </Button>
             <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => openCanvaPopup(preview.design)}>
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
               Pop-up
             </Button>
-            <Button type="button" size="sm" isLoading={saving} onClick={() => void saveCurrentJournalEntry()}>
+            <Button
+              type="button"
+              size="sm"
+              isLoading={saving}
+              disabled={!canSaveCurrentEntry}
+              onClick={() => void saveCurrentJournalEntry()}
+            >
               Save Entry
             </Button>
           </div>
@@ -1819,6 +2308,76 @@ export default function JournalPage() {
               <span>Page {activePageIndex + 1}</span>
             </figcaption>
           </motion.figure>
+          {renderCanvaPolaroidStrip({
+            pages: preview.dataUrls,
+            activePageIndex,
+            title: preview.title,
+            idBase: preview.design.id,
+            onSelect: turnCanvaPreviewToPage,
+            coverPageIndex: canvaCoverPageIndex,
+            onSetCover: setCanvaCoverPageIndex,
+          })}
+          <div className="mx-auto mt-4 grid max-w-4xl gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
+            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+              <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-page-story">
+                <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+                Story below this page
+              </label>
+              <textarea
+                id="canva-page-story"
+                value={form.content}
+                onChange={(event) => setForm({ ...form, content: event.target.value })}
+                rows={5}
+                placeholder="What do you want to remember?"
+                className="mt-3 w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+                required
+              />
+            </div>
+            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+              <label className="text-sm font-semibold text-ink" htmlFor="canva-page-tags">
+                Tags
+              </label>
+              <input
+                ref={insertedPhotoInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="sr-only"
+                disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
+                onChange={handleInsertedPhotoUpload}
+              />
+              <Input
+                id="canva-page-tags"
+                value={form.tags}
+                onChange={(event) => setForm({ ...form, tags: event.target.value })}
+                placeholder="market, sunset, train"
+                className="mt-3"
+              />
+              <div className="mt-3">
+                {renderCountrySearch('canva-page-country')}
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-3 w-full gap-2"
+                disabled={insertedJournalPhotos.length >= MAX_INSERTED_JOURNAL_PHOTOS}
+                onClick={() => insertedPhotoInputRef.current?.click()}
+              >
+                <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                Insert Photo
+              </Button>
+              <p className="mt-2 text-xs font-semibold text-ink/50">
+                {insertedJournalPhotos.length} / {MAX_INSERTED_JOURNAL_PHOTOS} photos
+              </p>
+              {!canSaveCurrentEntry ? (
+                <p className="mt-3 text-xs font-semibold text-gold-deep">
+                  Add a journal name, story, and visited country to save.
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {renderInsertedPhotoGrid(insertedJournalPhotos, { editable: true })}
         </div>
         {preview.dataUrls.length > 1 ? (
           <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
@@ -1942,6 +2501,16 @@ export default function JournalPage() {
             ))}
           </div>
         ) : null}
+        <div className="border-t border-gold/15 bg-cream/45 px-4 pb-4">
+          {renderCanvaPolaroidStrip({
+            pages,
+            activePageIndex,
+            title: getEntryCanvaTitle(entry),
+            idBase: entry.id,
+            onSelect: (pageIndex) => turnOpenedCanvaToPage(pages.length, pageIndex),
+            coverPageIndex: getEntryCoverPageIndex(entry),
+          })}
+        </div>
       </section>
     );
   };
@@ -2157,7 +2726,7 @@ export default function JournalPage() {
               <div>
                 <h2 className="text-2xl font-semibold text-ink">{currentPage?.title || 'Page 1'}</h2>
                 <p className="text-sm text-ink/65">
-                  {currentCountry?.name || form.countryId} / {currentTheme.label}
+                  {selectedVisitedCountry?.name || currentCountry?.name || 'Choose a map country'} / {currentTheme.label}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -2359,19 +2928,7 @@ export default function JournalPage() {
                   onChange={(event) => setForm({ ...form, title: event.target.value })}
                   required
                 />
-                <Input
-                  label="Country"
-                  value={form.countryId}
-                  onChange={(event) => setForm({ ...form, countryId: event.target.value })}
-                  list="countries"
-                />
-                <datalist id="countries">
-                  {placeholderCountries.map((country) => (
-                    <option key={country.id} value={country.id}>
-                      {country.name}
-                    </option>
-                  ))}
-                </datalist>
+                {renderCountrySearch('scrapbook-entry-country')}
                 <Input
                   label="Mood"
                   value={form.mood}
@@ -2406,7 +2963,12 @@ export default function JournalPage() {
                 />
                 {dictationError ? <p className="text-sm text-red-600">{dictationError}</p> : null}
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
-                <Button type="submit" isLoading={saving} className="w-full">
+                {!hasVisitedCountryLink ? (
+                  <p className="text-sm text-gold-deep">
+                    Pick a country you have marked on the map before saving.
+                  </p>
+                ) : null}
+                <Button type="submit" isLoading={saving} disabled={!hasVisitedCountryLink} className="w-full">
                   Save Entry
                 </Button>
               </form>
@@ -2494,6 +3056,7 @@ export default function JournalPage() {
 	                      tabIndex={0}
 	                      aria-label={`Open journal entry ${entry.title}`}
 	                    >
+                        {renderEntryAlbumCover(entry)}
 	                      <div className="flex items-start justify-between gap-3">
 	                        <h4 className="font-semibold text-ink">{entry.title}</h4>
 	                        <time className="shrink-0 text-xs text-ink/60" dateTime={getEntryDate(entry)}>
@@ -2550,6 +3113,18 @@ export default function JournalPage() {
 	                        >
 	                          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
 	                          Comments
+	                        </Button>
+	                        <Button
+	                          type="button"
+	                          size="sm"
+	                          variant="ghost"
+	                          className="text-red-700 hover:bg-red-50"
+	                          onClick={(event) => {
+	                            event.stopPropagation();
+	                            requestDeleteEntry(entry);
+	                          }}
+	                        >
+	                          Delete
 	                        </Button>
                         {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
                           <span className="rounded-full border border-gold/20 bg-white px-2.5 py-1 text-xs font-semibold text-ink/55">
@@ -2648,6 +3223,7 @@ export default function JournalPage() {
                 ) : (
                   sharedEntries.map((entry) => (
                     <article key={`${entry.id}-${entry.sharedBy.id}`} className="rounded-lg border border-gold/20 bg-cream/55 p-4">
+                      {renderEntryAlbumCover(entry)}
                       <div className="flex items-start justify-between gap-3">
                         <h4 className="font-semibold text-ink">{entry.title}</h4>
                         <time className="shrink-0 text-xs text-ink/60" dateTime={entry.sharedAt}>
@@ -2659,7 +3235,7 @@ export default function JournalPage() {
                       </p>
                       <p className="mt-2 line-clamp-3 text-ink/70">{getEntryContent(entry)}</p>
                       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-                        {getEntryCountry(entry) ? <span>{getEntryCountry(entry)}</span> : null}
+                        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
                         {entry.mood ? <span>{entry.mood}</span> : null}
                         {entry.tags?.slice(0, 3).map((tag) => (
                           <span key={tag} className="rounded-full border border-gold/20 bg-white px-2 py-1">
@@ -2800,11 +3376,23 @@ export default function JournalPage() {
 	                </div>
 	              ) : null}
 
+	              {renderEntryAlbumCover(openedEntry, 'mt-6 aspect-[16/9]')}
+
 	              {renderSavedCanvaBook(openedEntry)}
 
-	              <div className="mt-6 whitespace-pre-wrap text-base leading-8 text-ink/78">
-	                {getEntryContent(openedEntry)}
-	              </div>
+	              {renderInsertedPhotoGrid(getEntryInsertedPhotos(openedEntry))}
+
+	              {getEntryContent(openedEntry).trim() ? (
+	                <section className="mt-6 rounded-lg border border-gold/18 bg-cream/45 p-4">
+	                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
+	                    <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+	                    <span>Story below this page</span>
+	                  </div>
+	                  <div className="whitespace-pre-wrap text-base leading-8 text-ink/78">
+	                    {getEntryContent(openedEntry)}
+	                  </div>
+	                </section>
+	              ) : null}
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
 	                <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(openedEntry)}>
@@ -2815,8 +3403,60 @@ export default function JournalPage() {
 	                  <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Comments
 	                </Button>
+	                <Button
+	                  type="button"
+	                  size="sm"
+	                  variant="ghost"
+	                  className="text-red-700 hover:bg-red-50"
+	                  onClick={() => requestDeleteEntry(openedEntry)}
+	                >
+	                  Delete
+	                </Button>
 	              </div>
 	            </article>
+	          </div>
+	        ) : null}
+
+	        {entryPendingDelete ? (
+	          <div
+	            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+	            role="presentation"
+	            onClick={cancelDeleteEntry}
+	          >
+	            <section
+	              className="w-full max-w-md rounded-2xl border border-red-200 bg-white p-6 shadow-xl"
+	              role="dialog"
+	              aria-modal="true"
+	              aria-labelledby="delete-entry-title"
+	              onClick={(event) => event.stopPropagation()}
+	            >
+	              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-700">Delete journal</p>
+	              <h2 id="delete-entry-title" className="mt-2 text-2xl font-serif font-semibold text-ink">
+	                Delete “{entryPendingDelete.title}”?
+	              </h2>
+                <p className="mt-3 text-sm leading-6 text-ink/70">
+                  This will permanently remove the journal entry, its comments, and its sharing settings. This cannot be undone.
+                </p>
+                {(shareRecipientsByEntry[entryPendingDelete.id]?.length ?? 0) > 0 ? (
+                  <p className="mt-3 text-sm leading-6 text-ink/70">
+                    This entry is shared with {shareRecipientsByEntry[entryPendingDelete.id].map((r) => r.displayName || r.email || 'a friend').join(', ')}. Deleting it will also remove it from their journal pages.
+                  </p>
+                ) : null}
+	              {deleteError ? <p className="mt-3 text-sm text-red-600">{deleteError}</p> : null}
+	              <div className="mt-5 flex flex-wrap justify-end gap-2">
+	                <Button type="button" variant="ghost" onClick={cancelDeleteEntry} disabled={deleteSaving}>
+	                  Cancel
+	                </Button>
+	                <Button
+	                  type="button"
+	                  className="bg-red-700 text-white hover:bg-red-800"
+	                  isLoading={deleteSaving}
+	                  onClick={() => void confirmDeleteEntry()}
+	                >
+	                  Delete Entry
+	                </Button>
+	              </div>
+	            </section>
 	          </div>
 	        ) : null}
 

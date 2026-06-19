@@ -3,6 +3,14 @@ export type JournalCanvaPayload = {
   designTitle?: string | null;
   designEditUrl?: string | null;
   pages?: string[];
+  coverPhoto?: string | null;
+  coverPageIndex?: number | null;
+  insertedPhotos?: Array<{
+    id: string;
+    src: string;
+    alt: string;
+    caption?: string;
+  }>;
 };
 
 const CANVA_PAYLOAD_START = '\n\n<!--travel-journal-canva:';

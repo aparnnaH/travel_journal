@@ -76,19 +76,19 @@ export function HeroSection() {
         </motion.div>
 
         <motion.div variants={itemVariants} className="mt-12 text-center">
-          <p className="text-sm text-ink/60 mb-4">Trusted by travelers worldwide</p>
-          <div className="flex justify-center items-center space-x-8">
+          <p className="text-sm text-ink/60 mb-4">A personal place to keep the trips that matter</p>
+          <div className="flex flex-wrap justify-center items-center gap-x-8 gap-y-4">
             <div className="text-center">
-              <div className="text-2xl font-serif font-bold text-gold-deep">10K+</div>
-              <p className="text-xs text-ink/60">Active Travelers</p>
+              <div className="text-2xl font-serif font-bold text-gold-deep">Map</div>
+              <p className="text-xs text-ink/60">Places you have been</p>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-serif font-bold text-gold-deep">50+</div>
-              <p className="text-xs text-ink/60">Countries</p>
+              <div className="text-2xl font-serif font-bold text-gold-deep">Journal</div>
+              <p className="text-xs text-ink/60">Stories worth saving</p>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-serif font-bold text-gold-deep">1M+</div>
-              <p className="text-xs text-ink/60">Memories Shared</p>
+              <div className="text-2xl font-serif font-bold text-gold-deep">Passport</div>
+              <p className="text-xs text-ink/60">Stamps you collect</p>
             </div>
           </div>
         </motion.div>

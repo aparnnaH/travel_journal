@@ -26,6 +26,14 @@ export interface JournalEntry {
   canvaDesignEditUrl?: string | null;
   canvaPages?: string[];
   canvaPageCount?: number | null;
+  coverPhoto?: string | null;
+  coverPageIndex?: number | null;
+  insertedPhotos?: Array<{
+    id: string;
+    src: string;
+    alt: string;
+    caption?: string;
+  }>;
   canva_design_id?: string | null;
   canva_design_title?: string | null;
   canva_design_edit_url?: string | null;
