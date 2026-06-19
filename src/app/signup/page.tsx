@@ -8,6 +8,20 @@ import { createOrUpdateProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
 
+const getSafeRedirectPath = (value: string | null) => {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+    return '/';
+  }
+
+  return value;
+};
+
+const getRedirectPath = () => {
+  if (typeof window === 'undefined') return '/';
+
+  return getSafeRedirectPath(new URLSearchParams(window.location.search).get('from'));
+};
+
 export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,7 +34,7 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (!isAuthLoading && user) {
-      router.replace('/');
+      router.replace(getRedirectPath());
     }
   }, [isAuthLoading, router, user]);
 
@@ -55,7 +69,7 @@ export default function SignupPage() {
       }
 
       setLoading(false);
-      router.push('/');
+      router.push(getRedirectPath());
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
       setLoading(false);

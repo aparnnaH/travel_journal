@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import type { FriendsResponse, Friendship, FriendshipStatus, FriendProfile } from '@/types/friends';
 
@@ -30,7 +31,7 @@ export function jsonError(error: string, status = 400) {
 }
 
 export async function getFriendRouteContext(request: NextRequest): Promise<FriendRouteContext | NextResponse> {
-  const token = request.cookies.get('sb-access-token')?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const token = request.cookies.get(authCookieName)?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   if (!token) {
     return jsonError('You need to be signed in to use friends.', 401);

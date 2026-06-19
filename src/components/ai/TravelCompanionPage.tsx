@@ -104,7 +104,7 @@ export default function TravelCompanionPage() {
     const loadTravelData = async () => {
       setLoadingState(true);
 
-      const [journalResponse] = await Promise.all([fetchJournalEntries(user.id)]);
+      const [journalResponse] = await Promise.all([fetchJournalEntries()]);
       if (!isActive) {
         return;
       }

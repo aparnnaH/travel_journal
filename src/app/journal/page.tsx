@@ -85,6 +85,7 @@ type CanvaImportedPreview = {
 };
 
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
+const SCRAPBOOK_STORAGE_WARNING_BYTES = 3_500_000;
 
 type DragState = {
   id: string;
@@ -346,7 +347,7 @@ export default function JournalPage() {
     const loadEntries = async () => {
       setEntriesLoading(true);
       const [entriesResponse, sharedResponse, friendsResponse] = await Promise.all([
-        fetchJournalEntries(user.id),
+        fetchJournalEntries(),
         fetchSharedJournalEntries(),
         fetchFriends(),
       ]);
@@ -439,7 +440,18 @@ export default function JournalPage() {
     }
 
     try {
-      window.localStorage.setItem(scrapbookStorageKey, JSON.stringify({ pages: scrapbookPages, activePageId }));
+      const serializedBoard = JSON.stringify({ pages: scrapbookPages, activePageId });
+      window.localStorage.setItem(scrapbookStorageKey, serializedBoard);
+
+      if (serializedBoard.length > SCRAPBOOK_STORAGE_WARNING_BYTES) {
+        queueMicrotask(() => {
+          setStorageWarning('This scrapbook is getting large on this device. Save finished entries or remove a few large photos before adding more.');
+        });
+      } else {
+        queueMicrotask(() => {
+          setStorageWarning(null);
+        });
+      }
     } catch {
       queueMicrotask(() => {
         setStorageWarning('This board is full on this device. Remove a few large photos before adding more.');
@@ -1449,7 +1461,6 @@ export default function JournalPage() {
     setSaving(true);
 
     const response = await createJournalEntry({
-      userId: user.id,
       countryId: form.countryId,
       title: form.title,
       content: form.content,
@@ -1502,7 +1513,6 @@ export default function JournalPage() {
     setRenameError(null);
 
     const response = await updateJournalEntryTitle({
-      userId: user.id,
       entryId: openedEntry.id,
       title: cleanTitle,
     });

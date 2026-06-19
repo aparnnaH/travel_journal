@@ -2,6 +2,9 @@
   "name": "travel_journal",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0 <26"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -42,5 +45,9 @@
     "sass": "^1.99.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "d3-color": "^3.1.0",
+    "postcss": "^8.5.15"
   }
 }

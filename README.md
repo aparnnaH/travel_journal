@@ -128,7 +128,7 @@ supabase/
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20.9+ LTS. Node 20, 22, or 24 is recommended; Node 26 currently emits a tooling deprecation warning during `next build`.
 - npm 11+
 - Supabase project
 
@@ -161,11 +161,29 @@ OPENAI_API_KEY=
 OPENAI_POLISH_MODEL=gpt-5.2
 ```
 
+Optional for Canva journal design import/export:
+
+```env
+CANVA_CLIENT_ID=
+CANVA_CLIENT_SECRET=
+CANVA_REDIRECT_URI=
+CANVA_RETURN_URL=
+CANVA_TOKEN_ENCRYPTION_KEY=
+```
+
 The example file still includes Instagram variables, but the current active app routes do not require them for the core map, journal, passport, friends, profile, dashboard, or companion flows.
 
 ### Supabase setup
 
-The app expects Supabase auth plus profile and journal tables used by the existing services. For the friend and sharing feature, run:
+The app expects Supabase auth plus base `profiles` and `journal_entries` tables used by the existing services.
+
+For cloud-synced map state, run:
+
+```bash
+supabase/map_states.sql
+```
+
+For the friend and sharing feature, run:
 
 ```bash
 supabase/friends.sql
@@ -180,6 +198,16 @@ That SQL adds:
 - row-level security policies for user-owned access
 
 Run it after the base `profiles` and `journal_entries` tables exist, because the script references both.
+
+For Canva import/export support, run:
+
+```bash
+supabase/canva_connections.sql
+supabase/canva_folders.sql
+supabase/canva_journal_entries.sql
+```
+
+Those SQL files add encrypted Canva token storage, remember the Travel Journal Canva folder, and add Canva metadata/page fields to journal entries.
 
 ### Development
 
@@ -218,6 +246,13 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Optional AI companion polish endpoint
 OPENAI_API_KEY=
 OPENAI_POLISH_MODEL=gpt-5.2
+
+# Optional Canva journal design import/export
+CANVA_CLIENT_ID=
+CANVA_CLIENT_SECRET=
+CANVA_REDIRECT_URI=
+CANVA_RETURN_URL=
+CANVA_TOKEN_ENCRYPTION_KEY=
 
 # Present in .env.local.example, not required by current core routes
 NEXT_PUBLIC_INSTAGRAM_APP_ID=

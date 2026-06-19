@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export type AuthenticatedRouteContext = {
@@ -15,7 +16,7 @@ export async function getAuthenticatedRouteContext(
   request: NextRequest,
   featureName = 'this feature'
 ): Promise<AuthenticatedRouteContext | NextResponse> {
-  const token = request.cookies.get('sb-access-token')?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+  const token = request.cookies.get(authCookieName)?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   if (!token) {
     return jsonError(`You need to be signed in to use ${featureName}.`, 401);
@@ -34,4 +35,3 @@ export async function getAuthenticatedRouteContext(
 export function isRouteError(context: AuthenticatedRouteContext | NextResponse): context is NextResponse {
   return context instanceof NextResponse;
 }
-

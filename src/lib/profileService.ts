@@ -10,7 +10,7 @@ export async function createOrUpdateProfile(profile: UserProfile) {
   return response.json();
 }
 
-export async function fetchProfile(userId: string) {
-  const response = await fetch(`/api/profile?userId=${encodeURIComponent(userId)}`);
+export async function fetchProfile() {
+  const response = await fetch('/api/profile');
   return response.json();
 }

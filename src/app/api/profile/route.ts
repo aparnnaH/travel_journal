@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 export async function GET(request: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const userId = request.nextUrl.searchParams.get('userId');
+  const context = await getAuthenticatedRouteContext(request, 'profile');
 
-  if (!userId) {
-    return NextResponse.json(
-      { success: false, error: 'Missing userId query parameter.' },
-      { status: 400 }
-    );
+  if (isRouteError(context)) {
+    return context;
   }
 
-  const { data, error } = await supabaseAdmin.from('profiles').select('*').eq('id', userId).limit(1);
+  const { data, error } = await context.supabaseAdmin.from('profiles').select('*').eq('id', context.user.id).limit(1);
 
   if (error) {
     return NextResponse.json(
@@ -25,26 +21,31 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const body = await request.json();
-  const { id, email, displayName, avatar, createdAt } = body;
+  const context = await getAuthenticatedRouteContext(request, 'profile');
 
-  if (!id || !email) {
+  if (isRouteError(context)) {
+    return context;
+  }
+
+  const body = await request.json();
+  const { displayName, avatar, createdAt } = body;
+
+  if (!context.user.email) {
     return NextResponse.json(
-      { success: false, error: 'Missing required profile fields.' },
+      { success: false, error: 'Authenticated user is missing an email address.' },
       { status: 400 }
     );
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await context.supabaseAdmin
     .from('profiles')
     .upsert(
       {
-        id,
-        email,
+        id: context.user.id,
+        email: context.user.email,
         display_name: displayName || null,
         avatar_url: avatar || null,
-        created_at: createdAt,
+        created_at: createdAt || context.user.created_at,
       },
       { onConflict: 'id' }
     )

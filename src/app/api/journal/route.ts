@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
-import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
+import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
   'Canva journal fields are not installed yet. Run supabase/canva_journal_entries.sql in Supabase, then try saving again.';
@@ -10,17 +10,16 @@ const isMissingCanvaJournalColumnError = (message: string) =>
   /(column|schema cache|could not find)/i.test(message);
 
 export async function GET(request: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const userId = request.nextUrl.searchParams.get('userId');
+  const context = await getAuthenticatedRouteContext(request, 'journal');
 
-  if (!userId) {
-    return NextResponse.json({ success: false, error: 'Missing userId query parameter.' }, { status: 400 });
+  if (isRouteError(context)) {
+    return context;
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await context.supabaseAdmin
     .from('journal_entries')
     .select('*')
-    .eq('user_id', userId)
+    .eq('user_id', context.user.id)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -31,10 +30,14 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
+  const context = await getAuthenticatedRouteContext(request, 'journal');
+
+  if (isRouteError(context)) {
+    return context;
+  }
+
   const body = await request.json();
   const {
-    userId,
     countryId,
     title,
     content,
@@ -46,7 +49,7 @@ export async function POST(request: NextRequest) {
     canvaPages,
   } = body;
 
-  if (!userId || !countryId || !title || !content) {
+  if (!countryId || !title || !content) {
     return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
   }
 
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
     : [];
 
   const insertPayload: Record<string, unknown> = {
-    user_id: userId,
+    user_id: context.user.id,
     country_id: countryId,
     title,
     content,
@@ -73,18 +76,18 @@ export async function POST(request: NextRequest) {
     insertPayload.canva_page_count = cleanCanvaPages.length || null;
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await context.supabaseAdmin
     .from('journal_entries')
     .insert([insertPayload])
     .select('*');
 
   if (error) {
     if (isMissingCanvaJournalColumnError(error.message)) {
-      const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+      const { data: fallbackData, error: fallbackError } = await context.supabaseAdmin
         .from('journal_entries')
         .insert([
           {
-            user_id: userId,
+            user_id: context.user.id,
             country_id: countryId,
             title,
             content: encodeJournalContentWithCanva(content, {
@@ -126,23 +129,28 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
+  const context = await getAuthenticatedRouteContext(request, 'journal');
+
+  if (isRouteError(context)) {
+    return context;
+  }
+
   const body = await request.json();
-  const { userId, entryId, title } = body;
+  const { entryId, title } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
 
-  if (!userId || !entryId || !cleanTitle) {
+  if (!entryId || !cleanTitle) {
     return NextResponse.json({ success: false, error: 'Missing required journal title fields.' }, { status: 400 });
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await context.supabaseAdmin
     .from('journal_entries')
     .update({
       title: cleanTitle,
       updated_at: new Date().toISOString(),
     })
     .eq('id', entryId)
-    .eq('user_id', userId)
+    .eq('user_id', context.user.id)
     .select('*')
     .maybeSingle();
 

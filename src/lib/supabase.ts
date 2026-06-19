@@ -29,18 +29,24 @@ export function getSupabaseClient() {
   return browserClient;
 }
 
-const authCookieName = 'sb-access-token';
+export const authCookieName = 'sb-access-token';
 
-export function setAuthCookie(token: string | null) {
-  if (typeof document === 'undefined') {
-    return;
-  }
+export async function syncAuthCookie(token: string | null, expiresAt?: number | null) {
+  if (typeof window === 'undefined') return;
 
-  const secureFlag = window.location.protocol === 'https:' ? '; Secure' : '';
-  if (token) {
-    document.cookie = `${authCookieName}=${encodeURIComponent(token)}; path=/; SameSite=Lax; max-age=3600${secureFlag}`;
-  } else {
-    document.cookie = `${authCookieName}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secureFlag}`;
+  try {
+    if (token) {
+      await fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, expiresAt }),
+      });
+      return;
+    }
+
+    await fetch('/api/auth/session', { method: 'DELETE' });
+  } catch (error) {
+    console.warn('Unable to sync auth session cookie.', error);
   }
 }
 
@@ -49,7 +55,7 @@ export async function signUpWithEmail(email: string, password: string) {
   const supabase = getSupabaseClient();
   const result = await supabase.auth.signUp({ email, password });
   const token = result.data?.session?.access_token ?? null;
-  setAuthCookie(token);
+  await syncAuthCookie(token, result.data?.session?.expires_at ?? null);
   return result;
 }
 
@@ -57,14 +63,14 @@ export async function signInWithEmail(email: string, password: string) {
   const supabase = getSupabaseClient();
   const result = await supabase.auth.signInWithPassword({ email, password });
   const token = result.data?.session?.access_token ?? null;
-  setAuthCookie(token);
+  await syncAuthCookie(token, result.data?.session?.expires_at ?? null);
   return result;
 }
 
 export async function signOut() {
   const supabase = getSupabaseClient();
   const result = await supabase.auth.signOut();
-  setAuthCookie(null);
+  await syncAuthCookie(null);
   return result;
 }
 

@@ -122,7 +122,7 @@ export default function DashboardPage() {
 
     const loadJournal = async () => {
       setLoading(true);
-      const response = await fetchJournalEntries(user.id);
+      const response = await fetchJournalEntries();
       setLoading(false);
       if (response.success && response.data) {
         setJournalEntries(response.data as DashboardJournalEntry[]);

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchCloudMapState, saveCloudMapState } from '@/lib/mapStateService';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -53,6 +54,7 @@ export default function MapCloudSync() {
   const isAuthLoading = useAuthStore((state) => state.isLoading);
   const isApplyingRemoteRef = useRef(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [syncIssue, setSyncIssue] = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthLoading || !user) return;
@@ -64,8 +66,10 @@ export default function MapCloudSync() {
       try {
         await saveCloudMapState(user.id, snapshot);
         setLocalOwner(user.id);
+        setSyncIssue(null);
       } catch (error) {
         console.warn('Unable to sync map state to Supabase.', error);
+        setSyncIssue('Map changes are saved on this device, but cloud sync is not available right now.');
       }
     };
 
@@ -121,6 +125,7 @@ export default function MapCloudSync() {
         }
       } catch (error) {
         console.warn('Unable to load map state from Supabase.', error);
+        setSyncIssue('Map cloud sync could not load. Your local map is still available on this device.');
       }
 
       if (isCancelled) return;
@@ -138,5 +143,26 @@ export default function MapCloudSync() {
     };
   }, [isAuthLoading, user]);
 
-  return null;
+  if (!syncIssue) {
+    return null;
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-lg border border-amber-300 bg-white px-4 py-3 text-sm text-ink shadow-lg"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+      <p className="leading-5">{syncIssue}</p>
+      <button
+        type="button"
+        onClick={() => setSyncIssue(null)}
+        className="ml-1 rounded-md p-1 text-ink/60 transition hover:bg-cream hover:text-ink"
+        aria-label="Dismiss map sync notice"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
 }

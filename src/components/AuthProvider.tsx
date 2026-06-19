@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
-import { getSupabaseClient, setAuthCookie } from '@/lib/supabase';
+import { getSupabaseClient, syncAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 import type { AuthUser } from '@/types';
@@ -40,7 +40,7 @@ async function buildAuthUser(user: User): Promise<AuthUser> {
   let profile: ProfileRecord | null = null;
 
   try {
-    profile = firstProfileRecord(await fetchProfile(user.id));
+    profile = firstProfileRecord(await fetchProfile());
   } catch (error) {
     console.warn('Unable to load user profile during auth initialization.', error);
   }
@@ -80,19 +80,22 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       try {
         const supabase = getSupabaseClient();
         const { data: sessionData } = await supabase.auth.getSession();
-        setAuthCookie(sessionData.session?.access_token ?? null);
+        await syncAuthCookie(
+          sessionData.session?.access_token ?? null,
+          sessionData.session?.expires_at ?? null
+        );
 
         const { data } = await supabase.auth.getUser();
         const user = data?.user;
         if (user) {
           setUser(await buildAuthUser(user));
         } else {
-          setAuthCookie(null);
+          await syncAuthCookie(null);
           logout();
         }
       } catch (error) {
         console.warn('Unable to initialize authentication.', error);
-        setAuthCookie(null);
+        await syncAuthCookie(null);
         logout();
       } finally {
         setLoading(false);
@@ -106,7 +109,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       const { data: authListener } = supabase.auth.onAuthStateChange(
         async (event, session) => {
           const user = session?.user;
-          setAuthCookie(session?.access_token ?? null);
+          await syncAuthCookie(session?.access_token ?? null, session?.expires_at ?? null);
 
           if (event === 'SIGNED_IN' && user) {
             setLoading(true);

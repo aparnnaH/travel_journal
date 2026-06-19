@@ -228,7 +228,6 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
 
     try {
       const result = await createJournalEntry({
-        userId,
         countryId,
         title,
         content: body,

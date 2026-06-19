@@ -110,8 +110,8 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       setProfileLoaded(false);
       const [profileResponse, journalResponse] = await Promise.all([
-        fetchProfile(user.id),
-        fetchJournalEntries(user.id),
+        fetchProfile(),
+        fetchJournalEntries(),
       ]);
 
       if (!isActive) {
