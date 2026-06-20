@@ -110,9 +110,21 @@ type EditEntryForm = {
   tripEndDate: string;
 };
 
+type ParsedTripNotice = {
+  title: string;
+  summary: string;
+  countryName: string;
+  dateLabel: string;
+  pageCount: number;
+  stampCount: number;
+  dayTitles: string[];
+  tags: string[];
+};
+
 type SavedEntryNotice = {
   entry: SavedEntry;
   message: string;
+  parsedTrip?: ParsedTripNotice;
 };
 
 type VisitedJournalCountry = {
@@ -284,6 +296,13 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
     : [];
 };
 
+const isFormDraftEmpty = (draft: {
+  title: string;
+  content: string;
+  countryId: string;
+  tags: string;
+}) => !draft.title.trim() && !draft.content.trim() && !draft.countryId.trim() && !draft.tags.trim();
+
 const normalizeCountrySearchText = (value: string) =>
   value
     .toLowerCase()
@@ -344,6 +363,7 @@ export default function JournalPage() {
   const [openedEntry, setOpenedEntry] = useState<SavedEntry | null>(null);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [savedEntryNotice, setSavedEntryNotice] = useState<SavedEntryNotice | null>(null);
+  const [importedTripWorkspaceNotice, setImportedTripWorkspaceNotice] = useState<SavedEntryNotice | null>(null);
   const [editingEntry, setEditingEntry] = useState<SavedEntry | null>(null);
   const [editForm, setEditForm] = useState<EditEntryForm>({
     title: '',
@@ -1496,7 +1516,7 @@ export default function JournalPage() {
     updateScrapbookItem(itemId, { rotation });
   };
 
-  const handleTripImported = (result: TripImportResult) => {
+  const handleTripImported = async (result: TripImportResult) => {
     if (!result.scrapbookPages.length) {
       return;
     }
@@ -1516,8 +1536,7 @@ export default function JournalPage() {
     setActiveTool('select');
     const importedStartDate = normalizeJournalDate(result.trip.dateRange?.start);
     const importedEndDate = normalizeJournalDate(result.trip.dateRange?.end, importedStartDate);
-
-    setForm({
+    const importedEntryForm = {
       title: result.journalDraft.title,
       content: result.journalDraft.content,
       countryId: result.journalDraft.countryId,
@@ -1525,23 +1544,100 @@ export default function JournalPage() {
       tags: result.journalDraft.tags.join(', '),
       tripStartDate: importedStartDate,
       tripEndDate: importedEndDate,
-    });
+    };
+    const importedCountry = visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId);
+
+    setForm(importedEntryForm);
     setCountrySearch(
-      visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId)?.name || ''
-    );
-    setImportNotice(
-      `Imported ${result.scrapbookPages.length} draft page${
-        result.scrapbookPages.length === 1 ? '' : 's'
-      }${
-        result.passportStampIds.length
-          ? ` with ${result.passportStampIds.length} passport stamp link${
-              result.passportStampIds.length === 1 ? '' : 's'
-            }`
-          : ''
-      }.`
+      importedCountry?.name || ''
     );
     setError(null);
     setStorageWarning(null);
+
+    const importDetails = `Imported ${result.scrapbookPages.length} draft page${
+      result.scrapbookPages.length === 1 ? '' : 's'
+    }${
+      result.passportStampIds.length
+        ? ` with ${result.passportStampIds.length} passport stamp link${
+            result.passportStampIds.length === 1 ? '' : 's'
+          }`
+        : ''
+    }.`;
+
+    if (!importedCountry) {
+      setImportedTripWorkspaceNotice(null);
+      setImportNotice(`${importDetails} Pick a visited country to save the journal entry.`);
+      setError('Pick a country you have marked on the map before saving this imported trip.');
+      return;
+    }
+
+    const tripDateError = getJournalDateRangeError(importedStartDate, importedEndDate);
+
+    if (tripDateError) {
+      setImportedTripWorkspaceNotice(null);
+      setImportNotice(`${importDetails} Fix the trip dates to save the journal entry.`);
+      setError(tripDateError);
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await createJournalEntry({
+        countryId: importedEntryForm.countryId,
+        title: importedEntryForm.title,
+        content: importedEntryForm.content,
+        mood: importedEntryForm.mood,
+        tags: result.journalDraft.tags,
+        tripStartDate: importedEntryForm.tripStartDate,
+        tripEndDate: importedEntryForm.tripEndDate,
+        insertedPhotos: [],
+      });
+
+      if (response.success && response.data) {
+        const savedEntry = response.data as SavedEntry;
+        const today = getTodayJournalDate();
+        const savedNotice = {
+          entry: savedEntry,
+          message: 'Imported',
+          parsedTrip: {
+            title: result.trip.title,
+            summary: result.trip.summary,
+            countryName: importedCountry.name,
+            dateLabel: result.trip.dateRange?.label || formatJournalDateRange(importedStartDate, importedEndDate),
+            pageCount: result.scrapbookPages.length,
+            stampCount: result.passportStampIds.length,
+            dayTitles: result.trip.timeline.map((day) => day.title).slice(0, 3),
+            tags: result.journalDraft.tags.slice(0, 4),
+          },
+        } satisfies SavedEntryNotice;
+
+        setSavedEntryNotice(savedNotice);
+        setImportedTripWorkspaceNotice(savedNotice);
+        setForm({
+          title: '',
+          content: '',
+          countryId: '',
+          mood: 'nostalgic',
+          tags: '',
+          tripStartDate: today,
+          tripEndDate: today,
+        });
+        setCountrySearch('');
+        setImportNotice(`${importDetails} Created "${savedEntry.title}".`);
+        return;
+      }
+
+      setImportedTripWorkspaceNotice(null);
+      setImportNotice(`${importDetails} The entry draft is ready, but it could not be saved.`);
+      setError(response.error || 'Could not create the imported journal entry.');
+    } catch {
+      setImportedTripWorkspaceNotice(null);
+      setImportNotice(`${importDetails} The entry draft is ready, but it could not be saved.`);
+      setError('Could not create the imported journal entry.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const loadCanvaDesigns = async (query = canvaQuery) => {
@@ -2135,6 +2231,7 @@ export default function JournalPage() {
     form.tripEndDate.length > 0 &&
     hasVisitedCountryLink &&
     hasValidDateRange;
+  const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
 
   const renderCanvaPolaroidStrip = ({
     pages,
@@ -2771,6 +2868,189 @@ export default function JournalPage() {
     );
   };
 
+  const renderImportedTripWorkspace = () => {
+    const parsedTrip = importedTripWorkspaceNotice?.parsedTrip;
+
+    return (
+      <div className="grid min-h-[680px] gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <section className="rounded-lg border border-gold/20 bg-white/90 p-5 shadow-soft">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">
+                {parsedTrip ? 'Imported trip' : 'Imported trip draft'}
+              </p>
+              <h3 className="mt-1 text-2xl font-serif text-ink">
+                {parsedTrip?.title || form.title || 'Review imported trip'}
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {importedTripWorkspaceNotice ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => void openSavedEntry(importedTripWorkspaceNotice.entry)}
+                >
+                  <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                  Open Entry
+                </Button>
+              ) : null}
+              <Button type="button" size="sm" variant="secondary" onClick={() => setImportModalOpen(true)}>
+                Import Another
+              </Button>
+            </div>
+          </div>
+
+          {parsedTrip ? (
+            <div className="mt-5 rounded-lg border border-gold/18 bg-cream/45 p-4">
+              <p className="text-sm leading-6 text-ink/72">{parsedTrip.summary}</p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                <div className="rounded-md border border-gold/15 bg-white px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-ink/45">Country</p>
+                  <p className="mt-1 font-semibold text-ink">{parsedTrip.countryName}</p>
+                </div>
+                <div className="rounded-md border border-gold/15 bg-white px-3 py-2 sm:col-span-2">
+                  <p className="text-xs uppercase tracking-wide text-ink/45">Dates</p>
+                  <p className="mt-1 font-semibold text-ink">{parsedTrip.dateLabel}</p>
+                </div>
+                <div className="rounded-md border border-gold/15 bg-white px-3 py-2">
+                  <p className="text-xs uppercase tracking-wide text-ink/45">Pages</p>
+                  <p className="mt-1 font-semibold text-ink">{parsedTrip.pageCount}</p>
+                </div>
+              </div>
+              {parsedTrip.dayTitles.length ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {parsedTrip.dayTitles.map((dayTitle) => (
+                    <span key={dayTitle} className="rounded-full border border-gold/20 bg-white px-3 py-1 text-xs text-ink/62">
+                      {dayTitle}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+              <Input
+                label="Journal name"
+                value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                required
+              />
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                {renderCountrySearch('imported-trip-country')}
+                <Input
+                  label="Mood"
+                  value={form.mood}
+                  onChange={(event) => setForm({ ...form, mood: event.target.value })}
+                />
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Trip start"
+                  type="date"
+                  value={form.tripStartDate}
+                  max={form.tripEndDate}
+                  error={dateRangeErrors.startDate}
+                  onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                  required
+                />
+                <Input
+                  label="Trip end"
+                  type="date"
+                  value={form.tripEndDate}
+                  min={form.tripStartDate}
+                  error={dateRangeErrors.endDate}
+                  onChange={(event) => setForm({ ...form, tripEndDate: event.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="imported-trip-story">
+                    <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+                    Story below this page
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={isStoryDictating ? 'secondary' : 'ghost'}
+                    className="gap-2"
+                    onClick={() => toggleDictation({ type: 'story' })}
+                  >
+                    <Mic className="h-4 w-4" aria-hidden="true" />
+                    {isStoryDictating ? 'Stop' : 'Dictate'}
+                  </Button>
+                </div>
+                <textarea
+                  id="imported-trip-story"
+                  value={form.content}
+                  onChange={(event) => setForm({ ...form, content: event.target.value })}
+                  rows={10}
+                  placeholder="Imported trip story"
+                  className="w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+                  required
+                />
+                {isStoryDictating ? <p className="mt-2 text-sm font-semibold text-gold-deep">Listening...</p> : null}
+                {dictationError ? <p className="mt-2 text-sm text-red-600">{dictationError}</p> : null}
+              </div>
+              <Input
+                label="Tags"
+                value={form.tags}
+                onChange={(event) => setForm({ ...form, tags: event.target.value })}
+                placeholder="market, sunset, train"
+              />
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {!hasVisitedCountryLink ? (
+                <p className="text-sm font-semibold text-gold-deep">
+                  Pick a country you have marked on the map before saving.
+                </p>
+              ) : null}
+              <Button type="submit" isLoading={saving} disabled={!canSaveCurrentEntry}>
+                Save Entry
+              </Button>
+            </form>
+          )}
+        </section>
+
+        <aside className="space-y-4">
+          <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Status</p>
+            <p className="mt-2 text-sm leading-6 text-ink/65">
+              {importedTripWorkspaceNotice
+                ? 'This imported trip was saved as a journal entry.'
+                : 'Review the parsed text, link a visited country, then save it as a journal entry.'}
+            </p>
+            {importNotice ? (
+              <p className="mt-3 rounded-md border border-gold/20 bg-cream/50 px-3 py-2 text-sm text-ink/70">
+                {importNotice}
+              </p>
+            ) : null}
+          </section>
+
+          {parsedTrip?.tags.length ? (
+            <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Tags</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {parsedTrip.tags.map((tag) => (
+                  <span key={tag} className="rounded-full bg-gold/12 px-3 py-1 text-xs font-semibold text-gold-deep">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {parsedTrip ? (
+            <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Passport links</p>
+              <p className="mt-2 text-2xl font-semibold text-ink">{parsedTrip.stampCount}</p>
+            </section>
+          ) : null}
+        </aside>
+      </div>
+    );
+  };
+
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
       <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
@@ -2787,7 +3067,14 @@ export default function JournalPage() {
               <Palette className="h-4 w-4" aria-hidden="true" />
               New Canva Page
             </Button>
-            <Button type="button" variant="secondary" onClick={() => setImportModalOpen(true)}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setImportModalOpen(true);
+                setLocalScrapbookBackupOpen(false);
+              }}
+            >
               Import Trip
             </Button>
             <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
@@ -2808,6 +3095,19 @@ export default function JournalPage() {
             {renderCanvaImportedPreview(canvaImportedPreview)}
           </div>
         </div>
+      ) : importModalOpen ? (
+        <div className="p-5">
+          <ImportTripModal
+            open={importModalOpen}
+            inline
+            startPageNumber={scrapbookPages.length + 1}
+            boardWidth={visibleBoardWidth}
+            onClose={() => setImportModalOpen(false)}
+            onImport={handleTripImported}
+          />
+        </div>
+      ) : hasImportedTripWorkspaceContent ? (
+        renderImportedTripWorkspace()
       ) : (
         <div className="p-5">
           <div className="relative min-h-[680px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
@@ -3095,9 +3395,11 @@ export default function JournalPage() {
       return null;
     }
 
+    const parsedTrip = savedEntryNotice.parsedTrip;
+
     return (
       <div
-        className="fixed bottom-4 left-4 right-4 z-[60] mx-auto max-w-md rounded-lg border border-gold/25 bg-white p-4 shadow-xl sm:left-auto sm:mx-0"
+        className="fixed bottom-4 left-4 right-4 z-[60] mx-auto max-w-xl rounded-lg border border-gold/25 bg-white p-4 shadow-xl sm:left-auto sm:mx-0"
         role="status"
         aria-live="polite"
       >
@@ -3109,6 +3411,49 @@ export default function JournalPage() {
             <p className="text-sm font-semibold text-ink">
               {savedEntryNotice.message} “{savedEntryNotice.entry.title}”
             </p>
+            {parsedTrip ? (
+              <div className="mt-3 rounded-lg border border-gold/18 bg-cream/45 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Parsed trip</p>
+                    <h3 className="mt-1 truncate text-base font-semibold text-ink">{parsedTrip.title}</h3>
+                  </div>
+                  <div className="flex shrink-0 gap-2 text-center">
+                    <div className="rounded-md border border-gold/15 bg-white px-2 py-1">
+                      <p className="text-sm font-semibold text-ink">{parsedTrip.pageCount}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-ink/45">Pages</p>
+                    </div>
+                    <div className="rounded-md border border-gold/15 bg-white px-2 py-1">
+                      <p className="text-sm font-semibold text-ink">{parsedTrip.stampCount}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-ink/45">Stamps</p>
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 line-clamp-2 text-sm leading-5 text-ink/70">{parsedTrip.summary}</p>
+                <div className="mt-3 grid gap-2 text-xs text-ink/60 sm:grid-cols-2">
+                  <span className="rounded-md bg-white/75 px-2 py-1.5">{parsedTrip.countryName}</span>
+                  <span className="rounded-md bg-white/75 px-2 py-1.5">{parsedTrip.dateLabel}</span>
+                </div>
+                {parsedTrip.dayTitles.length ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {parsedTrip.dayTitles.map((dayTitle) => (
+                      <span key={dayTitle} className="rounded-full border border-gold/20 bg-white px-2 py-1 text-xs text-ink/62">
+                        {dayTitle}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {parsedTrip.tags.length ? (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {parsedTrip.tags.map((tag) => (
+                      <span key={tag} className="rounded-full bg-gold/12 px-2 py-1 text-xs font-semibold text-gold-deep">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <button
               type="button"
               className="mt-2 text-sm font-semibold text-gold-deep underline-offset-4 transition hover:text-ink hover:underline"
@@ -3117,7 +3462,7 @@ export default function JournalPage() {
                 setSavedEntryNotice(null);
               }}
             >
-              See saved entry
+              {parsedTrip ? 'Open entry' : 'See saved entry'}
             </button>
           </div>
           <button
@@ -3742,13 +4087,6 @@ export default function JournalPage() {
 	          </div>
 	        ) : null}
 
-	        <ImportTripModal
-	          open={importModalOpen}
-          startPageNumber={scrapbookPages.length + 1}
-          boardWidth={visibleBoardWidth}
-          onClose={() => setImportModalOpen(false)}
-          onImport={handleTripImported}
-        />
         {renderCanvaModal()}
         {renderEditEntryModal()}
         {renderSavedEntryNotice()}

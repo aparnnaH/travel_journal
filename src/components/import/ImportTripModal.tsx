@@ -11,6 +11,7 @@ import TripPreviewCard from './TripPreviewCard';
 
 type ImportTripModalProps = {
   open: boolean;
+  inline?: boolean;
   startPageNumber: number;
   boardWidth: number;
   onClose: () => void;
@@ -27,6 +28,7 @@ const formatFileSize = (size: number) => {
 
 export default function ImportTripModal({
   open,
+  inline = false,
   startPageNumber,
   boardWidth,
   onClose,
@@ -127,25 +129,35 @@ export default function ImportTripModal({
     onClose();
   };
 
-  return (
-    <AnimatePresence>
-      {open ? (
+  const importPanel = open ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-sm"
+          className={
+            inline
+              ? 'w-full'
+              : 'fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-6 backdrop-blur-sm'
+          }
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onMouseDown={(event) => {
+            if (inline) {
+              return;
+            }
+
             if (event.target === event.currentTarget) {
               onClose();
             }
           }}
         >
           <motion.div
-            role="dialog"
-            aria-modal="true"
+            role={inline ? undefined : 'dialog'}
+            aria-modal={inline ? undefined : 'true'}
             aria-labelledby="import-trip-title"
-            className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-lg border border-gold/35 bg-[#f8f0df] shadow-lg-soft"
+            className={
+              inline
+                ? 'w-full overflow-hidden rounded-lg border border-gold/25 bg-[#f8f0df] shadow-soft'
+                : 'max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-lg border border-gold/35 bg-[#f8f0df] shadow-lg-soft'
+            }
             initial={{ opacity: 0, y: 24, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 18, scale: 0.98 }}
@@ -165,7 +177,7 @@ export default function ImportTripModal({
               </div>
             </div>
 
-            <div className="max-h-[calc(92vh-84px)] overflow-y-auto p-5">
+            <div className={inline ? 'p-5' : 'max-h-[calc(92vh-84px)] overflow-y-auto p-5'}>
               <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
                 <div className="space-y-4">
                   <section className="rounded-lg border border-gold/25 bg-white p-4 shadow-soft">
@@ -232,7 +244,7 @@ export default function ImportTripModal({
                       Parse Trip
                     </Button>
                     <Button type="button" variant="secondary" onClick={handleImport} disabled={!result}>
-                      Create Draft Pages
+                      Create Journal Entry
                     </Button>
                   </div>
                   {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
@@ -247,7 +259,11 @@ export default function ImportTripModal({
             </div>
           </motion.div>
         </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
+  ) : null;
+
+  if (inline) {
+    return importPanel;
+  }
+
+  return <AnimatePresence>{importPanel}</AnimatePresence>;
 }
