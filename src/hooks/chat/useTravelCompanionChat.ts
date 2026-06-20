@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CompanionChatMessage, CompanionTravelContext } from '@/lib/ai/types';
 import { createJournalEntry } from '@/lib/journalService';
+import { generateSmartCompanionReply } from '@/lib/ai/companionChatService';
 import { polishJournalDraft } from '@/lib/ai/journalPolishService';
 import {
   buildUserMessage,
@@ -61,6 +62,35 @@ const normalizeForCompare = (value: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+const hasWritingSupportRequest = (message: string) => {
+  const normalized = normalizeForCompare(message);
+
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    /\b(?:grammar|grammer|spelling|punctuation|proofread|proof read|edit|polish|rewrite|reword|fix)\b/.test(normalized) ||
+    /\b(?:write|writing|caption|draft|journal|entry|story|paragraph|sentence|summarize|summary)\b/.test(normalized) ||
+    /\b(?:sound better|make better|more descriptive|make descriptive|turn into|help me say)\b/.test(normalized)
+  );
+};
+
+const polishWritingResponse = async (
+  message: string,
+  responseContent: string,
+  activeSession: JournalDraftSession | null
+) => {
+  if (!hasWritingSupportRequest(message)) {
+    return responseContent;
+  }
+
+  return polishJournalDraft(responseContent, {
+    lastUserInput: message,
+    requiredMentions: getRequiredMentions(activeSession),
+  });
+};
+
 const splitDraftHeadingAndBody = (draft: string) => {
   const lines = draft.split('\n');
   const headingIndex = lines.findIndex((line) => /^###\s+/i.test(line.trim()));
@@ -104,6 +134,45 @@ const buildAssistantMessage = (content: string): CompanionChatMessage => ({
   intent: 'journal-entry',
 });
 
+const extractJournalDraftFromReply = (reply: string) => {
+  const lines = reply.split('\n');
+  const headingIndex = lines.findIndex((line) => /^###\s+.+?\s+Journal Draft\s*$/i.test(line.trim()));
+
+  if (headingIndex === -1) {
+    return null;
+  }
+
+  const endIndex = lines.findIndex((line, index) => {
+    if (index <= headingIndex + 1) {
+      return false;
+    }
+
+    return /^(?:next step|follow-up|if you want|want me|i used|archive signals|you can)\b/i.test(line.trim());
+  });
+
+  return lines.slice(headingIndex, endIndex === -1 ? lines.length : endIndex).join('\n').trim();
+};
+
+const buildJournalSessionFromSmartReply = (
+  reply: string,
+  activeSession: JournalDraftSession | null
+): JournalDraftSession | null => {
+  const draft = extractJournalDraftFromReply(reply);
+
+  if (!draft) {
+    return activeSession;
+  }
+
+  const countryName = draft.match(/^###\s+(.+?)\s+Journal Draft\s*$/im)?.[1]?.trim();
+
+  return {
+    countryName: countryName || activeSession?.countryName || 'Travel',
+    places: activeSession?.places ?? [],
+    personalDetails: activeSession?.personalDetails ?? {},
+    lastDraft: draft,
+  };
+};
+
 export function useTravelCompanionChat({ context, userId }: UseTravelCompanionChatInput) {
   const [messages, setMessages] = useState<CompanionChatMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
@@ -140,10 +209,42 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
         return;
       }
 
-      setMessages((current) => [...current, buildUserMessage(cleanMessage)]);
+      const userMessage = buildUserMessage(cleanMessage);
+      const nextHistory = [...messages, userMessage];
+
+      setMessages(nextHistory);
       setIsThinking(true);
 
       await new Promise((resolve) => setTimeout(resolve, 320));
+
+      const fallbackResponse = generateCompanionReply(cleanMessage, context);
+      const smartReply = await generateSmartCompanionReply({
+        message: cleanMessage,
+        context,
+        history: nextHistory,
+        activeJournalDraft: journalSession
+          ? {
+              countryName: journalSession.countryName,
+              places: journalSession.places,
+              draft: journalSession.lastDraft,
+            }
+          : null,
+      });
+
+      if (smartReply) {
+        const polishedSmartReply = await polishWritingResponse(cleanMessage, smartReply, journalSession);
+
+        setMessages((current) => [
+          ...current,
+          {
+            ...fallbackResponse,
+            content: polishedSmartReply,
+          },
+        ]);
+        setJournalSession(buildJournalSessionFromSmartReply(polishedSmartReply, journalSession));
+        setIsThinking(false);
+        return;
+      }
 
       const journalInteraction = handleJournalEntryInteraction(cleanMessage, context, journalSession);
       if (journalInteraction.handled && journalInteraction.response) {
@@ -170,11 +271,17 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
         return;
       }
 
-      const response = generateCompanionReply(cleanMessage, context);
-      setMessages((current) => [...current, response]);
+      const polishedFallbackContent = await polishWritingResponse(cleanMessage, fallbackResponse.content, journalSession);
+      setMessages((current) => [
+        ...current,
+        {
+          ...fallbackResponse,
+          content: polishedFallbackContent,
+        },
+      ]);
       setIsThinking(false);
     },
-    [context, isThinking, journalSession]
+    [context, isThinking, journalSession, messages]
   );
 
   const sendPrompt = useCallback(

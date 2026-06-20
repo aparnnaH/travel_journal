@@ -123,3 +123,42 @@ export type CompanionInsightBundle = {
   reflections: TravelReflection[];
   insightCards: MemoryInsight[];
 };
+
+export type CompanionArchiveSnapshot = {
+  counts: {
+    journalEntries: number;
+    scrapbookPages: number;
+    importedTrips: number;
+    visitedCountries: number;
+    passportStamps: number;
+  };
+  visitedCountryNames: string[];
+  topTags: string[];
+  topMoods: string[];
+  personality: TravelPersonalityProfile;
+  tripSummary: CompanionTripSummary;
+  recentJournalEntries: Array<{
+    title: string;
+    country: string;
+    mood: string;
+    tags: string[];
+    excerpt: string;
+  }>;
+  recentMemories: Array<{
+    title: string;
+    source: TravelMemorySource;
+    detail: string;
+    countryHint?: string;
+  }>;
+  importedTripSummaries: Array<{
+    title: string;
+    summary: string;
+    locations: string[];
+    tags: string[];
+  }>;
+  passportStamps: Array<{
+    countryName: string;
+    region: string;
+    rarity: CountryStamp['rarity'];
+  }>;
+};

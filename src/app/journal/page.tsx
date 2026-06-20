@@ -9,6 +9,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import { Button, Input } from '@/components/ui';
 import ImportTripModal from '@/components/import/ImportTripModal';
+import MemoryKeeperCard from '@/components/memory/MemoryKeeperCard';
 import ScrapbookCanvas from '@/components/journal/canvas/ScrapbookCanvas';
 import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
@@ -69,6 +70,7 @@ import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import type { TripImportResult } from '@/types/trips';
 import type { CanvaDesign } from '@/types/canva';
+import type { MemoryKeeperTripContext } from '@/services/memoryKeeperService';
 import type {
   DrawingPoint,
   PhotoAsset,
@@ -296,6 +298,94 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
           Boolean(photo) && typeof photo.src === 'string' && photo.src.startsWith('data:image/')
       )
     : [];
+};
+
+const getMemoryKeeperPhotos = (pages: ScrapbookPageData[]) =>
+  pages
+    .flatMap((page) => [
+      ...page.photoTray.map((photo) => ({
+        alt: photo.alt || page.title,
+        caption: photo.caption,
+      })),
+      ...page.items
+        .filter((item): item is ScrapbookPhotoItem => item.type === 'photo')
+        .map((photo) => ({
+          alt: photo.alt || page.title,
+          caption: photo.caption,
+        })),
+    ])
+    .filter((photo) => photo.alt || photo.caption)
+    .slice(0, 12);
+
+const MEMORY_KEEPER_NOISE_PATTERN =
+  /\b(?:create a memory keeper feature|add the feature|do not use ai|quick action buttons|please implement|requirements|hard-coded faq|existing project structure|you have a boarding pass|want to create a travel-day entry|want me to help turn|memory prompt|journal entries|photos if available|passport stamps|boarding passes|generate helpful memory prompts|fix grammar|make more descriptive|write from photos|create caption|turn into journal entry|summarize trip)\b/i;
+
+const isMemoryKeeperSourceLine = (line: string) =>
+  Boolean(line.trim()) && !MEMORY_KEEPER_NOISE_PATTERN.test(line);
+
+const isMemoryKeeperBoardingPassLabel = (label: string) => {
+  const cleanLabel = label.trim();
+
+  if (!isMemoryKeeperSourceLine(cleanLabel)) {
+    return false;
+  }
+
+  return /\b(?:boarding pass|flight|airline|airport|depart|arrival|gate|terminal)\b/i.test(cleanLabel);
+};
+
+const getMemoryKeeperBoardingPasses = (pages: ScrapbookPageData[], content: string) => {
+  const ticketPasses = pages.flatMap((page) =>
+    page.items
+      .filter((item): item is ScrapbookDecorationItem => item.type === 'decoration' && item.kind === 'ticket')
+      .filter((ticket) => isMemoryKeeperBoardingPassLabel(ticket.label))
+      .map((ticket) => ({
+        label: ticket.label || `Ticket on ${page.title}`,
+      }))
+  );
+  const travelLine = content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => isMemoryKeeperBoardingPassLabel(line));
+  const routeMatch = travelLine?.match(/\b(?:from\s+)?([A-Z][A-Za-z .'-]{2,})\s+(?:to|->)\s+([A-Z][A-Za-z .'-]{2,})\b/);
+  const contentPass = routeMatch && !/\b(?:create|want|turn|write|entry|memory)\b/i.test(routeMatch[2])
+    ? [
+        {
+          label: `${routeMatch[1].trim()} to ${routeMatch[2].trim()}`,
+          route: `${routeMatch[1].trim()} to ${routeMatch[2].trim()}`,
+        },
+      ]
+    : [];
+
+  return [...ticketPasses, ...contentPass].slice(0, 4);
+};
+
+const getMemoryKeeperItineraryItems = (parsedTrip: ParsedTripNotice | undefined, pages: ScrapbookPageData[], content: string) => {
+  const dayItems =
+    parsedTrip?.dayTitles.map((dayTitle) => ({
+      title: dayTitle,
+      dayTitle,
+    })) ?? [];
+  const noteItems = pages.flatMap((page) =>
+    page.items
+      .filter((item): item is ScrapbookNoteItem => item.type === 'note')
+      .filter((note) => isMemoryKeeperSourceLine(note.text))
+      .map((note) => ({
+        title: note.text.split('\n')[0]?.trim() || page.title,
+        detail: note.text,
+        dayTitle: page.title,
+      }))
+  );
+  const contentItems = content
+    .split('\n')
+    .map((line) => line.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter((line) => line.length >= 8 && line.length <= 140 && isMemoryKeeperSourceLine(line))
+    .filter((line, index, lines) => lines.findIndex((candidate) => candidate.toLowerCase() === line.toLowerCase()) === index)
+    .slice(0, 10)
+    .map((line) => ({
+      title: line,
+    }));
+
+  return [...dayItems, ...noteItems, ...contentItems].slice(0, 12);
 };
 
 const isFormDraftEmpty = (draft: {
@@ -2891,6 +2981,43 @@ export default function JournalPage() {
 
   const renderImportedTripWorkspace = () => {
     const parsedTrip = importedTripWorkspaceNotice?.parsedTrip;
+    const savedEntry = importedTripWorkspaceNotice?.entry;
+    const savedEntryContent = savedEntry ? getEntryContent(savedEntry) : '';
+    const memoryDraftText = form.content.trim() || savedEntryContent;
+    const memoryDateLabel = parsedTrip?.dateLabel || formatJournalDateRange(form.tripStartDate, form.tripEndDate);
+    const memoryTags = parsedTrip?.tags.length
+      ? parsedTrip.tags
+      : form.tags
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean);
+    const memoryKeeperContext: MemoryKeeperTripContext = {
+      tripName: parsedTrip?.title || form.title || savedEntry?.title || 'Imported trip',
+      dateLabel: memoryDateLabel,
+      journalEntries: memoryDraftText
+        ? [
+            {
+              title: savedEntry?.title || form.title || parsedTrip?.title || 'Trip journal',
+              content: memoryDraftText,
+              dateLabel: memoryDateLabel,
+            },
+          ]
+        : [],
+      photos: getMemoryKeeperPhotos(scrapbookPages),
+      passportStamps:
+        parsedTrip && parsedTrip.stampCount > 0
+          ? [
+              {
+                countryName: parsedTrip.countryName,
+                label: `${parsedTrip.stampCount} passport stamp${parsedTrip.stampCount === 1 ? '' : 's'}`,
+              },
+            ]
+          : [],
+      boardingPasses: getMemoryKeeperBoardingPasses(scrapbookPages, `${form.content}\n${savedEntryContent}`),
+      itineraryItems: getMemoryKeeperItineraryItems(parsedTrip, scrapbookPages, `${form.content}\n${savedEntryContent}`),
+      tags: memoryTags,
+      summary: parsedTrip?.summary || memoryDraftText,
+    };
 
     return (
       <div className="grid min-h-[680px] gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -3055,6 +3182,28 @@ export default function JournalPage() {
               </p>
             ) : null}
           </section>
+
+          <MemoryKeeperCard
+            context={memoryKeeperContext}
+            draftText={memoryDraftText}
+            onUseDraft={
+              parsedTrip
+                ? undefined
+                : (nextContent) => {
+                    setForm((current) => ({ ...current, content: nextContent }));
+                  }
+            }
+            onAppendDraft={
+              parsedTrip
+                ? undefined
+                : (nextContent) => {
+                    setForm((current) => ({
+                      ...current,
+                      content: [current.content.trim(), nextContent.trim()].filter(Boolean).join('\n\n'),
+                    }));
+                  }
+            }
+          />
 
           {parsedTrip?.tags.length ? (
             <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
