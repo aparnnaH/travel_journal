@@ -119,6 +119,8 @@ type ParsedTripNotice = {
   stampCount: number;
   dayTitles: string[];
   tags: string[];
+  canvaTitle?: string;
+  canvaPageCount?: number;
 };
 
 type SavedEntryNotice = {
@@ -1546,6 +1548,8 @@ export default function JournalPage() {
       tripEndDate: importedEndDate,
     };
     const importedCountry = visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId);
+    const linkedCanvaPreview = canvaImportedPreview;
+    const linkedCanvaPageCount = linkedCanvaPreview?.dataUrls.length ?? 0;
 
     setForm(importedEntryForm);
     setCountrySearch(
@@ -1589,9 +1593,15 @@ export default function JournalPage() {
         content: importedEntryForm.content,
         mood: importedEntryForm.mood,
         tags: result.journalDraft.tags,
+        canvaDesignId: linkedCanvaPreview?.design.id,
+        canvaDesignTitle: linkedCanvaPreview?.title,
+        canvaDesignEditUrl: linkedCanvaPreview ? getCanvaEditUrl(linkedCanvaPreview.design) : undefined,
+        canvaPages: linkedCanvaPreview?.dataUrls,
         tripStartDate: importedEntryForm.tripStartDate,
         tripEndDate: importedEntryForm.tripEndDate,
-        insertedPhotos: [],
+        coverPhoto: linkedCanvaPreview?.dataUrls[canvaCoverPageIndex] || linkedCanvaPreview?.dataUrls[0] || null,
+        coverPageIndex: linkedCanvaPreview ? canvaCoverPageIndex : null,
+        insertedPhotos: insertedJournalPhotos,
       });
 
       if (response.success && response.data) {
@@ -1609,6 +1619,8 @@ export default function JournalPage() {
             stampCount: result.passportStampIds.length,
             dayTitles: result.trip.timeline.map((day) => day.title).slice(0, 3),
             tags: result.journalDraft.tags.slice(0, 4),
+            canvaTitle: linkedCanvaPreview?.title,
+            canvaPageCount: linkedCanvaPageCount || undefined,
           },
         } satisfies SavedEntryNotice;
 
@@ -1624,7 +1636,16 @@ export default function JournalPage() {
           tripEndDate: today,
         });
         setCountrySearch('');
-        setImportNotice(`${importDetails} Created "${savedEntry.title}".`);
+        setCanvaImportedPreview(null);
+        setCanvaCoverPageIndex(0);
+        setInsertedJournalPhotos([]);
+        setCanvaPreviewPageIndex(0);
+        setCanvaPreviewTurnDirection('next');
+        setImportNotice(
+          `${importDetails} Created "${savedEntry.title}"${
+            linkedCanvaPreview ? ` and linked ${linkedCanvaPageCount} Canva page${linkedCanvaPageCount === 1 ? '' : 's'}.` : '.'
+          }`
+        );
         return;
       }
 
@@ -2918,6 +2939,12 @@ export default function JournalPage() {
                   <p className="mt-1 font-semibold text-ink">{parsedTrip.pageCount}</p>
                 </div>
               </div>
+              {parsedTrip.canvaTitle ? (
+                <div className="mt-4 rounded-lg border border-gold/18 bg-white px-3 py-2 text-sm text-ink/70">
+                  <span className="font-semibold text-ink">Linked Canva page:</span> {parsedTrip.canvaTitle}
+                  {parsedTrip.canvaPageCount ? ` (${parsedTrip.canvaPageCount} page${parsedTrip.canvaPageCount === 1 ? '' : 's'})` : ''}
+                </div>
+              ) : null}
               {parsedTrip.dayTitles.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {parsedTrip.dayTitles.map((dayTitle) => (
@@ -3017,7 +3044,9 @@ export default function JournalPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Status</p>
             <p className="mt-2 text-sm leading-6 text-ink/65">
               {importedTripWorkspaceNotice
-                ? 'This imported trip was saved as a journal entry.'
+                ? importedTripWorkspaceNotice.parsedTrip?.canvaTitle
+                  ? 'This imported trip was saved and linked to the Canva page.'
+                  : 'This imported trip was saved as a journal entry.'
                 : 'Review the parsed text, link a visited country, then save it as a journal entry.'}
             </p>
             {importNotice ? (
@@ -3044,6 +3073,18 @@ export default function JournalPage() {
             <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
               <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Passport links</p>
               <p className="mt-2 text-2xl font-semibold text-ink">{parsedTrip.stampCount}</p>
+            </section>
+          ) : null}
+
+          {parsedTrip?.canvaTitle ? (
+            <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva link</p>
+              <p className="mt-2 text-sm font-semibold text-ink">{parsedTrip.canvaTitle}</p>
+              {parsedTrip.canvaPageCount ? (
+                <p className="mt-1 text-sm text-ink/58">
+                  {parsedTrip.canvaPageCount} page{parsedTrip.canvaPageCount === 1 ? '' : 's'} attached
+                </p>
+              ) : null}
             </section>
           ) : null}
         </aside>
@@ -3089,14 +3130,13 @@ export default function JournalPage() {
         </div>
       </div>
 
-      {canvaImportedPreview ? (
+      {importModalOpen ? (
         <div className="p-5">
-          <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
-            {renderCanvaImportedPreview(canvaImportedPreview)}
-          </div>
-        </div>
-      ) : importModalOpen ? (
-        <div className="p-5">
+          {canvaImportedPreview ? (
+            <div className="mb-4 rounded-lg border border-gold/20 bg-white px-4 py-3 text-sm text-ink/70 shadow-soft">
+              Importing this trip will link it to <span className="font-semibold text-ink">{canvaImportedPreview.title}</span>.
+            </div>
+          ) : null}
           <ImportTripModal
             open={importModalOpen}
             inline
@@ -3105,6 +3145,14 @@ export default function JournalPage() {
             onClose={() => setImportModalOpen(false)}
             onImport={handleTripImported}
           />
+        </div>
+      ) : importedTripWorkspaceNotice ? (
+        renderImportedTripWorkspace()
+      ) : canvaImportedPreview ? (
+        <div className="p-5">
+          <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
+            {renderCanvaImportedPreview(canvaImportedPreview)}
+          </div>
         </div>
       ) : hasImportedTripWorkspaceContent ? (
         renderImportedTripWorkspace()
@@ -3434,6 +3482,12 @@ export default function JournalPage() {
                   <span className="rounded-md bg-white/75 px-2 py-1.5">{parsedTrip.countryName}</span>
                   <span className="rounded-md bg-white/75 px-2 py-1.5">{parsedTrip.dateLabel}</span>
                 </div>
+                {parsedTrip.canvaTitle ? (
+                  <div className="mt-2 rounded-md bg-white/75 px-2 py-1.5 text-xs text-ink/60">
+                    Linked to {parsedTrip.canvaTitle}
+                    {parsedTrip.canvaPageCount ? ` (${parsedTrip.canvaPageCount} Canva page${parsedTrip.canvaPageCount === 1 ? '' : 's'})` : ''}
+                  </div>
+                ) : null}
                 {parsedTrip.dayTitles.length ? (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {parsedTrip.dayTitles.map((dayTitle) => (
