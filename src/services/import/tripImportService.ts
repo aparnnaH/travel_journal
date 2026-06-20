@@ -258,7 +258,7 @@ export const createJournalDraftFromTrip = (trip: ParsedTripDraft): TripJournalDr
   return {
     title: trip.title,
     content: [trip.summary, ...daySections, stampLine, sourceLine].join('\n\n'),
-    countryId: trip.primaryCountryId || trip.primaryCountryName || 'Imported Trip',
+    countryId: trip.primaryCountryId || '',
     mood: trip.mood,
     tags: trip.tags,
   };

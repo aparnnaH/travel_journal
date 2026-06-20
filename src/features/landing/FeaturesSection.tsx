@@ -32,6 +32,17 @@ const features: FeatureCard[] = [
     gradient: 'orange',
   },
   {
+    badgeText: 'Canva',
+    badgeColor: '#00C4CC',
+    title: 'Canva Journal Studio',
+    description:
+      'Connect Canva to create new travel pages, import finished designs, save page previews, and keep designs organized in a Travel Journal folder.',
+    ctaText: 'Design in Canva',
+    ctaHref: '/journal',
+    imageUrl: '/images/features/journal.png',
+    gradient: 'gray',
+  },
+  {
     badgeText: 'Passport',
     badgeColor: '#9B8CFF',
     title: 'Passport Stamps',
@@ -63,14 +74,47 @@ const features: FeatureCard[] = [
     gradient: 'orange',
   },
   {
+    badgeText: 'Sharing',
+    badgeColor: '#E86AA8',
+    title: 'Travel Circle',
+    description:
+      'Invite friends, manage requests, share journal entries privately, and keep conversations with comments on shared memories.',
+    ctaText: 'Open friends',
+    ctaHref: '/friends',
+    imageUrl: '/images/features/companion.png',
+    gradient: 'purple',
+  },
+  {
+    badgeText: 'Audit',
+    badgeColor: '#6E9EF6',
+    title: 'Travel Audit',
+    description:
+      'Compare your scratch map with passport coverage, find countries that need stamp matches, and spot goals still waiting on the map.',
+    ctaText: 'Run audit',
+    ctaHref: '/compare',
+    imageUrl: '/images/features/passport.png',
+    gradient: 'green',
+  },
+  {
     badgeText: 'Companion',
     badgeColor: '#4CD7D0',
     title: 'AI Travel Companion',
-    description: 'Use your journal, imported trips, scrapbook pages, and stamps as context for travel-memory drafts.',
+    description: 'Use your journal, imported trips, scrapbook pages, map progress, and stamps as context for travel-memory drafts.',
     ctaText: 'Open companion',
     ctaHref: '/companion',
     imageUrl: '/images/features/companion.png',
     gradient: 'gray',
+  },
+  {
+    badgeText: 'Home Base',
+    badgeColor: '#C99A38',
+    title: 'Dashboard & Profile',
+    description:
+      'See recent entries, map progress, travel stats, friend requests, profile details, and quick actions from one signed-in home base.',
+    ctaText: 'Open dashboard',
+    ctaHref: '/dashboard',
+    imageUrl: '/images/features/map.png',
+    gradient: 'orange',
   },
 ];
 
@@ -112,7 +156,7 @@ export function FeaturesSection() {
             Everything You Need to Travel Smart
           </h2>
           <p className="mx-auto max-w-2xl text-lg text-ink/70">
-            From mapping visited countries to turning memories into scrapbook pages, Travel Journal keeps your trips organized and beautiful.
+            From mapping visited countries to designing Canva-backed journal pages, Travel Journal keeps every part of your trip archive organized and beautiful.
           </p>
         </motion.div>
 
@@ -123,8 +167,8 @@ export function FeaturesSection() {
           whileInView="visible"
           viewport={{ once: true, amount: 0.2 }}
         >
-          {features.map((feature, index) => (
-            <motion.div key={index} variants={itemVariants}>
+          {features.map((feature) => (
+            <motion.div key={feature.title} variants={itemVariants}>
               <GradientCard {...feature} />
             </motion.div>
           ))}

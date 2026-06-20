@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, Trash2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
@@ -33,7 +33,7 @@ import { useAuthStore } from '@/store/authStore';
 import type { JournalEntry } from '@/types';
 import type { Friendship } from '@/types/friends';
 import type { JournalComment } from '@/types/journalComments';
-import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
+import type { SharedJournalEntry } from '@/types/journalSharing';
 
 type SavedEntry = JournalEntry & {
   country_id?: string;
@@ -73,7 +73,8 @@ const searchScopeOptions: { value: JournalSearchScope; label: string }[] = [
 const getEntryDate = (entry: EntryCardData) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: EntryCardData) => entry.countryId || entry.country_id || '';
 const formatEntryCountry = (countryId: string) =>
-  placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
+  placeholderCountries.find((country) => country.id === countryId)?.name || '';
+const getEntryCountryLabel = (entry: EntryCardData) => formatEntryCountry(getEntryCountry(entry));
 const getEntryContent = (entry: EntryCardData) => decodeJournalContentWithCanva(String(entry.content || '')).content;
 const getEntryFallbackTripDate = (entry: EntryCardData) => normalizeJournalDate(getEntryDate(entry));
 const getEntryTripStartDate = (entry: EntryCardData) =>
@@ -94,8 +95,6 @@ const getEntryCanvaPages = (entry: EntryCardData | null) => {
     ? pages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
     : [];
 };
-const getEntryCanvaPageCount = (entry: EntryCardData) =>
-  getEntryCanvaPages(entry).length || entry.canvaPageCount || entry.canva_page_count || 0;
 const getEntryCoverPhoto = (entry: EntryCardData) => {
   const decodedCanva = decodeJournalContentWithCanva(String(entry.content || '')).canva;
   const pages = getEntryCanvaPages(entry);
@@ -152,7 +151,6 @@ export default function JournalEntriesPage() {
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [sharingEntryId, setSharingEntryId] = useState<string | null>(null);
-  const [shareRecipientsByEntry, setShareRecipientsByEntry] = useState<Record<string, JournalShareRecipient[]>>({});
   const [selectedShareFriendIds, setSelectedShareFriendIds] = useState<string[]>([]);
   const [shareLoading, setShareLoading] = useState(false);
   const [shareSaving, setShareSaving] = useState(false);
@@ -186,11 +184,12 @@ export default function JournalEntriesPage() {
 
     if (editingEntry) {
       const currentCountryId = getEntryCountry(editingEntry);
+      const currentCountryName = formatEntryCountry(currentCountryId);
 
-      if (currentCountryId && !countryOptions.has(currentCountryId)) {
+      if (currentCountryId && currentCountryName && !countryOptions.has(currentCountryId)) {
         countryOptions.set(currentCountryId, {
           id: currentCountryId,
-          name: formatEntryCountry(currentCountryId),
+          name: currentCountryName,
         });
       }
     }
@@ -588,11 +587,6 @@ export default function JournalEntriesPage() {
 
     setEntries((current) => current.filter((entry) => entry.id !== entryPendingDelete.id));
     setEntryCount((current) => Math.max(0, current - 1));
-    setShareRecipientsByEntry((current) => {
-      const nextRecipients = { ...current };
-      delete nextRecipients[entryPendingDelete.id];
-      return nextRecipients;
-    });
     setCommentsByEntry((current) => {
       const nextComments = { ...current };
       delete nextComments[entryPendingDelete.id];
@@ -604,8 +598,6 @@ export default function JournalEntriesPage() {
   };
 
   const openSharePanel = async (entry: SavedEntry) => {
-    setOpenedEntry(null);
-    setOpenedSharedEntry(null);
     setSharingEntryId(entry.id);
     setShareLoading(true);
     setShareError(null);
@@ -621,10 +613,6 @@ export default function JournalEntriesPage() {
     }
 
     const recipients = response.data ?? [];
-    setShareRecipientsByEntry((current) => ({
-      ...current,
-      [entry.id]: recipients,
-    }));
     setSelectedShareFriendIds(recipients.map((recipient) => recipient.id));
   };
 
@@ -649,16 +637,10 @@ export default function JournalEntriesPage() {
       return;
     }
 
-    setShareRecipientsByEntry((current) => ({
-      ...current,
-      [entryId]: response.data ?? [],
-    }));
     setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
   };
 
   const openCommentPanel = async (entryId: string) => {
-    setOpenedEntry(null);
-    setOpenedSharedEntry(null);
     setCommentEntryId(entryId);
     setCommentError(null);
     setCommentsLoading(true);
@@ -882,91 +864,22 @@ export default function JournalEntriesPage() {
       aria-label={`Open journal entry ${entry.title}`}
     >
       {renderEntryAlbumCover(entry)}
-      <div className="flex items-start justify-between gap-3">
+      <div>
         <h3 className="font-semibold text-ink">{entry.title}</h3>
-        <time className="shrink-0 text-xs text-ink/60" dateTime={getEntryDate(entry)}>
-          {new Date(getEntryDate(entry)).toLocaleDateString()}
-        </time>
       </div>
       <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/18 bg-cream/55 px-2.5 py-1 text-xs font-semibold text-ink/60">
         <CalendarDays className="h-3.5 w-3.5 text-gold-deep" aria-hidden="true" />
         {formatJournalDateRange(getEntryTripStartDate(entry), getEntryTripEndDate(entry))}
       </p>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-ink/70">
-        {getEntryContent(entry) || 'Open this entry to read the full story.'}
-      </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
+        {getEntryCountryLabel(entry) ? <span>{getEntryCountryLabel(entry)}</span> : null}
         {entry.mood ? <span>{entry.mood}</span> : null}
-        {getEntryCanvaPageCount(entry) ? (
-          <span className="rounded-full border border-gold/20 bg-cream px-2 py-1">
-            {getEntryCanvaPageCount(entry)} Canva page{getEntryCanvaPageCount(entry) === 1 ? '' : 's'}
-          </span>
-        ) : null}
         {entry.tags?.slice(0, 5).map((tag) => (
           <span key={tag} className="rounded-full border border-gold/20 bg-cream px-2 py-1">
             {tag}
           </span>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={(event) => {
-            event.stopPropagation();
-            void openEditEntry(entry);
-          }}
-        >
-          <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
-          Edit
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={(event) => {
-            event.stopPropagation();
-            openSharePanel(entry);
-          }}
-        >
-          <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
-          Share
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={(event) => {
-            event.stopPropagation();
-            openCommentPanel(entry.id);
-          }}
-        >
-          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-          Comments
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="text-red-700 hover:bg-red-50"
-          onClick={(event) => {
-            event.stopPropagation();
-            requestDeleteEntry(entry);
-          }}
-        >
-          <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
-          Delete
-        </Button>
-        {(shareRecipientsByEntry[entry.id]?.length ?? 0) > 0 ? (
-          <span className="rounded-full border border-gold/20 bg-cream px-2.5 py-1 text-xs font-semibold text-ink/55">
-            Shared with {shareRecipientsByEntry[entry.id].length}
-          </span>
-        ) : null}
-      </div>
-      {renderSharePanel(entry)}
-      {renderCommentPanel(entry.id)}
     </article>
   );
 
@@ -986,11 +899,8 @@ export default function JournalEntriesPage() {
       aria-label={`Open shared journal entry ${entry.title}`}
     >
       {renderEntryAlbumCover(entry)}
-      <div className="flex items-start justify-between gap-3">
+      <div>
         <h3 className="font-semibold text-ink">{entry.title}</h3>
-        <time className="shrink-0 text-xs text-ink/60" dateTime={entry.sharedAt}>
-          {new Date(entry.sharedAt).toLocaleDateString()}
-        </time>
       </div>
       <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">
         From {entry.sharedBy.displayName || entry.sharedBy.email}
@@ -999,38 +909,15 @@ export default function JournalEntriesPage() {
         <CalendarDays className="h-3.5 w-3.5 text-gold-deep" aria-hidden="true" />
         {formatJournalDateRange(getEntryTripStartDate(entry), getEntryTripEndDate(entry))}
       </p>
-      <p className="mt-2 line-clamp-3 text-sm leading-6 text-ink/70">
-        {getEntryContent(entry) || 'Open this shared entry to read the full story.'}
-      </p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
-        {getEntryCountry(entry) ? <span>{formatEntryCountry(getEntryCountry(entry))}</span> : null}
+        {getEntryCountryLabel(entry) ? <span>{getEntryCountryLabel(entry)}</span> : null}
         {entry.mood ? <span>{entry.mood}</span> : null}
-        {getEntryCanvaPageCount(entry) ? (
-          <span className="rounded-full border border-gold/20 bg-cream px-2 py-1">
-            {getEntryCanvaPageCount(entry)} Canva page{getEntryCanvaPageCount(entry) === 1 ? '' : 's'}
-          </span>
-        ) : null}
         {entry.tags?.slice(0, 5).map((tag) => (
           <span key={tag} className="rounded-full border border-gold/20 bg-cream px-2 py-1">
             {tag}
           </span>
         ))}
       </div>
-      <div className="mt-3">
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={(event) => {
-            event.stopPropagation();
-            openCommentPanel(entry.id);
-          }}
-        >
-          <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-          Comments
-        </Button>
-      </div>
-      {renderCommentPanel(entry.id)}
     </article>
   );
 
@@ -1080,9 +967,9 @@ export default function JournalEntriesPage() {
               <CalendarDays className="h-4 w-4 text-gold-deep" aria-hidden="true" />
               {formatJournalDateRange(getEntryTripStartDate(openedEntry), getEntryTripEndDate(openedEntry))}
             </span>
-            {getEntryCountry(openedEntry) ? (
+            {getEntryCountryLabel(openedEntry) ? (
               <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
-                {formatEntryCountry(getEntryCountry(openedEntry))}
+                {getEntryCountryLabel(openedEntry)}
               </span>
             ) : null}
             {openedEntry.mood ? (
@@ -1134,7 +1021,7 @@ export default function JournalEntriesPage() {
             </section>
           ) : null}
 
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
+	          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
             <Button type="button" size="sm" variant="secondary" onClick={() => void openEditEntry(openedEntry)}>
               <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
               Edit
@@ -1154,10 +1041,12 @@ export default function JournalEntriesPage() {
               className="text-red-700 hover:bg-red-50"
               onClick={() => requestDeleteEntry(openedEntry)}
             >
-              Delete
-            </Button>
-          </div>
-        </article>
+	              Delete
+	            </Button>
+	          </div>
+	          {renderSharePanel(openedEntry)}
+	          {renderCommentPanel(openedEntry.id)}
+	        </article>
       </div>
     );
   };
@@ -1210,9 +1099,9 @@ export default function JournalEntriesPage() {
               <CalendarDays className="h-4 w-4 text-gold-deep" aria-hidden="true" />
               {formatJournalDateRange(getEntryTripStartDate(openedSharedEntry), getEntryTripEndDate(openedSharedEntry))}
             </span>
-            {getEntryCountry(openedSharedEntry) ? (
+            {getEntryCountryLabel(openedSharedEntry) ? (
               <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
-                {formatEntryCountry(getEntryCountry(openedSharedEntry))}
+                {getEntryCountryLabel(openedSharedEntry)}
               </span>
             ) : null}
             {openedSharedEntry.mood ? (
@@ -1266,13 +1155,14 @@ export default function JournalEntriesPage() {
             </section>
           ) : null}
 
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
-            <Button type="button" size="sm" variant="secondary" onClick={() => openCommentPanel(openedSharedEntry.id)}>
-              <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
-              Comments
-            </Button>
-          </div>
-        </article>
+	          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
+	            <Button type="button" size="sm" variant="secondary" onClick={() => openCommentPanel(openedSharedEntry.id)}>
+	              <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
+	              Comments
+	            </Button>
+	          </div>
+	          {renderCommentPanel(openedSharedEntry.id)}
+	        </article>
       </div>
     );
   };
@@ -1327,7 +1217,7 @@ export default function JournalEntriesPage() {
               <label className="mb-2 block text-sm font-medium text-ink" htmlFor="edit-entry-country">Country</label>
               <select
                 id="edit-entry-country"
-                value={editForm.countryId}
+                value={editCountryOptions.some((country) => country.id === editForm.countryId) ? editForm.countryId : ''}
                 onChange={(event) => setEditForm((current) => ({ ...current, countryId: event.target.value }))}
                 className="w-full rounded-lg border-2 border-gold/30 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
                 required
@@ -1408,7 +1298,7 @@ export default function JournalEntriesPage() {
       <AppHeader />
       <PageShell
         title="Journal Entries"
-        description="Browse every saved journal entry without loading the full Canva workspace."
+        description="All your travel memories live here, ready to revisit whenever the moment calls."
         actions={
           <Link
             href="/journal"

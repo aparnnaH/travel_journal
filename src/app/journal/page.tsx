@@ -222,9 +222,10 @@ const readPhotoFile = (file: File) =>
   });
 
 const getEntryDate = (entry: SavedEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
-const getEntryCountry = (entry: SavedEntry) => entry.countryId || entry.country_id || '';
+const getEntryCountry = (entry: SavedEntry | SharedJournalEntry) => entry.countryId || entry.country_id || '';
 const formatEntryCountry = (countryId: string) =>
-  placeholderCountries.find((country) => country.id === countryId)?.name || countryId || 'Unplaced';
+  placeholderCountries.find((country) => country.id === countryId)?.name || '';
+const getEntryCountryLabel = (entry: SavedEntry | SharedJournalEntry) => formatEntryCountry(getEntryCountry(entry));
 const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
   const fallbackPages = entry ? decodeJournalContentWithCanva(String(entry.content || '')).canva?.pages : [];
   const pages = entry?.canvaPages ?? entry?.canva_pages ?? fallbackPages ?? [];
@@ -460,12 +461,13 @@ export default function JournalPage() {
 
     if (editingEntry) {
       const currentCountryId = getEntryCountry(editingEntry);
+      const currentCountryName = formatEntryCountry(currentCountryId);
 
-      if (currentCountryId && !countryOptions.has(currentCountryId)) {
+      if (currentCountryId && currentCountryName && !countryOptions.has(currentCountryId)) {
         countryOptions.set(currentCountryId, {
           id: currentCountryId,
-          name: formatEntryCountry(currentCountryId),
-          searchText: normalizeCountrySearchText(`${formatEntryCountry(currentCountryId)} ${currentCountryId}`),
+          name: currentCountryName,
+          searchText: normalizeCountrySearchText(`${currentCountryName} ${currentCountryId}`),
         });
       }
     }
@@ -2785,6 +2787,9 @@ export default function JournalPage() {
               <Palette className="h-4 w-4" aria-hidden="true" />
               New Canva Page
             </Button>
+            <Button type="button" variant="secondary" onClick={() => setImportModalOpen(true)}>
+              Import Trip
+            </Button>
             <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
               <Search className="h-4 w-4" aria-hidden="true" />
               Choose Existing
@@ -2805,21 +2810,21 @@ export default function JournalPage() {
         </div>
       ) : (
         <div className="p-5">
-        <div className="relative min-h-[520px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.7),rgba(47,111,109,0.08)_44%,rgba(193,154,91,0.12))]" />
-          <div className="relative flex min-h-[520px] items-center justify-center px-5 text-center">
-            <div className="max-w-2xl rounded-lg border border-gold/25 bg-white/88 p-6 shadow-soft">
-              <Palette className="mx-auto h-10 w-10 text-gold-deep" aria-hidden="true" />
-              <h3 className="mt-4 text-2xl font-serif text-ink">Your next journal page starts here</h3>
-              <p className="mt-3 text-sm leading-6 text-ink/64">
-                Use the buttons above to create a page in Canva or import a design you already finished.
-              </p>
-              {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
+          <div className="relative min-h-[680px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.7),rgba(47,111,109,0.08)_44%,rgba(193,154,91,0.12))]" />
+            <div className="relative flex min-h-[680px] items-center justify-center px-5 text-center">
+              <div className="max-w-2xl rounded-lg border border-gold/25 bg-white/88 p-6 shadow-soft">
+                <Palette className="mx-auto h-10 w-10 text-gold-deep" aria-hidden="true" />
+                <h3 className="mt-4 text-2xl font-serif text-ink">Your next journal page starts here</h3>
+                <p className="mt-3 text-sm leading-6 text-ink/64">
+                  Use the buttons above to create a page in Canva or import a design you already finished.
+                </p>
+                {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
     </section>
   );
@@ -3006,7 +3011,7 @@ export default function JournalPage() {
               </label>
               <select
                 id="edit-entry-country"
-                value={editForm.countryId}
+                value={editCountryOptions.some((country) => country.id === editForm.countryId) ? editForm.countryId : ''}
                 onChange={(event) => setEditForm((current) => ({ ...current, countryId: event.target.value }))}
                 className="w-full rounded-lg border-2 border-gold/30 bg-white px-4 py-2.5 text-sm text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/30"
                 required
@@ -3134,20 +3139,13 @@ export default function JournalPage() {
       <PageShell
         title="Travel Journal"
         description="Design Canva journal pages, save travel stories, and revisit shared memories."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" onClick={() => setImportModalOpen(true)}>
-              Import Trip
-            </Button>
-          </div>
-        }
       >
         <DndContext onDragEnd={handleDndDragEnd}>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          {!localScrapbookBackupOpen ? (
-            renderCanvaWorkspace()
-          ) : (
-          <section className="rounded-lg border border-gold/25 bg-[#fff8ea] p-4 shadow-soft">
+          <div className={localScrapbookBackupOpen ? 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]' : 'grid gap-6'}>
+            {!localScrapbookBackupOpen ? (
+              renderCanvaWorkspace()
+            ) : (
+              <section className="rounded-lg border border-gold/25 bg-[#fff8ea] p-4 shadow-soft">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-semibold text-ink">{currentPage?.title || 'Page 1'}</h2>
@@ -3299,9 +3297,8 @@ export default function JournalPage() {
           </section>
           )}
 
+          {localScrapbookBackupOpen ? (
           <aside className="space-y-4">
-            {localScrapbookBackupOpen ? (
-              <>
             <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">
               <h3 className="mb-4 text-xl font-semibold text-ink">Themes</h3>
               <div className="grid grid-cols-2 gap-2">
@@ -3459,9 +3456,8 @@ export default function JournalPage() {
                 <p className="text-sm text-ink/60">No piece selected.</p>
               )}
             </section>
-              </>
-            ) : null}
           </aside>
+          ) : null}
         </div>
         </DndContext>
 	        {openedEntry ? (
@@ -3564,9 +3560,9 @@ export default function JournalPage() {
 	                  <CalendarDays className="h-4 w-4 text-gold-deep" aria-hidden="true" />
 	                  {formatJournalDateRange(getEntryTripStartDate(openedEntry), getEntryTripEndDate(openedEntry))}
 	                </span>
-	                {getEntryCountry(openedEntry) ? (
+	                {getEntryCountryLabel(openedEntry) ? (
 	                  <span className="rounded-full border border-gold/18 bg-cream/55 px-3 py-1">
-	                    {formatEntryCountry(getEntryCountry(openedEntry))}
+	                    {getEntryCountryLabel(openedEntry)}
 	                  </span>
 	                ) : null}
 	                {openedEntry.mood ? (
