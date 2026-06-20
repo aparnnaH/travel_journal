@@ -1,3 +1,6 @@
+// Browser client for the Memory Keeper API.
+// It always prepares a deterministic template fallback so the journal workspace
+// remains useful if OpenAI, auth, or the network is unavailable.
 import {
   createMemoryKeeperTemplate,
   type MemoryKeeperQuickAction,
@@ -21,6 +24,8 @@ export type AskMemoryKeeperResult = {
   method: 'ai' | 'template';
 };
 
+// Calls the server-side Memory Keeper route and falls back to a local template
+// whenever the API cannot return a trustworthy writing result.
 export const askMemoryKeeper = async ({
   action,
   context,

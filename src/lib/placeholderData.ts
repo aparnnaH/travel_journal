@@ -1,5 +1,10 @@
+// Seed country data used by local-first screens.
+// These records provide labels, sample cities, coordinates, and highlights for
+// map/passport/AI flows before a full country database is introduced.
 import type { Country } from '@/types';
 
+// Small curated country set for demos and fallbacks. Real visited state comes
+// from the map store or Supabase, not from these `visited` defaults.
 export const placeholderCountries: Country[] = [
   {
     id: 'US',

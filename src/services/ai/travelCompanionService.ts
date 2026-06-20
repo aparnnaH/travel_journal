@@ -1,3 +1,6 @@
+// Travel Companion domain service.
+// This module turns journal entries, scrapbook pages, imports, and map visits
+// into deterministic chat replies, prompts, insights, and journal drafts.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { normalizeCountryToStampId } from '@/lib/stamps/assets';
@@ -59,6 +62,8 @@ const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 let worldCountryCatalogCache: string[] | null = null;
 
+// Keyword routing gives common questions deterministic answers before the UI
+// reaches for more general chat behavior.
 const intentKeywords: Record<TravelCompanionIntent, string[]> = {
   general: [],
   'country-stats': ['country count', 'countries visited', 'how many countries', 'visited countries', 'places visited'],
@@ -73,6 +78,7 @@ const intentKeywords: Record<TravelCompanionIntent, string[]> = {
   'passport-stamps': ['stamp', 'passport', 'seal', 'collection', 'region'],
 };
 
+// Client-safe id helper for generated chat messages and insight cards.
 const createCompanionId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -81,6 +87,8 @@ const createCompanionId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+// Shortens memory snippets so companion context stays readable in cards and
+// chat responses.
 const snippet = (text: string, maxLength = 160) => {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (!clean) {
@@ -94,6 +102,8 @@ const snippet = (text: string, maxLength = 160) => {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 };
 
+// Resolves a country id/code to a display label, preferring caller-provided map
+// labels and falling back to seeded country data or Intl region names.
 const getCountryName = (countryId: string, countryLabels?: Record<string, string>) => {
   const explicitLabel = countryLabels?.[countryId];
 
@@ -122,6 +132,7 @@ const getCountryName = (countryId: string, countryLabels?: Record<string, string
   return countryId;
 };
 
+// Normalizes database/client journal entry shapes into one companion-safe type.
 const normalizeJournalEntry = (entry: RawJournalEntry): CompanionJournalEntry => ({
   id: String(entry.id ?? createCompanionId()),
   title: String(entry.title ?? 'Untitled memory'),
@@ -157,11 +168,14 @@ const countryNameAliases: Record<string, string> = {
   'viet nam': 'vietnam',
 };
 
+// Canonical keys make country matching tolerant of spelling and naming variants.
 const canonicalCountryKey = (value: string) => {
   const normalized = normalizeCountryLabel(value);
   return countryNameAliases[normalized] ?? normalized;
 };
 
+// Builds an in-memory list of world country names from Intl.DisplayNames. The
+// cache avoids rebuilding the catalog for every next-destination question.
 const buildWorldCountryCatalog = () => {
   if (worldCountryCatalogCache) {
     return worldCountryCatalogCache;
@@ -214,6 +228,8 @@ const personalityDestinationHints: Record<string, string[]> = {
   'Reflective Explorer': ['Iceland', 'New Zealand', 'Japan', 'Norway', 'Portugal'],
 };
 
+// Intent detectors catch common phrasing and typos that keyword matching alone
+// would miss.
 const hasCountryStatsQuestion = (message: string) => {
   const lowerMessage = message.toLowerCase();
 
@@ -350,6 +366,8 @@ const buildCountryPlaceHints = (countryName: string, context: CompanionTravelCon
   return Array.from(new Set(combined)).slice(0, 6);
 };
 
+// Pulls mood/highlight/sensory/reflection answers from either labeled text or
+// numbered responses during the journal-draft chat flow.
 const parsePersonalizationInput = (message: string) => {
   const cleanMessage = message.trim();
   const moodMatch = cleanMessage.match(/\b(?:mood|feeling|felt)\b[:\-]?\s*([^\n.]+)/i);
@@ -377,6 +395,8 @@ const parsePersonalizationInput = (message: string) => {
   };
 };
 
+// The normalization helpers below turn rough user phrases into sentence pieces
+// that can be safely inserted into a deterministic journal draft.
 const cleanDetailValue = (value: string) =>
   value
     .replace(/\b[1-4][\).:-]\s*/g, ' ')
@@ -532,6 +552,8 @@ const normalizeFutureDestinationText = (text: string, places: string[]) =>
           .join(' ')}`
     );
 
+// Converts future-plan fragments into a full sentence for the closing line of a
+// generated journal draft.
 const normalizeFuturePlanPhrase = (value: string, countryName: string, places: string[]) => {
   let phrase = cleanDetailValue(value)
     .replace(/^(?:that\s+)?/i, '')
@@ -582,6 +604,8 @@ const normalizeFuturePlanPhrase = (value: string, countryName: string, places: s
   return `I already know I want to ${phrase.replace(/[.?!]+$/g, '')}.`;
 };
 
+// Separates generated markdown heading from body so refinement modes can rewrite
+// body tone without dropping the title.
 const splitDraftHeadingAndBody = (draft: string) => {
   const lines = draft.split('\n');
   const headingIndex = lines.findIndex((line) => /^###\s+/i.test(line.trim()));
@@ -596,6 +620,7 @@ const splitDraftHeadingAndBody = (draft: string) => {
   };
 };
 
+// Applies deterministic style refinements to the last generated journal draft.
 const refineJournalDraft = (draft: string, mode: 'shorter' | 'poetic' | 'factual') => {
   const { heading, body } = splitDraftHeadingAndBody(draft);
   const sentences = body
@@ -634,6 +659,8 @@ const refineJournalDraft = (draft: string, mode: 'shorter' | 'poetic' | 'factual
   return [heading, '', factualLines.join('\n')].filter(Boolean).join('\n');
 };
 
+// Builds a complete journal entry draft from extracted country/place details and
+// optional personalization answers.
 const buildJournalEntryDraft = (
   countryName: string,
   places: string[],
@@ -667,6 +694,7 @@ const buildJournalEntryDraft = (
     .join('\n');
 };
 
+// Prevents the chat flow from adding the same future-plan idea repeatedly.
 const hasFuturePlanLine = (draft: string) =>
   draft
     .split('\n')
@@ -678,6 +706,8 @@ const hasFuturePlanLine = (draft: string) =>
         /\b(?:next time i visit|i would love to|i already know i want to)\b/i.test(line)
     );
 
+// Converts visited country ids into compact passport stamp context for the AI
+// companion without sending the full stamp renderer metadata.
 const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record<string, string>): CompanionPassportStamp[] =>
   visitedCountryIds.map((countryId) => {
     const countryName = getCountryName(countryId, countryLabels);
@@ -703,6 +733,8 @@ const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record
     };
   });
 
+// Merges journal, scrapbook, and imported-trip records into one recency-sorted
+// memory pool used by prompts, insights, and chat replies.
 const buildMemoryPool = (
   journalEntries: CompanionJournalEntry[],
   scrapbookPages: ScrapbookPageData[],
@@ -761,6 +793,7 @@ const buildMemoryPool = (
     .sort((first, second) => toTimestamp(second.createdAt) - toTimestamp(first.createdAt));
 };
 
+// Finds recurring tags so the companion can mention themes without an AI call.
 const buildTagFrequency = (journalEntries: CompanionJournalEntry[], importedTrips: ImportedTripSnapshot[]) => {
   const counter = new Map<string, number>();
   const allTags = [
@@ -779,6 +812,8 @@ const buildTagFrequency = (journalEntries: CompanionJournalEntry[], importedTrip
   return [...counter.entries()].sort((first, second) => second[1] - first[1]).map(([tag]) => tag);
 };
 
+// Finds recurring moods across journal/import data for personality and prompt
+// suggestions.
 const buildMoodFrequency = (journalEntries: CompanionJournalEntry[], importedTrips: ImportedTripSnapshot[]) => {
   const counter = new Map<string, number>();
   const moods = [...journalEntries.map((entry) => entry.mood), ...importedTrips.map((trip) => trip.mood)];
@@ -794,6 +829,8 @@ const buildMoodFrequency = (journalEntries: CompanionJournalEntry[], importedTri
   return [...counter.entries()].sort((first, second) => second[1] - first[1]).map(([mood]) => mood);
 };
 
+// Chooses a lightweight travel personality profile from keyword signals in the
+// user's memory archive.
 const buildTravelPersonality = (
   memoryPool: TravelMemory[],
   topTags: string[],
@@ -857,6 +894,8 @@ const buildTravelPersonality = (
   };
 };
 
+// Creates the high-level archive summary used in the companion dashboard and
+// welcome message.
 const buildTripSummary = (context: {
   journalEntries: CompanionJournalEntry[];
   importedTrips: ImportedTripSnapshot[];
@@ -882,6 +921,8 @@ const buildTripSummary = (context: {
   };
 };
 
+// Picks a simple next stamp target for insight cards based on what the user has
+// already collected.
 const getStampRecommendationsText = (passportStamps: CompanionPassportStamp[]) => {
   const collectedIds = new Set(passportStamps.map((stamp) => stamp.stampId));
   const candidate = COUNTRY_STAMPS.find((stamp) => !collectedIds.has(stamp.id));
@@ -913,6 +954,8 @@ const rarityWeight: Record<string, number> = {
   legendary: 5,
 };
 
+// Builds all known visited stamp identifiers so recommendations do not point at
+// countries already represented in the archive.
 const getVisitedStampIds = (context: CompanionTravelContext) => {
   const collected = new Set<string>();
 
@@ -923,6 +966,7 @@ const getVisitedStampIds = (context: CompanionTravelContext) => {
   return collected;
 };
 
+// Adds stamp region/rarity metadata to country-name recommendations.
 const getCountryRecommendationMeta = (countryName: string) => {
   const stamp = stampById.get(normalizeCountryToStampId(countryName));
 
@@ -932,6 +976,7 @@ const getCountryRecommendationMeta = (countryName: string) => {
   };
 };
 
+// Looks for route-adjacent suggestions based on the most recent visited country.
 const getNearbySuggestionsFromRecentCountry = (
   recentCountryName: string | undefined,
   isUnvisited: (countryName: string) => boolean
@@ -948,11 +993,14 @@ const getNearbySuggestionsFromRecentCountry = (
   return nearby.filter(isUnvisited);
 };
 
+// Uses the derived travel personality to seed recommendation candidates.
 const getPersonalitySuggestionPool = (personalityLabel: string, isUnvisited: (countryName: string) => boolean) => {
   const pool = personalityDestinationHints[personalityLabel] ?? personalityDestinationHints['Reflective Explorer'];
   return pool.filter(isUnvisited);
 };
 
+// Combines nearby, personality, region, stamp-rarity, and catalog fallbacks into
+// up to three next-destination recommendations.
 const buildNextDestinationRecommendations = (context: CompanionTravelContext): DestinationRecommendation[] => {
   const visitedStampIds = getVisitedStampIds(context);
   const visitedRegionCount = new Map<string, number>();
@@ -995,6 +1043,8 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
   const picked: DestinationRecommendation[] = [];
   const recentCountryName = context.visitedCountryNames.at(-1);
   const isUnvisited = (countryName: string) => !visitedCountryNameSet.has(canonicalCountryKey(countryName));
+  // Local helper enforces de-duplication and the "unvisited only" rule for every
+  // recommendation source.
   const addRecommendation = (countryName: string, reason: string) => {
     const key = canonicalCountryKey(countryName);
 
@@ -1012,6 +1062,8 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
     });
   };
 
+  // Prefer rarer collectible stamps when multiple recommendation candidates are
+  // otherwise equally valid.
   const pickCandidate = (candidates: typeof COUNTRY_STAMPS) =>
     [...candidates]
       .sort((first, second) => {
@@ -1091,6 +1143,8 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
   return picked;
 };
 
+// Public context builder used by the companion page. It normalizes raw app data
+// into the single archive object consumed by chat, prompts, and insight cards.
 export const buildTravelCompanionContext = ({
   journalEntries,
   scrapbookPages,
@@ -1129,6 +1183,7 @@ export const buildTravelCompanionContext = ({
   };
 };
 
+// Creates deterministic writing prompts from recent archive context.
 export const buildJournalSuggestions = (context: CompanionTravelContext) => {
   const latestEntry = context.journalEntries[0];
   const latestCountry = latestEntry ? getCountryName(latestEntry.countryId) : context.visitedCountryNames[0] || 'your latest stop';
@@ -1142,6 +1197,7 @@ export const buildJournalSuggestions = (context: CompanionTravelContext) => {
   ];
 };
 
+// Creates scrapbook caption ideas, preferring real photo captions when present.
 export const buildCaptionIdeas = (context: CompanionTravelContext) => {
   const scrapbookPhotoMemories = context.memoryPool.filter((memory) => memory.source === 'scrapbook-photo').slice(0, 3);
 
@@ -1156,6 +1212,8 @@ export const buildCaptionIdeas = (context: CompanionTravelContext) => {
   return scrapbookPhotoMemories.map((memory) => `“${snippet(memory.detail, 64)}” — ${memory.title}`);
 };
 
+// Surfaces reflection cards from the newest memories, with an empty-state card
+// before the user has saved any memory content.
 export const buildTravelReflections = (context: CompanionTravelContext): TravelReflection[] => {
   const topMemories = context.memoryPool.slice(0, 3);
 
@@ -1178,6 +1236,7 @@ export const buildTravelReflections = (context: CompanionTravelContext): TravelR
   }));
 };
 
+// Builds the prompt chips shown in the companion UI.
 export const buildSuggestedPrompts = (context: CompanionTravelContext): SuggestedPrompt[] => {
   const leadCountry = context.visitedCountryNames[0] || 'my latest trip';
   const leadEntry = context.journalEntries[0]?.title || 'my last entry';
@@ -1228,6 +1287,7 @@ export const buildSuggestedPrompts = (context: CompanionTravelContext): Suggeste
   ];
 };
 
+// Builds the compact insight cards displayed beside the chat experience.
 export const buildMemoryInsights = (context: CompanionTravelContext): MemoryInsight[] => [
   {
     id: 'personality',
@@ -1251,6 +1311,7 @@ export const buildMemoryInsights = (context: CompanionTravelContext): MemoryInsi
   },
 ];
 
+// Bundles all non-chat companion surfaces in one call for the page hook.
 export const buildCompanionInsights = (context: CompanionTravelContext): CompanionInsightBundle => ({
   prompts: buildSuggestedPrompts(context),
   journalSuggestions: buildJournalSuggestions(context),
@@ -1259,6 +1320,8 @@ export const buildCompanionInsights = (context: CompanionTravelContext): Compani
   insightCards: buildMemoryInsights(context),
 });
 
+// Routes a user message to the deterministic response formatter that best
+// matches the request.
 const resolveIntent = (message: string): TravelCompanionIntent => {
   if (hasNextDestinationQuestion(message)) {
     return 'next-destination';
@@ -1281,6 +1344,7 @@ const resolveIntent = (message: string): TravelCompanionIntent => {
   return matchedIntent ?? 'general';
 };
 
+// Formats the "how many countries" answer using map ids plus resolved labels.
 const formatCountryStatsReply = (context: CompanionTravelContext) => {
   const uniqueCountryIds = Array.from(new Set(context.visitedCountryIds.map((countryId) => countryId.trim()).filter(Boolean)));
   const uniqueCountries = Array.from(new Set(context.visitedCountryNames.map((countryName) => countryName.trim()).filter(Boolean)));
@@ -1308,6 +1372,7 @@ const formatCountryStatsReply = (context: CompanionTravelContext) => {
     .join('\n');
 };
 
+// Formats next-destination recommendations into a plain chat response.
 const formatNextDestinationReply = (context: CompanionTravelContext) => {
   const recommendations = buildNextDestinationRecommendations(context);
 
@@ -1333,6 +1398,7 @@ const formatNextDestinationReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Summarizes the user's passport collection and next collectible target.
 const formatPassportReply = (context: CompanionTravelContext) => {
   const topStamps = context.passportStamps.slice(0, 4);
   const stampList = topStamps.length
@@ -1346,6 +1412,7 @@ const formatPassportReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Turns the archive summary into a concise recap response.
 const formatTripRecapReply = (context: CompanionTravelContext) => {
   const highlights = context.tripSummary.highlights.map((item) => `- ${item}`).join('\n');
 
@@ -1358,17 +1425,21 @@ const formatTripRecapReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Returns journal prompt suggestions as a chat message body.
 const formatJournalReply = (context: CompanionTravelContext) =>
   ['Here are fresh journal prompts from your travel archive:', ...buildJournalSuggestions(context).map((item) => `- ${item}`)].join('\n');
 
+// Returns memory reflections as a chat message body.
 const formatReflectionReply = (context: CompanionTravelContext) =>
   buildTravelReflections(context)
     .map((reflection) => `${reflection.title}: ${reflection.reflection} (${reflection.anchor})`)
     .join('\n');
 
+// Returns scrapbook caption suggestions as a chat message body.
 const formatCaptionReply = (context: CompanionTravelContext) =>
   ['Caption ideas pulled from your scrapbook context:', ...buildCaptionIdeas(context).map((caption) => `- ${caption}`)].join('\n');
 
+// Explains the derived travel personality and its supporting reasons.
 const formatPersonalityReply = (context: CompanionTravelContext) => {
   const reasons = context.personality.reasons.map((reason) => `- ${reason}`).join('\n');
 
@@ -1379,6 +1450,7 @@ const formatPersonalityReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Suggests lightweight organization tactics from tags and moods.
 const formatOrganizationReply = (context: CompanionTravelContext) => {
   const tags = context.topTags.slice(0, 4).join(', ') || 'no recurring tags yet';
   const moods = context.topMoods.slice(0, 3).join(', ') || 'no recurring moods yet';
@@ -1391,6 +1463,7 @@ const formatOrganizationReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Default reply when the companion cannot infer a more specific intent.
 const formatGeneralReply = (context: CompanionTravelContext) => {
   const latestMemory = context.memoryPool[0];
   const memoryLine = latestMemory ? `Latest memory anchor: ${latestMemory.title}.` : 'No saved memory yet.';
@@ -1402,18 +1475,23 @@ const formatGeneralReply = (context: CompanionTravelContext) => {
   ].join('\n');
 };
 
+// Initial assistant message after the archive context has loaded.
 export const buildWelcomeMessage = (context: CompanionTravelContext) => {
   const countries = context.visitedCountryNames.slice(0, 3).join(', ') || 'your next destination';
 
   return `I have synced with your travel archive: ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.importedTrips.length} imported trips. I am ready to help you turn ${countries} into richer stories.`;
 };
 
+// Handles the multi-turn journal-entry drafting flow before generic companion
+// replies run. This keeps draft refinement deterministic and session-aware.
 export const handleJournalEntryInteraction = (
   message: string,
   context: CompanionTravelContext,
   activeSession: JournalDraftSession | null
 ): JournalEntryInteractionResult => {
   if (activeSession) {
+    // A refinement keyword rewrites the last draft while preserving the active
+    // country/place session.
     const refinementMode = getRefinementMode(message);
 
     if (refinementMode) {
@@ -1443,6 +1521,8 @@ export const handleJournalEntryInteraction = (
   }
 
   if (activeSession && (hasPersonalizationSignal(message) || hasDraftAugmentSignal(message))) {
+    // Personalization answers are merged with earlier session details so the
+    // user can add one detail at a time.
     const parsedDetails = parsePersonalizationInput(message);
     const includeText = hasDraftAugmentSignal(message)
       ? message.replace(/^\s*(?:include|add|also include|also add)\s*/i, '').trim()
@@ -1500,6 +1580,8 @@ export const handleJournalEntryInteraction = (
     return { handled: false, nextSession: activeSession };
   }
 
+  // Starting a draft requires at least a country. Places can come from the user
+  // message or from existing memory/import hints for that country.
   const countryName = extractCountryFromMessage(message, context);
 
   if (!countryName) {
@@ -1551,6 +1633,8 @@ export const handleJournalEntryInteraction = (
   };
 };
 
+// Generates a one-shot deterministic companion reply for non-session chat
+// messages.
 export const generateCompanionReply = (message: string, context: CompanionTravelContext): CompanionChatMessage => {
   const intent = resolveIntent(message);
   const content =
@@ -1585,6 +1669,7 @@ export const generateCompanionReply = (message: string, context: CompanionTravel
   };
 };
 
+// Normalizes raw input into the same message shape used by assistant replies.
 export const buildUserMessage = (text: string): CompanionChatMessage => ({
   id: createCompanionId(),
   role: 'user',
@@ -1593,6 +1678,7 @@ export const buildUserMessage = (text: string): CompanionChatMessage => ({
   intent: 'general',
 });
 
+// Formats chat timestamps for display while tolerating invalid legacy values.
 export const formatTimestamp = (isoTimestamp: string) => {
   const date = new Date(isoTimestamp);
 

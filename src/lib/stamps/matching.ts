@@ -1,6 +1,10 @@
+// Stamp matching helper.
+// Map state may store atlas ids, ISO-like codes, display names, or aliases; this
+// helper centralizes the matching rules so map/passport/audit stay consistent.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { normalizeCountryToStampId } from '@/lib/stamps/assets';
 
+// Returns the stamp metadata matching a map country id/name/code, if one exists.
 export function findCountryStamp(countryId: string, countryName?: string, countryCode?: string) {
   const stampKeys = new Set<string>();
 

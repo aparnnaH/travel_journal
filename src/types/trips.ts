@@ -1,3 +1,6 @@
+// Trip import types.
+// These describe parsed itinerary content, imported files, and generated journal
+// draft/scrapbook outputs.
 import type { ScrapbookPageData } from '@/lib/canvas/scrapbook';
 import type { JournalEntry } from '@/types';
 

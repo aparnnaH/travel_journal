@@ -1,3 +1,5 @@
+// Loading shell for the passport route.
+// Used while the dynamic flipbook UI loads so the page does not feel blank.
 export default function PassportLoadingShell() {
   return (
     <main className="min-h-screen bg-cream px-4 py-10 text-ink">

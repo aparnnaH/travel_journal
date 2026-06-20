@@ -1,3 +1,6 @@
+// Client-side auth provider for the whole app.
+// It hydrates Supabase auth into the Zustand auth store and keeps the
+// server-readable session cookie synchronized with the browser session.
 'use client';
 
 import { useEffect } from 'react';
@@ -13,6 +16,8 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
+// Profile rows may be returned with database snake_case fields or normalized
+// camelCase fields depending on which service mapped the response.
 interface ProfileRecord {
   displayName?: string | null;
   display_name?: string | null;
@@ -22,6 +27,7 @@ interface ProfileRecord {
   created_at?: string | null;
 }
 
+// Pulls the first profile row out of the standard API response shape.
 function firstProfileRecord(response: unknown): ProfileRecord | null {
   if (!response || typeof response !== 'object') return null;
 
@@ -36,6 +42,8 @@ function firstProfileRecord(response: unknown): ProfileRecord | null {
   return profile && typeof profile === 'object' ? (profile as ProfileRecord) : null;
 }
 
+// Combines Supabase Auth identity with optional profile table details into the
+// normalized AuthUser shape used by the UI.
 async function buildAuthUser(user: User): Promise<AuthUser> {
   let profile: ProfileRecord | null = null;
 
@@ -66,6 +74,9 @@ async function buildAuthUser(user: User): Promise<AuthUser> {
   };
 }
 
+// AuthProvider runs once near the root of the client tree. It initializes auth,
+// subscribes to future auth events, and renders children only after mounting the
+// app-wide cloud sync helper.
 export default function AuthProvider({ children }: AuthProviderProps) {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
@@ -75,6 +86,8 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     let subscription: { unsubscribe?: () => void } | null = null;
 
+    // Initial hydration reads any existing Supabase browser session and mirrors
+    // it into the app cookie so API routes can authenticate immediately.
     const initialize = async () => {
       setLoading(true);
       try {
@@ -106,6 +119,8 @@ export default function AuthProvider({ children }: AuthProviderProps) {
 
     try {
       const supabase = getSupabaseClient();
+      // Supabase emits auth events when the browser session changes. The store
+      // and HTTP-only cookie must be updated together to avoid split-brain auth.
       const { data: authListener } = supabase.auth.onAuthStateChange(
         async (event, session) => {
           const user = session?.user;

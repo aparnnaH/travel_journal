@@ -1,3 +1,6 @@
+// Landing-page hero section.
+// Presents the primary product promise and routes users toward the map-first
+// experience.
 'use client';
 
 import { motion } from 'framer-motion';
@@ -6,6 +9,7 @@ import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { LandingWorldMap } from './LandingWorldMap';
 
+// Renders the first viewport of the public home page.
 export function HeroSection() {
   const user = useAuthStore((state) => state.user);
   const ctaHref = user ? '/dashboard' : '/map';

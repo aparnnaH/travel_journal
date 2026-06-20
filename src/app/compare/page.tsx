@@ -1,3 +1,6 @@
+// Travel Audit page.
+// Compares countries marked on the map with passport stamp metadata to show
+// coverage, missing matches, and still-locked stamp goals.
 'use client';
 
 import React, { useEffect, useMemo } from 'react';
@@ -23,6 +26,7 @@ import type { CountryStamp } from '@/types/stamps';
 
 const previewLimit = 8;
 
+// Protected page that derives all audit data from existing map and stamp systems.
 export default function ComparePage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -32,16 +36,21 @@ export default function ComparePage() {
   const router = useRouter();
 
   useEffect(() => {
+    // Client-side guard mirrors the pattern used by other authenticated pages.
     if (!isLoading && !user) {
       router.replace('/login');
     }
   }, [router, user, isLoading]);
 
+  // The comparison helper centralizes country/stamp matching so this page stays
+  // presentational.
   const comparison = useMemo(
     () => comparePassportStampsToMap({ countryLabels, visitedCountries }),
     [countryLabels, visitedCountries]
   );
 
+  // City pins are stored in the map store by country, so the audit totals them
+  // across all countries.
   const cityPinCount = useMemo(
     () => Object.values(countryCities ?? {}).reduce((total, cities) => total + cities.length, 0),
     [countryCities]
@@ -243,6 +252,7 @@ export default function ComparePage() {
   );
 }
 
+// Small metric card used for audit summary stats.
 function MetricCard({
   detail,
   icon: Icon,
@@ -268,6 +278,7 @@ function MetricCard({
   );
 }
 
+// Reusable call-to-action row for follow-up audit steps.
 function ActionRow({
   description,
   icon: Icon,
@@ -297,6 +308,7 @@ function ActionRow({
   );
 }
 
+// Row for a locked stamp goal the user can inspect in the passport.
 function StampGoalRow({ onClick, stamp }: { onClick: () => void; stamp: CountryStamp }) {
   return (
     <button
@@ -313,6 +325,7 @@ function StampGoalRow({ onClick, stamp }: { onClick: () => void; stamp: CountryS
   );
 }
 
+// Shared empty-state block for audit sections with no items.
 function EmptyState({
   compact = false,
   description,

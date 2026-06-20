@@ -1,3 +1,6 @@
+// Server route for OpenAI-backed companion replies.
+// The client sends an already-bounded archive snapshot; this route builds a
+// grounded prompt and returns a concise assistant reply.
 import { NextRequest, NextResponse } from 'next/server';
 import type { CompanionArchiveSnapshot, CompanionChatRole } from '@/lib/ai/types';
 
@@ -33,6 +36,7 @@ type CompanionRoutePayload = {
 
 export const runtime = 'nodejs';
 
+// Keeps prompt sections bounded before sending them to the model.
 const trimText = (value: string, maxLength: number) => {
   const clean = value.replace(/\s+/g, ' ').trim();
 
@@ -43,6 +47,7 @@ const trimText = (value: string, maxLength: number) => {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 };
 
+// Supports the Responses API output shape by collecting text parts.
 const extractOutputText = (payload: OpenAIResponsePayload) => {
   if (payload.output_text && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -58,6 +63,7 @@ const extractOutputText = (payload: OpenAIResponsePayload) => {
   return textParts.join('\n').trim();
 };
 
+// Converts the archive snapshot into readable prompt context.
 const buildArchivePrompt = (archive: CompanionArchiveSnapshot) =>
   [
     `Counts: ${archive.counts.visitedCountries} visited countries, ${archive.counts.journalEntries} journal entries, ${archive.counts.scrapbookPages} scrapbook pages, ${archive.counts.importedTrips} imported trips, ${archive.counts.passportStamps} passport stamps.`,
@@ -97,6 +103,7 @@ const buildArchivePrompt = (archive: CompanionArchiveSnapshot) =>
       .join('\n') || '- none'}`,
   ].join('\n\n');
 
+// Includes a short recent conversation history so replies stay coherent.
 const buildHistoryPrompt = (history: CompanionRoutePayload['history']) => {
   const safeHistory =
     history
@@ -122,6 +129,7 @@ const buildActiveDraftPrompt = (activeDraft: CompanionRoutePayload['activeJourna
   ].join('\n');
 };
 
+// Removes common formatting wrappers from model responses.
 const stripReplyWrapper = (value: string) =>
   value
     .replace(/^```(?:text|markdown)?\s*/i, '')
@@ -129,6 +137,8 @@ const stripReplyWrapper = (value: string) =>
     .replace(/^assistant:\s*/i, '')
     .trim();
 
+// Calls OpenAI's Responses API with archive, history, draft, and latest message
+// context. This stays server-side because it uses OPENAI_API_KEY.
 const callOpenAICompanion = async (params: {
   apiKey: string;
   model: string;
@@ -188,6 +198,7 @@ const callOpenAICompanion = async (params: {
   return reply ? stripReplyWrapper(reply) : null;
 };
 
+// Handles one companion chat request.
 export async function POST(request: NextRequest) {
   const payload = (await request.json()) as CompanionRoutePayload;
   const message = String(payload.message ?? '').trim();

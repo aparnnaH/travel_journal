@@ -1,3 +1,6 @@
+// Friend request mutation route.
+// Handles sending requests and changing pending relationships while enforcing
+// duplicate, self-request, and ownership rules on the server.
 import { NextRequest, NextResponse } from 'next/server';
 import {
   findExistingFriendship,
@@ -16,6 +19,8 @@ type RequestBody = {
   action?: FriendRequestAction;
 };
 
+// Sends a friend request by target email, or auto-accepts an incoming pending
+// request from that same traveler.
 export async function POST(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 
@@ -90,6 +95,8 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Accepts or blocks an existing friendship request. The query guards ensure only
+// valid participants can change the relationship.
 export async function PATCH(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 

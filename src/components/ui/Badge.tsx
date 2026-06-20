@@ -1,3 +1,5 @@
+// Shared badge primitive.
+// Used for small status/category labels throughout the app.
 'use client';
 
 import React from 'react';
@@ -7,6 +9,7 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: 'default' | 'gold' | 'outline';
 }
 
+// Forwarding refs keeps badges compatible with tooltip/focus wrappers.
 const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
   ({ variant = 'default', className, children, ...props }, ref) => {
     const variants = {

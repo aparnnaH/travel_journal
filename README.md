@@ -78,7 +78,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 
 - Travel-memory-aware companion page.
 - Can use journal entries, scrapbook notes/photos, imported trips, map context, and passport context.
-- Optional server-side OpenAI polishing endpoint for draft refinement.
+- Optional server-side OpenAI companion endpoint for archive-grounded replies and draft refinement.
 - Drafts can be saved back to the journal flow.
 
 ## Tech Stack
@@ -130,7 +130,12 @@ src/
 └── utils/                    # Shared utilities
 
 supabase/
-└── friends.sql               # Friendships, journal shares, comments, and RLS policies
+├── friends.sql               # Friendships, journal shares, comments, and RLS policies
+├── map_states.sql            # Cloud-synced scratch-map state
+├── canva_connections.sql     # Encrypted Canva OAuth token storage
+├── canva_folders.sql         # Per-user Canva folder metadata
+├── canva_journal_entries.sql # Canva metadata columns for journal entries
+└── journal_trip_dates.sql    # Optional trip date columns for journal entries
 ```
 
 ## Getting Started
@@ -155,29 +160,34 @@ Copy the example file and fill in the values:
 cp .env.local.example .env.local
 ```
 
+Keep real values in `.env.local` or your deployment provider. Do not commit
+actual API keys, service-role keys, OAuth secrets, redirect secrets, or token
+encryption keys.
+
 Required for the app:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=<your-supabase-project-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-server-only-service-role-key>
 ```
 
-Optional for AI journal polishing:
+Optional for AI companion replies and journal polishing:
 
 ```env
-OPENAI_API_KEY=
+OPENAI_API_KEY=<your-openai-api-key>
+OPENAI_COMPANION_MODEL=gpt-5.2
 OPENAI_POLISH_MODEL=gpt-5.2
 ```
 
 Optional for Canva journal design import/export:
 
 ```env
-CANVA_CLIENT_ID=
-CANVA_CLIENT_SECRET=
-CANVA_REDIRECT_URI=
-CANVA_RETURN_URL=
-CANVA_TOKEN_ENCRYPTION_KEY=
+CANVA_CLIENT_ID=<your-canva-client-id>
+CANVA_CLIENT_SECRET=<your-canva-client-secret>
+CANVA_REDIRECT_URI=<your-canva-oauth-callback-url>
+CANVA_RETURN_URL=<your-app-journal-return-url>
+CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 ```
 
 The example file still includes Instagram variables, but the current active app routes do not require them for the core map, journal, passport, friends, profile, dashboard, or companion flows.
@@ -244,31 +254,37 @@ npm run build    # Create a production build
 npm run start    # Start the production server
 ```
 
-## Environment Variables
+## Environment Variable Reference
 
 ```env
 # Required
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+NEXT_PUBLIC_SUPABASE_URL=<your-supabase-project-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<your-server-only-service-role-key>
 
-# Optional AI companion polish endpoint
-OPENAI_API_KEY=
+# Optional AI companion response and polish endpoints
+OPENAI_API_KEY=<your-openai-api-key>
+OPENAI_COMPANION_MODEL=gpt-5.2
 OPENAI_POLISH_MODEL=gpt-5.2
 
 # Optional Canva journal design import/export
-CANVA_CLIENT_ID=
-CANVA_CLIENT_SECRET=
-CANVA_REDIRECT_URI=
-CANVA_RETURN_URL=
-CANVA_TOKEN_ENCRYPTION_KEY=
+CANVA_CLIENT_ID=<your-canva-client-id>
+CANVA_CLIENT_SECRET=<your-canva-client-secret>
+CANVA_REDIRECT_URI=<your-canva-oauth-callback-url>
+CANVA_RETURN_URL=<your-app-journal-return-url>
+CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 
 # Present in .env.local.example, not required by current core routes
-NEXT_PUBLIC_INSTAGRAM_APP_ID=
-INSTAGRAM_APP_SECRET=
-NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=
-NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
+INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
+NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-instagram-redirect-url>
+NEXT_PUBLIC_APP_URL=<your-public-app-url>
 ```
+
+Public `NEXT_PUBLIC_*` values are exposed to the browser by design. Server-only
+values such as `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`,
+`CANVA_CLIENT_SECRET`, `CANVA_TOKEN_ENCRYPTION_KEY`, and
+`INSTAGRAM_APP_SECRET` must stay in local or deployment secrets.
 
 ## API Routes
 
@@ -280,6 +296,7 @@ NEXT_PUBLIC_APP_URL=
 - `/api/friends` - friendship summary
 - `/api/friends/request` - create friend requests
 - `/api/friends/[friendshipId]` - accept, block, or remove friendships
+- `/api/ai/companion` - optional AI endpoint for archive-grounded companion replies
 - `/api/ai/polish` - optional AI polish endpoint for companion drafts
 
 ## Notes for Future Work

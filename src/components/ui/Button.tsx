@@ -1,3 +1,6 @@
+// Shared button primitive.
+// Centralizes variants, sizing, disabled/loading behavior, and accessible button
+// styling used across product pages.
 'use client';
 
 import React from 'react';
@@ -10,6 +13,8 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
 }
 
+// Forwarding refs lets forms, dialogs, and focus-management code target the
+// underlying button element.
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {

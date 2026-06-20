@@ -1,3 +1,6 @@
+// Scrapbook canvas data model and helpers.
+// The journal page owns interaction state, while these types/factories define
+// the stable saved shape for pages, photos, notes, stickers, decorations, and drawings.
 export type ScrapbookBaseItem = {
   id: string;
   x: number;
@@ -140,10 +143,14 @@ export const decorationOptions: Array<{ kind: ScrapbookDecorationKind; label: st
   { kind: 'sticker', label: 'Stamp', color: '#c9dca8' },
 ];
 
+// Keeps drag/resize values inside the canvas bounds.
 export const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
+// Maintains the photo card aspect ratio as width changes.
 export const getPhotoHeight = (width: number) => Math.round(width * 1.3);
 
+// Estimates note height from text length so imported trip notes have enough room
+// without overflowing the board.
 export const getNoteHeightForText = (text: string, width = NOTE_WIDTH) => {
   const writableWidth = Math.max(120, width - 28);
   const charactersPerLine = Math.max(12, Math.floor(writableWidth / 11));
@@ -155,6 +162,8 @@ export const getNoteHeightForText = (text: string, width = NOTE_WIDTH) => {
   return clamp(76 + visualLines * 30, MIN_NOTE_HEIGHT, MAX_NOTE_HEIGHT);
 };
 
+// Creates ids for local scrapbook items. These only need to be unique within the
+// user's saved scrapbook document.
 export const createId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
@@ -163,6 +172,7 @@ export const createId = () => {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+// Creates a blank scrapbook page with a rotating default theme.
 export const createScrapbookPage = (pageNumber: number, id = createId()): ScrapbookPageData => ({
   id,
   title: `Page ${pageNumber}`,
@@ -173,6 +183,7 @@ export const createScrapbookPage = (pageNumber: number, id = createId()): Scrapb
   photoTray: [],
 });
 
+// Normalizes older saved pages so missing fields get safe defaults.
 export const normalizeScrapbookPage = (
   page: Partial<ScrapbookPageData>,
   pageNumber: number
@@ -186,6 +197,7 @@ export const normalizeScrapbookPage = (
   photoTray: Array.isArray(page.photoTray) ? page.photoTray : [],
 });
 
+// Human-readable label used by selection/tooling UI.
 export const getScrapbookItemLabel = (item: ScrapbookItem) => {
   if (item.type === 'photo') {
     return `Photo ${item.caption}`;

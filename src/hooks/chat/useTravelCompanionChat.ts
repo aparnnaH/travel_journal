@@ -1,5 +1,8 @@
 'use client';
 
+// Chat behavior hook for the AI companion.
+// It owns the message list, smart-response calls, local fallbacks, journal draft
+// session state, polishing, clearing, and saving generated drafts to the journal.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CompanionChatMessage, CompanionTravelContext } from '@/lib/ai/types';
 import { createJournalEntry } from '@/lib/journalService';
@@ -18,6 +21,8 @@ type UseTravelCompanionChatInput = {
   userId?: string;
 };
 
+// Replaces the draft block inside an assistant response after the polish endpoint
+// improves the generated text.
 const applyPolishedDraftToResponse = (
   response: CompanionChatMessage,
   originalDraft: string,
@@ -40,6 +45,7 @@ const applyPolishedDraftToResponse = (
   };
 };
 
+// Required mentions help the polish route preserve user-provided travel details.
 const getRequiredMentions = (session: JournalDraftSession | null) => {
   if (!session?.personalDetails) {
     return [];
@@ -62,6 +68,7 @@ const normalizeForCompare = (value: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+// Detects user messages that should be polished as writing support.
 const hasWritingSupportRequest = (message: string) => {
   const normalized = normalizeForCompare(message);
 
@@ -76,6 +83,7 @@ const hasWritingSupportRequest = (message: string) => {
   );
 };
 
+// Optionally improves assistant writing while leaving non-writing replies alone.
 const polishWritingResponse = async (
   message: string,
   responseContent: string,
@@ -173,6 +181,7 @@ const buildJournalSessionFromSmartReply = (
   };
 };
 
+// Public hook consumed by TravelCompanionPage.
 export function useTravelCompanionChat({ context, userId }: UseTravelCompanionChatInput) {
   const [messages, setMessages] = useState<CompanionChatMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
@@ -197,6 +206,8 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
     ]);
   }, [context]);
 
+  // Sends a user message through smart AI, journal-specific local handling, and
+  // fallback response generation in that order.
   const sendMessage = useCallback(
     async (rawMessage: string) => {
       if (!context) {
@@ -297,6 +308,7 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
     initializedRef.current = true;
   }, []);
 
+  // Persists the active AI-generated journal draft as a normal journal entry.
   const saveJournalDraft = useCallback(async () => {
     if (!context || !userId || !journalSession?.lastDraft) {
       setMessages((current) => [

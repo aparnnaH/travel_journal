@@ -1,3 +1,6 @@
+// Global auth UI state.
+// Supabase owns the actual session; this Zustand store gives React components a
+// small normalized view of the current user and loading/error status.
 import { create } from 'zustand';
 import type { AuthUser } from '@/types';
 
@@ -11,6 +14,9 @@ interface AuthStore {
   logout: () => void;
 }
 
+// The auth store deliberately stays tiny. AuthProvider is responsible for
+// populating it; pages/components should read it instead of querying Supabase
+// just to decide whether a user is signed in.
 export const useAuthStore = create<AuthStore>((set) => ({
   user: null,
   isLoading: true,

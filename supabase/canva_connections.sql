@@ -1,3 +1,6 @@
+-- Encrypted Canva OAuth connection per app user.
+-- Server route handlers encrypt/decrypt tokens; clients should only see
+-- connection status/metadata.
 create table if not exists public.canva_connections (
   user_id uuid primary key references auth.users(id) on delete cascade,
   canva_user_id text,
@@ -12,6 +15,7 @@ create table if not exists public.canva_connections (
 
 alter table public.canva_connections enable row level security;
 
+-- Users can view/delete their own Canva connection metadata.
 drop policy if exists "Users can view their Canva connection" on public.canva_connections;
 create policy "Users can view their Canva connection"
   on public.canva_connections
@@ -26,4 +30,3 @@ create policy "Users can delete their Canva connection"
 
 create index if not exists canva_connections_expires_at_idx
   on public.canva_connections (expires_at);
-

@@ -1,3 +1,6 @@
+// Client-side service for smart companion replies.
+// It condenses the large in-memory travel context into a bounded archive snapshot
+// before sending it to the server AI route.
 import type { CompanionArchiveSnapshot, CompanionChatMessage, CompanionTravelContext } from '@/lib/ai/types';
 
 type SmartCompanionRequest = {
@@ -11,6 +14,7 @@ type SmartCompanionRequest = {
   } | null;
 };
 
+// Keeps prompt payloads small enough for the server model request.
 const trimText = (value: string, maxLength: number) => {
   const clean = value.replace(/\s+/g, ' ').trim();
 
@@ -21,9 +25,11 @@ const trimText = (value: string, maxLength: number) => {
   return `${clean.slice(0, maxLength - 1).trim()}…`;
 };
 
+// De-duplicates lists before they become prompt context.
 const uniqueList = (items: string[], limit: number) =>
   Array.from(new Set(items.map((item) => item.trim()).filter(Boolean))).slice(0, limit);
 
+// Builds the server-safe summary of the user's travel archive.
 const buildArchiveSnapshot = (context: CompanionTravelContext): CompanionArchiveSnapshot => {
   const countryNameById = new Map(
     context.visitedCountryIds.map((countryId, index) => [countryId, context.visitedCountryNames[index] || countryId])
@@ -69,6 +75,8 @@ const buildArchiveSnapshot = (context: CompanionTravelContext): CompanionArchive
   };
 };
 
+// Calls /api/ai/companion and returns null when the smart backend is unavailable
+// so the chat hook can fall back to local responses.
 export async function generateSmartCompanionReply({
   message,
   context,

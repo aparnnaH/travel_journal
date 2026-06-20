@@ -1,10 +1,14 @@
 'use client';
 
+// Decorative stamp overlay used by scrapbook sticker items.
+// This keeps stamp-specific styling separate from the generic sticker renderer.
 type PassportStampOverlayProps = {
   label: string;
   color: string;
 };
 
+// Renders a label inside a dashed circular border so passport-style decorations
+// read differently from pins, tape, tickets, and paper notes.
 export default function PassportStampOverlay({ label, color }: PassportStampOverlayProps) {
   return (
     <div

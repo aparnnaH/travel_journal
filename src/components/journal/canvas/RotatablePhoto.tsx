@@ -1,5 +1,8 @@
 'use client';
 
+// Visual renderer for a photo scrapbook item.
+// It displays the uploaded image, preserves the "paper photo" treatment, and
+// exposes the caption field without owning the full canvas state.
 import React from 'react';
 import Image from 'next/image';
 import type { ScrapbookPhotoItem } from '@/lib/canvas/scrapbook';
@@ -10,7 +13,11 @@ type RotatablePhotoProps = {
   onCaptionChange: (itemId: string, caption: string) => void;
 };
 
+// Renders the photo content inside the positioned canvas wrapper. Caption edits
+// flow upward so the scrapbook model remains the single source of truth.
 export default function RotatablePhoto({ item, selected, onCaptionChange }: RotatablePhotoProps) {
+  // Reserve room for the caption strip so resizing a photo does not cause the
+  // image area to collapse below a usable minimum height.
   const mediaHeight = Math.max(90, item.height - 58);
 
   return (

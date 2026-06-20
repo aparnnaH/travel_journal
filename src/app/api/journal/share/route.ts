@@ -1,3 +1,5 @@
+// Journal sharing route.
+// Owners can inspect and replace the friend recipient list for a journal entry.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
 import { getOwnedJournalEntry, loadJournalShareRecipients, replaceJournalShares } from '@/lib/server/journalSharing';
@@ -9,6 +11,7 @@ type ShareRequestBody = {
   permission?: JournalSharePermission;
 };
 
+// Loads current share recipients for an owned journal entry.
 export async function GET(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 
@@ -36,6 +39,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Replaces share recipients. The helper checks that every recipient is an
+// accepted friend before writing journal_shares rows.
 export async function POST(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 

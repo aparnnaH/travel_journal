@@ -1,3 +1,5 @@
+// Import-generated trip summary block.
+// Provides a concise summary of parsed trip content inside the import modal.
 'use client';
 
 import { motion } from 'framer-motion';
@@ -8,6 +10,7 @@ type AITripSummaryProps = {
   isLoading?: boolean;
 };
 
+// Renders a summary of the parsed trip draft.
 export default function AITripSummary({ trip, isLoading = false }: AITripSummaryProps) {
   if (isLoading) {
     return (

@@ -1,3 +1,6 @@
+// Server route for journal-draft polishing.
+// It improves generated writing while preserving required places/details and
+// gracefully falls back when OpenAI is unavailable.
 import { NextRequest, NextResponse } from 'next/server';
 
 type OpenAIResponseContentItem = {
@@ -64,6 +67,7 @@ const STOP_WORDS = new Set([
   'because',
 ]);
 
+// Minimal deterministic cleanup used when the model is unavailable.
 const basicPolishFallback = (draft: string) =>
   draft
     .replace(/\bdears\b/gi, 'deer')
@@ -75,6 +79,7 @@ const basicPolishFallback = (draft: string) =>
     .replace(/\s+,/g, ',')
     .trim();
 
+// Separates an optional markdown heading from the draft body.
 const extractDraftBody = (draft: string) => {
   const lines = draft.split('\n');
   const headerIndex = lines.findIndex((line) => JOURNAL_LINE_PATTERN.test(line.trim()));
@@ -92,6 +97,7 @@ const extractDraftBody = (draft: string) => {
   return { heading, body };
 };
 
+// Reattaches the original heading after polishing only the body text.
 const reconstructDraft = (heading: string, body: string) => {
   if (!heading) {
     return body;
@@ -100,6 +106,7 @@ const reconstructDraft = (heading: string, body: string) => {
   return [heading, '', body].join('\n').trim();
 };
 
+// Supports the Responses API output shape by collecting text parts.
 const extractOutputText = (payload: OpenAIResponsePayload) => {
   if (payload.output_text && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -128,6 +135,7 @@ const extractKeywords = (value: string) =>
     .map((token) => token.trim())
     .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
 
+// Checks whether a polished candidate still includes a required user detail.
 const mentionIsCovered = (candidate: string, mention: string) => {
   const candidateNorm = normalizeForCompare(candidate);
   const mentionNorm = normalizeForCompare(mention);
@@ -179,6 +187,8 @@ const stripHeadingFromBody = (value: string) => {
   return lines.slice(headingIndex + 1).join('\n').trim();
 };
 
+// Scores candidate outputs so the route can reject model responses that drop
+// required details or get less readable.
 const scoreDraftCandidate = (candidateBody: string, originalBody: string, requiredMentions: string[]) => {
   const cleanCandidate = candidateBody.trim();
   if (!cleanCandidate) {
@@ -215,6 +225,7 @@ const scoreDraftCandidate = (candidateBody: string, originalBody: string, requir
   return score;
 };
 
+// Builds the user prompt with required details and the latest user note.
 const buildPolishPrompt = (input: OpenAIPolishInput) => {
   const mentionBlock = input.requiredMentions.length
     ? `Required details that must stay in the final draft:\n${input.requiredMentions.map((item) => `- ${item}`).join('\n')}\n\n`
@@ -224,6 +235,7 @@ const buildPolishPrompt = (input: OpenAIPolishInput) => {
   return `${mentionBlock}${userNoteBlock}Journal draft body:\n${input.body}`;
 };
 
+// Shared OpenAI text call for the polish prompts.
 const callOpenAIText = async (params: {
   apiKey: string;
   model: string;
@@ -261,6 +273,7 @@ const callOpenAIText = async (params: {
   return text ? stripHeadingFromBody(text) : null;
 };
 
+// Runs two polish prompts in parallel and keeps the better-scoring output.
 const polishWithOpenAI = async (input: OpenAIPolishInput) => {
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_POLISH_MODEL || 'gpt-5.2';
@@ -317,6 +330,7 @@ const polishWithOpenAI = async (input: OpenAIPolishInput) => {
   };
 };
 
+// Handles one polish request from the companion chat hook.
 export async function POST(request: NextRequest) {
   const payload = (await request.json()) as PolishRequestPayload;
   const draft = String(payload.draft ?? '').trim();

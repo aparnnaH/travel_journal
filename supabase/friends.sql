@@ -1,3 +1,6 @@
+-- Social graph and journal-sharing schema.
+-- Friendships connect profile rows; journal shares and comments use those
+-- relationships to grant access to shared memories.
 create table if not exists public.friendships (
   id uuid primary key default gen_random_uuid(),
   requester_id uuid not null references public.profiles(id) on delete cascade,
@@ -21,6 +24,7 @@ create index if not exists friendships_status_idx on public.friendships(status);
 
 alter table public.friendships enable row level security;
 
+-- Friendship RLS lets either participant see/change their relationship.
 drop policy if exists "Users can view their friendships" on public.friendships;
 create policy "Users can view their friendships"
   on public.friendships for select
@@ -42,6 +46,7 @@ create policy "Users can delete their friendships"
   on public.friendships for delete
   using (auth.uid() = requester_id or auth.uid() = addressee_id);
 
+-- One share row grants one recipient access to one journal entry.
 create table if not exists public.journal_shares (
   id uuid primary key default gen_random_uuid(),
   journal_entry_id uuid not null references public.journal_entries(id) on delete cascade,
@@ -61,6 +66,7 @@ create index if not exists journal_shares_entry_idx on public.journal_shares(jou
 
 alter table public.journal_shares enable row level security;
 
+-- Share RLS lets owners and recipients see rows, while only owners manage them.
 drop policy if exists "Users can view journal shares they participate in" on public.journal_shares;
 create policy "Users can view journal shares they participate in"
   on public.journal_shares for select
@@ -82,6 +88,7 @@ create policy "Users can delete journal shares they created"
   on public.journal_shares for delete
   using (auth.uid() = shared_by);
 
+-- Comment thread for owned or shared journal entries.
 create table if not exists public.journal_share_comments (
   id uuid primary key default gen_random_uuid(),
   journal_entry_id uuid not null references public.journal_entries(id) on delete cascade,
@@ -97,6 +104,8 @@ create index if not exists journal_share_comments_created_idx on public.journal_
 
 alter table public.journal_share_comments enable row level security;
 
+-- Comment RLS mirrors journal access: owners and recipients can read/comment,
+-- while comment authors can delete their own comments.
 drop policy if exists "Users can view comments on accessible journal entries" on public.journal_share_comments;
 create policy "Users can view comments on accessible journal entries"
   on public.journal_share_comments for select

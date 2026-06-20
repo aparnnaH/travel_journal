@@ -1,3 +1,6 @@
+// Server-only Supabase admin client.
+// This uses the service role key, so it can bypass RLS and must only be used
+// after a route has validated the user's session and ownership/access rules.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 type SupabaseTable = {
@@ -19,6 +22,8 @@ type SupabaseDatabase = {
 
 let adminClient: SupabaseClient<SupabaseDatabase> | null = null;
 
+// Lazily creates a singleton admin client. Keeping this lazy avoids build-time
+// env validation failures while still surfacing a clear runtime error.
 export function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

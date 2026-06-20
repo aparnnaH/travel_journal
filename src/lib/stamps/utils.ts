@@ -1,5 +1,9 @@
+// Shared stamp utility helpers.
+// These presentation-focused helpers keep visual calculations out of large
+// passport and stamp components.
 import { CountryStamp, StampShape } from '@/types/stamps';
 
+// Converts a semantic stamp shape into a CSS clip-path.
 export const getStampClipPath = (shape: StampShape): string => {
   const clipPaths: Record<StampShape, string> = {
     square: 'none',
@@ -12,6 +16,7 @@ export const getStampClipPath = (shape: StampShape): string => {
   return clipPaths[shape];
 };
 
+// Builds a border style object from stamp metadata.
 export const getStampBorderStyle = (stamp: CountryStamp): {
   borderStyle: string;
   borderWidth: string;
@@ -48,6 +53,7 @@ export const getStampBorderStyle = (stamp: CountryStamp): {
   return borderConfigs[stamp.border_style];
 };
 
+// Computes the user's passport completion percentage safely.
 export const getCompletionPercentage = (unlockedCount: number, totalCount: number): number => {
   if (totalCount === 0) {
     return 0;
@@ -56,6 +62,7 @@ export const getCompletionPercentage = (unlockedCount: number, totalCount: numbe
   return Math.round((unlockedCount / totalCount) * 100);
 };
 
+// Groups stamps by region for the flipbook/archive layout.
 export const sortStampsByRegion = (stamps: CountryStamp[]): Record<string, CountryStamp[]> => {
   return stamps.reduce(
     (acc, stamp) => {
@@ -69,5 +76,6 @@ export const sortStampsByRegion = (stamps: CountryStamp[]): Record<string, Count
   );
 };
 
+// Creates a Set of all stamp ids for quick membership checks.
 export const getAvailableStampIds = (stamps: CountryStamp[]): Set<string> =>
   new Set(stamps.map((stamp) => stamp.id));

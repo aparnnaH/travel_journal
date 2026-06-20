@@ -1,3 +1,6 @@
+// Interactive world atlas renderer.
+// This component draws the TopoJSON map, reports country metadata/neighbor
+// relationships to the page, and owns map-specific hover/click/zoom behavior.
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -71,6 +74,7 @@ type MapPosition = {
   zoom: number;
 };
 
+// Extracts a stable id from react-simple-maps geography objects.
 function getCountryIso(geo: AtlasGeography) {
   const iso = geo.properties?.ISO_A2 || geo.properties?.iso_a2 || geo.properties?.ISO_A3;
   if (iso) return String(iso).toUpperCase();
@@ -80,6 +84,7 @@ function getCountryIso(geo: AtlasGeography) {
   return '';
 }
 
+// Reads the display name from geography properties with an id fallback.
 function getCountryName(geo: AtlasGeography) {
   const name = geo.properties?.name;
   return name ? String(name) : undefined;
@@ -96,6 +101,8 @@ function getTopologyCountryName(geometry: TopoGeometry) {
   return name ? String(name) : undefined;
 }
 
+// TopoJSON arcs are shared by neighboring countries; this records which
+// geometries own each arc.
 function addArcOwner(arcIndex: number, geometryIndex: number, arcOwners: Map<number, number[]>) {
   const normalizedArcIndex = arcIndex < 0 ? ~arcIndex : arcIndex;
   const owners = arcOwners.get(normalizedArcIndex);
@@ -128,6 +135,8 @@ function collectGeometryArcOwners(geometry: TopoGeometry, geometryIndex: number,
   collectArcOwners(geometry.arcs, geometryIndex, arcOwners);
 }
 
+// Builds adjacency data from shared TopoJSON arcs so page-level color logic can
+// avoid giving neighboring visited countries the same color.
 function buildCountryNeighborMap(topology: Topology) {
   const collection = topology.objects[Object.keys(topology.objects)[0]];
   const geometries = collection?.geometries ?? [];
@@ -157,6 +166,7 @@ function buildCountryNeighborMap(topology: Topology) {
   );
 }
 
+// Converts TopoJSON geometries into the lightweight references the page needs.
 function buildAtlasCountries(topology: Topology): AtlasCountryReference[] {
   const collection = topology.objects[Object.keys(topology.objects)[0]];
   const geometries = collection?.geometries ?? [];
@@ -173,10 +183,12 @@ function buildAtlasCountries(topology: Topology): AtlasCountryReference[] {
     .filter((country): country is AtlasCountryReference => country !== null);
 }
 
+// Keeps zoom controls inside the supported map range.
 function clampMapZoom(zoom: number) {
   return Math.min(maxMapZoom, Math.max(minMapZoom, zoom));
 }
 
+// Renders the zoomable atlas and forwards country clicks to the map page.
 export default function WorldAtlas({
   visitedCountries,
   countryColors,
@@ -190,6 +202,8 @@ export default function WorldAtlas({
   const [mapPosition, setMapPosition] = useState<MapPosition>(normalMapPosition);
 
   useEffect(() => {
+    // Fetches the same world-atlas TopoJSON used for rendering so neighbor and
+    // country-reference data match the visible map.
     let isMounted = true;
 
     const loadCountryNeighbors = async () => {

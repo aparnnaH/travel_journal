@@ -1,3 +1,5 @@
+// Decorative gradient card primitive.
+// Used where a card needs a richer visual treatment than the base Card.
 'use client';
 
 import * as React from 'react';
@@ -6,6 +8,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { cn } from '@/utils/cn';
 
+// class-variance-authority keeps gradient variants declarative and typed.
 const cardVariants = cva(
   'relative flex h-full w-full flex-col justify-between overflow-hidden rounded-2xl p-8 shadow-sm transition-shadow duration-300 hover:shadow-lg',
   {

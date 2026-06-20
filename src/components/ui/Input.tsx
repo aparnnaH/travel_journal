@@ -1,3 +1,5 @@
+// Shared input primitive.
+// Provides consistent labels, helper text, error text, and focus styling.
 'use client';
 
 import React from 'react';
@@ -9,6 +11,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   helperText?: string;
 }
 
+// Forwarding refs lets callers focus the underlying input when needed.
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, label, error, helperText, id, ...props }, ref) => {
     const generatedId = React.useId();

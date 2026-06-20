@@ -1,3 +1,6 @@
+// Legacy/simple landing header component.
+// The root page currently uses AppHeader, but this remains available for landing
+// feature composition.
 'use client';
 
 import Link from 'next/link';
@@ -8,6 +11,7 @@ interface HeaderProps {
   isScrolled?: boolean;
 }
 
+// Renders public navigation for landing-only contexts.
 export function Header({ isScrolled = false }: HeaderProps) {
   return (
     <header

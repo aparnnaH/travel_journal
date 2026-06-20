@@ -1,5 +1,8 @@
 'use client';
 
+// Motion-enabled wrapper for one scrapbook canvas item.
+// The parent canvas supplies drag/selection behavior while this component keeps
+// the shared positioning and animation style consistent across item types.
 import React from 'react';
 import { motion } from 'framer-motion';
 import type { ScrapbookItem } from '@/lib/canvas/scrapbook';
@@ -16,6 +19,9 @@ type DraggableMemoryCardProps = {
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>, itemId: string) => void;
 };
 
+// Places an item absolutely on the scrapbook canvas and delegates input events
+// back to the canvas controller. Framer Motion handles the small selection and
+// hover transitions without changing the saved scrapbook coordinates.
 export default function DraggableMemoryCard({
   item,
   selected,

@@ -1,5 +1,8 @@
 'use client';
 
+// Zustand store for local scrapbook editor preferences.
+// These values are UI controls rather than saved journal content, so keeping
+// them in a small client store avoids pushing editor-only state through props.
 import { create } from 'zustand';
 
 type JournalTool = 'select' | 'draw' | 'photos' | 'stickers';
@@ -15,6 +18,9 @@ type JournalLayoutState = {
   toggleSnapToGrid: () => void;
 };
 
+// Centralizes the active tool and canvas display settings used by journal
+// layout controls. Zustand provides a lightweight shared state pattern for
+// client components that are not naturally parent/child siblings.
 export const useJournalLayoutStore = create<JournalLayoutState>((set) => ({
   activeTool: 'select',
   canvasZoom: 1,

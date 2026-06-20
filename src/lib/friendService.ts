@@ -1,3 +1,6 @@
+// Client-side Travel Circle API wrapper.
+// Pages use this service to avoid duplicating response parsing and error
+// handling around the friends route handlers.
 import type { FriendRequestAction, FriendsResponse, Friendship } from '@/types/friends';
 
 type ApiResult<T> = {
@@ -6,6 +9,8 @@ type ApiResult<T> = {
   error?: string;
 };
 
+// Normalizes successful and failed HTTP responses into the app's API result
+// shape so UI code can display route-provided errors consistently.
 async function parseApiResponse<T>(response: Response): Promise<ApiResult<T>> {
   const payload = (await response.json()) as ApiResult<T>;
 
@@ -19,11 +24,14 @@ async function parseApiResponse<T>(response: Response): Promise<ApiResult<T>> {
   return payload;
 }
 
+// Loads accepted, incoming, outgoing, and blocked friendship groups.
 export async function fetchFriends() {
   const response = await fetch('/api/friends');
   return parseApiResponse<FriendsResponse>(response);
 }
 
+// Sends a friend request by email. The server prevents self-requests and
+// duplicate relationships.
 export async function sendFriendRequest(email: string) {
   const response = await fetch('/api/friends/request', {
     method: 'POST',
@@ -34,6 +42,7 @@ export async function sendFriendRequest(email: string) {
   return parseApiResponse<Friendship>(response);
 }
 
+// Accepts or blocks an existing request.
 export async function updateFriendRequest(friendshipId: string, action: FriendRequestAction) {
   const response = await fetch('/api/friends/request', {
     method: 'PATCH',
@@ -44,6 +53,7 @@ export async function updateFriendRequest(friendshipId: string, action: FriendRe
   return parseApiResponse<Friendship>(response);
 }
 
+// Removes an existing friendship/request.
 export async function removeFriendship(friendshipId: string) {
   const response = await fetch(`/api/friends/${encodeURIComponent(friendshipId)}`, {
     method: 'DELETE',

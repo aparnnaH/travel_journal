@@ -1,3 +1,5 @@
+// Journal comment types for shared journal entries.
+// Comments include the author profile summary needed by the UI.
 export type JournalCommentAuthor = {
   id: string;
   email: string;

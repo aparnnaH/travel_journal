@@ -1,3 +1,6 @@
+// Passport stamp grid and flipbook.
+// This component groups the stamp catalog by region, splits it into book pages,
+// and renders collected/locked stamps through PassportStamp and LockedStamp.
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -45,6 +48,7 @@ interface PageFlipEvent {
   };
 }
 
+// Lightweight placeholder shown while the client-only pageflip library loads.
 const FlipBookLoadingPlaceholder = () => (
   <div className={styles.flipBookLoading} aria-hidden="true">
     <div className={styles.loadingPage}>
@@ -66,11 +70,14 @@ const FlipBookLoadingPlaceholder = () => (
   </div>
 );
 
+// react-pageflip depends on browser APIs, so it is dynamically imported with SSR
+// disabled to keep Next.js server rendering safe.
 const HTMLFlipBook = dynamic<HTMLFlipBookProps>(() => import('react-pageflip'), {
   ssr: false,
   loading: () => <FlipBookLoadingPlaceholder />,
 });
 
+// Keeps regions in the curated passport order, then alphabetically as fallback.
 const sortRegionEntries = (entries: [string, CountryStamp[]][]) =>
   entries.sort(([firstRegion], [secondRegion]) => {
     const firstIndex = REGION_ORDER.indexOf(firstRegion);
@@ -86,9 +93,11 @@ const sortRegionEntries = (entries: [string, CountryStamp[]][]) =>
     return firstIndex - secondIndex;
   });
 
+// Groups stamps by region and sorts both regions and stamps for display.
 const getSortedRegionEntries = (stamps: CountryStamp[]) =>
   sortRegionEntries(Object.entries(sortStampsByRegion(stamps)));
 
+// Splits a region's stamps into pages so the flipbook has stable page sizes.
 const chunkStampsForPages = (
   stamps: CountryStamp[],
   label: string,
@@ -116,6 +125,7 @@ const chunkStampsForPages = (
   return pages;
 };
 
+// Adds blank pages when needed so the flipbook maintains proper left/right page pairing.
 const padBookPages = (pages: StampBookPage[]) => {
   if (pages.length === 0) {
     return pages;
@@ -137,6 +147,7 @@ const padBookPages = (pages: StampBookPage[]) => {
   ];
 };
 
+// Converts a region label into a DOM-friendly id.
 const getRegionId = (region: string) => region.toLowerCase().replace(/\s+/g, '-');
 
 interface PassportBookPageProps {
@@ -149,6 +160,7 @@ interface PassportBookPageProps {
   targetStampId?: string | null;
 }
 
+// One physical page in the passport flipbook.
 const PassportBookPage = React.forwardRef<HTMLDivElement, PassportBookPageProps>(
   ({ label, pageNumber, stamps, stampIndexOffset, unlockedStamps, side, targetStampId }, ref) => (
     <div
@@ -198,6 +210,7 @@ interface RegionFlipBookProps {
   targetStampId?: string | null;
 }
 
+// react-pageflip has a loose event shape, so this safely extracts page numbers.
 const getEventPage = (event: PageFlipEvent) => {
   if (typeof event.data === 'number') {
     return event.data;
@@ -210,6 +223,7 @@ const getEventPage = (event: PageFlipEvent) => {
   return 0;
 };
 
+// Safely extracts portrait/landscape orientation from pageflip events.
 const getEventOrientation = (event: PageFlipEvent): PageFlipOrientation | null => {
   if (event.data === 'portrait' || event.data === 'landscape') {
     return event.data;
@@ -225,6 +239,7 @@ const getEventOrientation = (event: PageFlipEvent): PageFlipOrientation | null =
   return null;
 };
 
+// Renders one region's stamp pages as an interactive flipbook.
 const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
   region,
   regionStamps,
@@ -254,10 +269,12 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
       ? `${String(spreadStartPage).padStart(2, '0')}-${String(spreadEndPage).padStart(2, '0')}`
       : String(spreadStartPage).padStart(2, '0');
 
+  // Keeps the page readout in sync with the flipbook's current page.
   const handleFlip = (event: PageFlipEvent) => {
     setCurrentPage(Math.min(getEventPage(event), Math.max(totalPages - 1, 0)));
   };
 
+  // Reacts to pageflip's responsive portrait/landscape mode changes.
   const handleOrientation = (event: PageFlipEvent) => {
     const nextOrientation = getEventOrientation(event);
 
@@ -266,6 +283,7 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
     }
   };
 
+  // Initializes page and orientation state from the flipbook event payload.
   const handleInit = (event: PageFlipEvent) => {
     setCurrentPage(getEventPage(event));
     handleOrientation(event);
@@ -350,12 +368,15 @@ const RegionFlipBook: React.FC<RegionFlipBookProps> = ({
   );
 };
 
+// Top-level stamp archive component used by the passport page.
 export const StampGrid: React.FC<StampGridProps> = ({
   stamps,
   unlockedStamps = [],
   selectedRegion,
   targetStampId,
 }) => {
+  // Region filtering affects which stamps are visible while preserving the full
+  // catalog for combined/all-region book construction.
   const displayStamps = useMemo(() => {
     if (selectedRegion) {
       return stamps.filter((stamp) => stamp.region === selectedRegion);
@@ -366,6 +387,7 @@ export const StampGrid: React.FC<StampGridProps> = ({
 
   const allRegionEntries = useMemo(() => getSortedRegionEntries(stamps), [stamps]);
 
+  // The "all regions" view stitches each region's pages into a single book.
   const combinedBookPages = useMemo(() => {
     const { pages } = allRegionEntries.reduce<{ pages: StampBookPage[]; stampIndexOffset: number }>(
       (acc, [region, regionStamps]) => ({

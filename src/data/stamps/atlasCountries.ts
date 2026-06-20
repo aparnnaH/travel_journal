@@ -1,9 +1,14 @@
+// Atlas-to-stamp country lookup table.
+// World map geometry uses Natural Earth/TopoJSON numeric atlas ids, while the
+// passport system uses country names and stamp ids; this table bridges them.
 export interface AtlasStampCountry {
   atlas_id: string;
   name: string;
   aliases?: string[];
 }
 
+// Static reference data for countries present in the world atlas. Aliases cover
+// display-name differences between map data, Intl labels, and app copy.
 export const ATLAS_STAMP_COUNTRIES: AtlasStampCountry[] = [
   { atlas_id: '242', name: 'Fiji' },
   { atlas_id: '834', name: 'Tanzania' },

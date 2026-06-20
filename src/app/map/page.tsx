@@ -1,3 +1,7 @@
+// Interactive scratch-map page.
+// This page turns persisted map state into product behavior: marking countries,
+// assigning colors, opening Country Explorer, showing passport reveal prompts,
+// and managing visited-country search/removal/reset flows.
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -61,6 +65,8 @@ const countryNameAliases: Record<string, string> = {
   'zimbabwe': 'ZW',
 };
 
+// Normalizes names so atlas, placeholder, and user-entered labels can be matched
+// despite punctuation/case differences.
 function normalizeCountryName(countryName: string) {
   return countryName
     .toLowerCase()
@@ -69,6 +75,7 @@ function normalizeCountryName(countryName: string) {
     .trim();
 }
 
+// Uses Intl.DisplayNames to resolve ISO region codes into human-readable names.
 function getRegionDisplayName(regionNames: Intl.DisplayNames, countryId: string) {
   if (!/^[A-Z]{2}$/i.test(countryId)) return undefined;
 
@@ -83,6 +90,7 @@ function getRegionDisplayName(regionNames: Intl.DisplayNames, countryId: string)
   }
 }
 
+// Builds a reverse lookup from country names to ISO alpha-2 codes.
 function buildAlpha2CountryLookup(regionNames: Intl.DisplayNames) {
   const lookup = new Map<string, string>();
 
@@ -100,18 +108,22 @@ function buildAlpha2CountryLookup(regionNames: Intl.DisplayNames) {
   return lookup;
 }
 
+// Converts ISO country codes into flag emoji for compact country chips.
 function getFlagEmoji(countryCode: string) {
   return countryCode
     .toUpperCase()
     .replace(/[A-Z]/g, (letter) => String.fromCodePoint(127397 + letter.charCodeAt(0)));
 }
 
+// Creates text fallback initials when a flag or country code is unavailable.
 function getCountryInitials(countryName: string) {
   const words = countryName.match(/[A-Za-z]+/g) ?? [];
   const initials = words.slice(0, 2).map((word) => word[0]).join('');
   return initials.toUpperCase() || countryName.slice(0, 2).toUpperCase();
 }
 
+// Selects a stable visited-country color while avoiding immediate neighbor
+// collisions in the rendered atlas.
 function pickVisitedColor(
   countryId: string,
   countryColors: Record<string, string>,
@@ -180,6 +192,8 @@ interface AtlasRevealCelebration {
 
 type VisitedCountrySort = 'name-asc' | 'name-desc' | 'recent';
 
+// Main map route. It is client-heavy because it coordinates Zustand state,
+// atlas interaction, modals, confirmations, and navigation.
 export default function MapPage() {
   const {
     visitedCountries,
@@ -208,10 +222,14 @@ export default function MapPage() {
   const [atlasRevealCelebration, setAtlasRevealCelebration] = useState<AtlasRevealCelebration | null>(null);
   const previousAtlasRevealPercentRef = useRef<number | null>(null);
 
+  // WorldAtlas reports neighbor relationships upward so page-level color
+  // reconciliation can avoid adjacent countries sharing the same color.
   const handleCountryNeighborsReady = useCallback((neighborIds: Record<string, string[]>) => {
     setCountryNeighborIds(neighborIds);
   }, []);
 
+  // The page stores atlas references so map state ids can be resolved against
+  // the actual rendered topology.
   const handleAtlasCountriesReady = useCallback((countries: AtlasCountryReference[]) => {
     setAtlasCountries(countries);
   }, []);
@@ -556,6 +574,7 @@ export default function MapPage() {
     );
   }
 
+  // Quick-visit buttons use the same visit logic as atlas clicks.
   const handleQuickVisit = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
     const knownCountry = placeholderCountries.find((country) => country.id === countryId);
     const resolvedCountryName = countryName ?? knownCountry?.name;
@@ -592,6 +611,8 @@ export default function MapPage() {
     }
   };
 
+  // Marks a country visited, assigns a stable color/label, and prepares the
+  // passport reveal banner if the country maps to a stamp.
   const handleMapCountryClick = (countryId: string, countryName?: string, neighboringCountryIds: string[] = []) => {
     const wasVisited = isCountryAlreadyVisited(countryId);
     const currentColor = mapCountryColors[countryId];
@@ -626,6 +647,8 @@ export default function MapPage() {
     }
   };
 
+  // Selecting a visited country opens Country Explorer while preserving the
+  // existing visited-country state.
   const handleVisitedCountrySelect = (countryId: string, countryName: string) => {
     handleMapCountryClick(countryId, countryName, countryNeighborIds[countryId] ?? []);
     setSelectedCountryId(countryId);
@@ -639,6 +662,8 @@ export default function MapPage() {
     setCountryPendingRemoval(null);
   };
 
+  // Removal may clear multiple source ids when one displayed country maps to
+  // aliases/resolved atlas ids.
   const handleConfirmCountryRemoval = () => {
     if (!countryPendingRemoval) return;
 
@@ -654,11 +679,14 @@ export default function MapPage() {
     setIsAtlasResetConfirmationOpen(false);
   };
 
+  // Full reset clears the persisted map store through its reset action.
   const handleConfirmAtlasReset = () => {
     reset();
     setIsAtlasResetConfirmationOpen(false);
   };
 
+  // Passport deep links use the stamp id so the passport route can highlight the
+  // newly revealed stamp.
   const handleShowRevealedStamp = () => {
     if (!revealedStamp) return;
 

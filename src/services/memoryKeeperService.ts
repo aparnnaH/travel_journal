@@ -1,3 +1,6 @@
+// Memory Keeper local templates and prompt helpers.
+// This file provides deterministic writing support and prompt suggestions from
+// trip context, separate from optional server-side AI generation.
 export const memoryKeeperQuickActions = [
   { id: 'fix-grammar', label: 'Fix Grammar' },
   { id: 'make-more-descriptive', label: 'Make More Descriptive' },
@@ -72,9 +75,11 @@ const monthDatePattern = /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|
 const noisyInstructionPattern =
   /\b(?:create a memory keeper feature|add the feature|do not use ai|quick action buttons|please implement|requirements|hard-coded faq|existing project structure|you have a boarding pass|want to create a travel-day entry|want me to help turn|memory prompt|journal entries|photos if available|passport stamps|boarding passes|generate helpful memory prompts|fix grammar|make more descriptive|write from photos|create caption|turn into journal entry|summarize trip)\b/i;
 
+// Type guard for action ids coming from UI/user input.
 export const isMemoryKeeperCreativeAction = (value: string): value is MemoryKeeperQuickAction =>
   CREATIVE_ACTIONS.has(value as MemoryKeeperQuickAction);
 
+// Normalizes user/trip text before it is displayed or used in templates.
 const cleanText = (value: string) => value.replace(/\s+/g, ' ').trim();
 
 const truncateText = (value: string, limit: number) => {
@@ -129,6 +134,7 @@ const looksLikeBulkItinerary = (value: string) => {
   return cleanValue.length > 700 || dayMatches > 1 || separatorMatches > 10;
 };
 
+// Picks a human-friendly trip name for cards and prompts.
 export const getMemoryKeeperDisplayTripName = (context: MemoryKeeperTripContext) => {
   const tripName = cleanText(context.tripName || 'This trip')
     .replace(/\s+was\s+a\s+.*$/i, '')
@@ -139,6 +145,7 @@ export const getMemoryKeeperDisplayTripName = (context: MemoryKeeperTripContext)
   return tripName || 'This trip';
 };
 
+// Builds a compact date label from explicit dates or itinerary text.
 export const getMemoryKeeperDisplayDateLabel = (context: MemoryKeeperTripContext) => {
   const dates = uniqueValues(
     context.itineraryItems.flatMap((item) =>
@@ -353,6 +360,7 @@ const buildCaptionTemplate = (context: MemoryKeeperTripContext, place: string, j
   return `${place}, kept as a quiet travel memory.`;
 };
 
+// Extracts key facts from trip context for the Memory Keeper card.
 export const buildMemoryKeeperFacts = (context: MemoryKeeperTripContext): MemoryKeeperFact[] => {
   const facts: MemoryKeeperFact[] = [
     {
@@ -397,6 +405,7 @@ export const buildMemoryKeeperFacts = (context: MemoryKeeperTripContext): Memory
   return facts.slice(0, 5);
 };
 
+// Builds suggested prompt buttons from available trip context.
 export const buildMemoryKeeperPrompts = (context: MemoryKeeperTripContext): MemoryKeeperPrompt[] => {
   const prompts: MemoryKeeperPrompt[] = [];
   const firstStamp = context.passportStamps[0];
@@ -466,6 +475,7 @@ export const buildMemoryKeeperPrompts = (context: MemoryKeeperTripContext): Memo
   return prompts.slice(0, 5);
 };
 
+// Infers which quick action best matches a free-form user message.
 export const inferMemoryKeeperAction = (message: string): MemoryKeeperQuickAction => {
   const query = message.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -558,6 +568,7 @@ export const getMemoryKeeperFaqResponse = (question: string) => {
   return null;
 };
 
+// Creates deterministic writing output for the selected Memory Keeper action.
 export const createMemoryKeeperTemplate = (
   action: MemoryKeeperQuickAction,
   context: MemoryKeeperTripContext,

@@ -1,3 +1,5 @@
+// Travel reflection card.
+// Displays a compact reflection prompt derived from companion context.
 'use client';
 
 import React from 'react';
@@ -9,6 +11,7 @@ type TravelReflectionCardProps = {
   anchor: string;
 };
 
+// Renders one reflection item in the companion UI.
 export default function TravelReflectionCard({ title, reflection, anchor }: TravelReflectionCardProps) {
   return (
     <motion.article
@@ -23,4 +26,3 @@ export default function TravelReflectionCard({ title, reflection, anchor }: Trav
     </motion.article>
   );
 }
-

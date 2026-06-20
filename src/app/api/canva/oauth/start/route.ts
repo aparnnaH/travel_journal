@@ -1,8 +1,13 @@
+// Starts the Canva OAuth PKCE flow.
+// The route creates a verifier/challenge pair, stores temporary state in an
+// HTTP-only cookie, and redirects the browser to Canva.
 import { NextRequest, NextResponse } from 'next/server';
 import { createCanvaAuthorizationUrl, getCanvaOAuthCookieName } from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
 
+// Redirects to Canva's authorization URL and remembers where to return inside
+// the app after OAuth completes.
 export async function GET(request: NextRequest) {
   try {
     const returnTo = request.nextUrl.searchParams.get('returnTo') || '/journal';
@@ -23,4 +28,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(`/journal?canva=error&message=${encodeURIComponent(message)}`, request.url));
   }
 }
-

@@ -1,3 +1,6 @@
+-- Structured Canva metadata for journal entries.
+-- The app still supports legacy content-embedded metadata, but these columns are
+-- the preferred storage for Canva-backed entries.
 alter table public.journal_entries
   add column if not exists canva_design_id text,
   add column if not exists canva_design_title text,

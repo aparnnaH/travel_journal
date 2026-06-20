@@ -1,3 +1,6 @@
+// Journal sharing types.
+// These describe recipient lists and entries that another traveler shared with
+// the current user.
 import type { JournalEntry } from '@/types';
 
 export type JournalSharePermission = 'view' | 'comment';

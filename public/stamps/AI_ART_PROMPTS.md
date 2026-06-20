@@ -2,6 +2,8 @@
 
 Use these prompts to generate the center artwork only. The app already handles the stamp border, paper, cancellation marks, rotation, lock state, and texture overlays.
 
+These prompts are safe to keep in the public repository. When using an external art tool, submit only the prompt text and non-sensitive reference art. Do not upload `.env` files, API keys, app screenshots with real user data, or private travel photos unless you have permission to use them.
+
 Recommended output:
 
 - Transparent PNG

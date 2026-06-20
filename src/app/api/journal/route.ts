@@ -1,3 +1,7 @@
+// Authenticated journal-entry route.
+// This is the main server boundary for owned journal data: it validates the
+// session, enforces user ownership, normalizes legacy Canva payloads, and keeps
+// database writes constrained to the current user.
 import { NextRequest, NextResponse } from 'next/server';
 import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } from '@/lib/journalDates';
@@ -15,6 +19,9 @@ const JOURNAL_SUMMARY_FIELDS =
 const JOURNAL_LEGACY_SUMMARY_FIELDS =
   'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
 
+// Supabase schema caches can lag after migrations. These helpers detect missing
+// Canva/date columns so the route can give a useful migration message or use a
+// backwards-compatible content payload.
 const isMissingCanvaJournalColumnError = (message: string) =>
   /canva_(design|pages|page)/i.test(message) &&
   /(column|schema cache|could not find)/i.test(message);
@@ -33,8 +40,12 @@ type JournalEntryRow = {
   tags?: string[] | null;
 };
 
+// Search happens after decoding content because some entries store Canva
+// metadata alongside the human-readable journal text.
 const normalizeSearchValue = (value: string) => value.trim().toLocaleLowerCase();
 
+// Converts a stored country id/code into all searchable country labels the user
+// might type.
 const getCountrySearchValues = (countryId?: string | null) => {
   const cleanCountryId = countryId?.trim();
 
@@ -51,6 +62,8 @@ const getCountrySearchValues = (countryId?: string | null) => {
   return [cleanCountryId, country?.name, country?.code].filter((value): value is string => Boolean(value));
 };
 
+// Applies lightweight server-side search across title, country, tags, or decoded
+// text. This avoids returning Canva metadata blobs as searchable prose.
 const entryMatchesSearch = (entry: JournalEntryRow, rawSearch: string, scope: JournalSearchScope) => {
   const search = normalizeSearchValue(rawSearch);
 
@@ -76,6 +89,8 @@ const entryMatchesSearch = (entry: JournalEntryRow, rawSearch: string, scope: Jo
   return matches(searchableValues[scope]);
 };
 
+// Summary responses intentionally trim content and omit heavy Canva pages so
+// list views do not download large image payloads.
 const summarizeJournalEntry = <T extends Record<string, unknown>>(entry: T) => {
   const decodedContent = decodeJournalContentWithCanva(String(entry.content || '')).content.trim();
 
@@ -87,6 +102,7 @@ const summarizeJournalEntry = <T extends Record<string, unknown>>(entry: T) => {
   };
 };
 
+// Lists/searches current-user entries or fetches a single owned entry by id.
 export async function GET(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'journal');
 
@@ -125,6 +141,8 @@ export async function GET(request: NextRequest) {
   const searchScope = (JOURNAL_SEARCH_SCOPES.has(searchScopeParam) ? searchScopeParam : 'all') as JournalSearchScope;
   const selectFields = summary ? JOURNAL_SUMMARY_FIELDS : '*';
 
+  // Search is currently in-memory after loading the user's entries so decoded
+  // fallback content can be searched consistently with structured columns.
   if (search) {
     const { data, error } = await context.supabaseAdmin
       .from('journal_entries')
@@ -147,6 +165,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // Non-search listing can use Supabase pagination/count directly.
   let query = context.supabaseAdmin
     .from('journal_entries')
     .select(selectFields, { count: 'exact' })
@@ -200,6 +219,7 @@ export async function GET(request: NextRequest) {
   });
 }
 
+// Creates a journal entry for the signed-in user.
 export async function POST(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'journal');
 
@@ -238,6 +258,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: tripDateError }, { status: 400 });
   }
 
+  // Only data URLs are accepted for embedded journal images. This prevents
+  // arbitrary remote URLs from being persisted as trusted image payloads.
   const cleanCanvaPages = Array.isArray(canvaPages)
     ? canvaPages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
     : [];
@@ -257,6 +279,8 @@ export async function POST(request: NextRequest) {
           caption: typeof photo.caption === 'string' ? photo.caption : '',
         }))
     : [];
+  // The content payload fallback preserves Canva/cover/photo metadata even when
+  // newer database columns are not installed yet.
   const canvaPayload = {
     designId: canvaDesignId || null,
     designTitle: canvaDesignTitle || null,
@@ -298,6 +322,8 @@ export async function POST(request: NextRequest) {
     .select('*');
 
   if (error) {
+    // Migration fallback: older databases can still save a readable entry by
+    // encoding Canva/date metadata into the content field.
     if (isMissingJournalMetadataColumnError(error.message)) {
       const { data: fallbackData, error: fallbackError } = await context.supabaseAdmin
         .from('journal_entries')
@@ -357,6 +383,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ success: true, data: data?.[0] });
 }
 
+// Updates either the title alone or the full editable journal metadata.
 export async function PATCH(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'journal');
 
@@ -367,6 +394,8 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json();
   const { entryId, countryId, title, content, mood, tags, tripStartDate, tripEndDate } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
+  // Rename flows only send entryId/title; edit flows include the rest of the
+  // journal fields and therefore need stricter validation.
   const hasFullEntryUpdate =
     'countryId' in body ||
     'content' in body ||
@@ -419,6 +448,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Journal entry not found.' }, { status: 404 });
     }
 
+    // Preserve existing embedded Canva metadata while replacing the human story
+    // text and trip dates.
     const decodedExistingContent = decodeJournalContentWithCanva(String(existingEntry.content || ''));
     const nextCanvaPayload = decodedExistingContent.canva
       ? {
@@ -498,6 +529,8 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json({ success: true, data });
 }
 
+// Deletes an owned journal entry and explicitly removes related share/comment
+// rows so recipients do not see dangling shared records.
 export async function DELETE(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'journal');
 

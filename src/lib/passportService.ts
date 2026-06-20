@@ -1,3 +1,6 @@
+// Local passport stamp builder.
+// The passport page derives collectible stamps from the user's visited country
+// ids, using placeholder country data until a backend passport table exists.
 import type { PassportStamp } from '@/types';
 import { placeholderCountries } from '@/lib/placeholderData';
 
@@ -10,6 +13,8 @@ const stampDates = [
   '2026-01-14',
 ];
 
+// Converts visited map country ids into display-ready passport stamps. The
+// dates are deterministic sample dates so the passport has stable visuals.
 export function buildPassportStamps(visitedCountryIds: string[]) {
   return visitedCountryIds
     .map((countryId, index) => {

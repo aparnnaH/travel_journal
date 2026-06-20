@@ -1,3 +1,6 @@
+// Main passport archive UI.
+// Receives already-computed unlocked stamp ids from the route and focuses on
+// presentation: stats, region filtering, highlighting, and stamp grid rendering.
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -13,10 +16,13 @@ interface PassportPageComponentProps {
   initialTargetStampId?: string | null;
 }
 
+// Renders the interactive passport collection.
 export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
   initialUnlockedStamps = [],
   initialTargetStampId = null,
 }) => {
+  // A target stamp from the URL initializes both the selected region and
+  // temporary highlight state.
   const initialTargetStamp = useMemo(
     () => COUNTRY_STAMPS.find((stamp) => stamp.id === initialTargetStampId) ?? null,
     [initialTargetStampId],
@@ -24,11 +30,13 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
   const [selectedRegion, setSelectedRegion] = useState<string | null>(() => initialTargetStamp?.region ?? null);
   const [targetStampId, setTargetStampId] = useState<string | null>(() => initialTargetStamp?.id ?? null);
 
+  // Convert ids into full stamp records for stats and highlights.
   const unlockedStamps = useMemo(
     () => Array.from(new Set(initialUnlockedStamps)),
     [initialUnlockedStamps],
   );
 
+  // Passport stats are derived from the static stamp catalog and current unlocks.
   const stats: PassportStats = useMemo(() => {
     const unlocked = unlockedStamps.length;
     const total = COUNTRY_STAMPS.length;
@@ -45,6 +53,7 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
     };
   }, [unlockedStamps]);
 
+  // Highlights rare collected stamps separately from the full grid.
   const rareCollected = useMemo(
     () =>
       COUNTRY_STAMPS.filter(
@@ -55,6 +64,8 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
     [unlockedStamps],
   );
 
+  // Region filters come from the stamp catalog so adding stamp metadata updates
+  // the filter list automatically.
   const availableRegions = useMemo(() => {
     const usedRegions = new Set(COUNTRY_STAMPS.map((stamp) => stamp.region));
 

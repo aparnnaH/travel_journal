@@ -1,3 +1,5 @@
+-- Remembers the user's Canva "Travel Journal" folder after it is created/found.
+-- This avoids creating duplicate folders for every new Canva design.
 alter table public.canva_connections
   add column if not exists travel_journal_folder_id text;
 

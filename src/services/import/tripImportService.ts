@@ -1,3 +1,6 @@
+// Trip import parsing and scrapbook generation service.
+// It accepts pasted itinerary text and supported files, extracts usable trip
+// details, then builds journal drafts and scrapbook pages from that structure.
 import {
   BOARD_FALLBACK_WIDTH,
   BOARD_HEIGHT,
@@ -34,9 +37,11 @@ type CreateTripImportDraftInput = {
   boardWidth?: number;
 };
 
+// Limits import files to formats the parser can reasonably inspect in-browser.
 export const isSupportedTripImportFile = (file: File) =>
   file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
+// Reads images as data URLs so they can become scrapbook photo assets.
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -45,6 +50,7 @@ const readFileAsDataUrl = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+// Reads binary files such as PDFs for lightweight text extraction.
 const readFileAsArrayBuffer = (file: File) =>
   new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader();
@@ -53,6 +59,7 @@ const readFileAsArrayBuffer = (file: File) =>
     reader.readAsArrayBuffer(file);
   });
 
+// Decodes simple PDF hex strings found in text drawing operators.
 const decodePdfHexString = (value: string) => {
   const hex = value.replace(/[^0-9a-f]/gi, '');
 
@@ -168,6 +175,7 @@ const uniqueCleanPdfLines = (lines: string[]) =>
     )
   );
 
+// Performs a conservative PDF text extraction without a heavy PDF dependency.
 const extractPdfText = async (file: File) => {
   const buffer = await readFileAsArrayBuffer(file);
   const rawText = new TextDecoder('iso-8859-1').decode(buffer);
@@ -209,6 +217,7 @@ const extractPdfText = async (file: File) => {
     .slice(0, 6000);
 };
 
+// Reads supported import files into text/photo assets.
 export const readTripImportFiles = async (files: File[] = []): Promise<TripImportFile[]> => {
   const supportedFiles = files.filter(isSupportedTripImportFile);
 
@@ -240,6 +249,7 @@ export const readTripImportFiles = async (files: File[] = []): Promise<TripImpor
   );
 };
 
+// Converts parsed trip structure into a plain journal draft.
 export const createJournalDraftFromTrip = (trip: ParsedTripDraft): TripJournalDraft => {
   const daySections = trip.timeline.map((day) => {
     const activities = day.activities.length
@@ -394,6 +404,7 @@ const createFileTicket = (
   };
 };
 
+// Converts parsed trip days/photos/files into one or more scrapbook pages.
 export const createScrapbookPagesFromTrip = (
   trip: ParsedTripDraft,
   startPageNumber = 1,
@@ -447,6 +458,7 @@ export const createScrapbookPagesFromTrip = (
   });
 };
 
+// Main import entry point used by the modal.
 export const createTripImportDraft = async ({
   itineraryText,
   files = [],

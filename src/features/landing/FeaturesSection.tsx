@@ -1,3 +1,5 @@
+// Landing-page feature preview section.
+// Summarizes the product areas without requiring the user to sign in first.
 'use client';
 
 import { motion } from 'framer-motion';

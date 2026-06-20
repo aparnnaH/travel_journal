@@ -1,3 +1,8 @@
+// Main journal workspace.
+// This route coordinates Canva imports, journal entry persistence, visited-map
+// country linking, scrapbook canvas state, trip import, sharing, comments,
+// dictation, and Memory Keeper support. It is intentionally client-heavy because
+// these workflows depend on browser files, local storage, and interactive UI.
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -137,6 +142,7 @@ type VisitedJournalCountry = {
   searchText: string;
 };
 
+// Small delay helper used when polling asynchronous Canva export jobs.
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 const SCRAPBOOK_STORAGE_WARNING_BYTES = 3_500_000;
 const MAX_INSERTED_JOURNAL_PHOTOS = 8;
@@ -213,6 +219,7 @@ type SpeechWindow = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
+// Adds speech-recognition text to an existing draft without losing spacing.
 const appendDictationText = (currentValue: string, transcript: string) => {
   const cleanTranscript = transcript.trim();
 
@@ -228,6 +235,7 @@ const appendDictationText = (currentValue: string, transcript: string) => {
   return `${currentValue}${separator}${cleanTranscript}`;
 };
 
+// Converts a local image file into a data URL for immediate scrapbook/journal use.
 const readPhotoFile = (file: File) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -237,11 +245,14 @@ const readPhotoFile = (file: File) =>
     reader.readAsDataURL(file);
   });
 
+// Saved entries may contain normalized or database field names, so these helpers
+// hide field-shape differences from the UI.
 const getEntryDate = (entry: SavedEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: SavedEntry | SharedJournalEntry) => entry.countryId || entry.country_id || '';
 const formatEntryCountry = (countryId: string) =>
   placeholderCountries.find((country) => country.id === countryId)?.name || '';
 const getEntryCountryLabel = (entry: SavedEntry | SharedJournalEntry) => formatEntryCountry(getEntryCountry(entry));
+// Reads Canva pages from structured columns first, then legacy embedded content.
 const getEntryCanvaPages = (entry: SavedEntry | SharedJournalEntry | null) => {
   const fallbackPages = entry ? decodeJournalContentWithCanva(String(entry.content || '')).canva?.pages : [];
   const pages = entry?.canvaPages ?? entry?.canva_pages ?? fallbackPages ?? [];
@@ -300,6 +311,7 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
     : [];
 };
 
+// Extracts scrapbook photos into the compact input shape expected by Memory Keeper.
 const getMemoryKeeperPhotos = (pages: ScrapbookPageData[]) =>
   pages
     .flatMap((page) => [
@@ -388,6 +400,7 @@ const getMemoryKeeperItineraryItems = (parsedTrip: ParsedTripNotice | undefined,
   return [...dayItems, ...noteItems, ...contentItems].slice(0, 12);
 };
 
+// Determines whether the current journal draft has meaningful user-entered content.
 const isFormDraftEmpty = (draft: {
   title: string;
   content: string;
@@ -414,6 +427,8 @@ const getRegionDisplayName = (countryId: string) => {
   }
 };
 
+// Browser speech recognition is vendor-prefixed in some browsers, so access is
+// guarded and normalized here.
 const getSpeechRecognition = () => {
   if (typeof window === 'undefined') {
     return null;
@@ -439,6 +454,7 @@ const isSameDictationTarget = (firstTarget: DictationTarget | null, secondTarget
   return false;
 };
 
+// Orchestrates the full journal workspace.
 export default function JournalPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);

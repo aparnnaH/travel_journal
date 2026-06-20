@@ -1,3 +1,6 @@
+// Shared domain types used across the app.
+// These interfaces describe the main vocabulary: auth users, journal entries,
+// map state, passport stamps, friends, and generic API responses.
 /**
  * User authentication and profile types
  */

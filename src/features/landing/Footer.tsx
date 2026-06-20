@@ -1,7 +1,10 @@
+// Landing-page footer.
+// Provides public-page closing links and brand context.
 'use client';
 
 import Link from 'next/link';
 
+// Renders the footer for landing-only page composition.
 export function Footer() {
   return (
     <footer className="bg-ink text-cream py-12 px-4 sm:px-6 lg:px-8">

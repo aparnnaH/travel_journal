@@ -1,3 +1,5 @@
+// Suggested prompt card for the AI companion.
+// Presents one archive-derived suggestion the user can send into chat.
 'use client';
 
 import React from 'react';
@@ -9,6 +11,7 @@ type SuggestedPromptCardProps = {
   onSelect: (prompt: string) => void;
 };
 
+// Renders a clickable suggested prompt.
 export default function SuggestedPromptCard({ title, prompt, onSelect }: SuggestedPromptCardProps) {
   return (
     <motion.button
@@ -23,4 +26,3 @@ export default function SuggestedPromptCard({ title, prompt, onSelect }: Suggest
     </motion.button>
   );
 }
-

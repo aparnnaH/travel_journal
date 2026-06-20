@@ -1,3 +1,6 @@
+// Server-side helpers for Travel Circle route handlers.
+// These functions centralize friendship auth, profile lookup, row mapping, and
+// grouped summary building so route files stay small.
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { authCookieName } from '@/lib/supabase';
@@ -26,10 +29,13 @@ export type FriendRouteContext = {
   user: User;
 };
 
+// Standard JSON error shape for friend-related routes.
 export function jsonError(error: string, status = 400) {
   return NextResponse.json({ success: false, error }, { status });
 }
 
+// Friend routes use the same cookie/bearer-token pattern as other protected
+// APIs, but keep a friend-specific message for auth failures.
 export async function getFriendRouteContext(request: NextRequest): Promise<FriendRouteContext | NextResponse> {
   const token = request.cookies.get(authCookieName)?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
@@ -47,10 +53,12 @@ export async function getFriendRouteContext(request: NextRequest): Promise<Frien
   return { supabaseAdmin, user: data.user };
 }
 
+// Type guard for early returns when auth failed.
 export function isRouteError(context: FriendRouteContext | NextResponse): context is NextResponse {
   return context instanceof NextResponse;
 }
 
+// Converts a raw profile row into the small public profile shape shown in UI.
 function toProfile(row?: ProfileRow): FriendProfile {
   return {
     id: row?.id ?? '',
@@ -60,6 +68,8 @@ function toProfile(row?: ProfileRow): FriendProfile {
   };
 }
 
+// Adds direction information relative to the current user so the UI can group
+// incoming/outgoing/friend relationships without re-deriving it.
 export function mapFriendship(row: FriendshipRow, currentUserId: string, profiles: Map<string, ProfileRow>): Friendship {
   const otherUserId = row.requester_id === currentUserId ? row.addressee_id : row.requester_id;
   const direction =
@@ -82,6 +92,7 @@ export function mapFriendship(row: FriendshipRow, currentUserId: string, profile
   };
 }
 
+// Loads a friendship by primary key for routes that operate on one relationship.
 export async function getFriendshipById(supabaseAdmin: SupabaseClient, friendshipId: string) {
   const { data, error } = await supabaseAdmin
     .from('friendships')
@@ -96,6 +107,8 @@ export async function getFriendshipById(supabaseAdmin: SupabaseClient, friendshi
   return data as FriendshipRow | null;
 }
 
+// Loads all relationships touching the current user and groups them by status
+// and direction for the Travel Circle page.
 export async function loadFriendshipSummary(supabaseAdmin: SupabaseClient, currentUserId: string): Promise<FriendsResponse> {
   const { data, error } = await supabaseAdmin
     .from('friendships')
@@ -137,6 +150,7 @@ export async function loadFriendshipSummary(supabaseAdmin: SupabaseClient, curre
   };
 }
 
+// Finds a profile by email when sending a friend request.
 export async function loadProfileByEmail(supabaseAdmin: SupabaseClient, email: string) {
   const { data, error } = await supabaseAdmin
     .from('profiles')
@@ -151,6 +165,7 @@ export async function loadProfileByEmail(supabaseAdmin: SupabaseClient, email: s
   return data as ProfileRow | null;
 }
 
+// Checks both requester/addressee directions to prevent duplicate friendships.
 export async function findExistingFriendship(supabaseAdmin: SupabaseClient, firstUserId: string, secondUserId: string) {
   const { data, error } = await supabaseAdmin
     .from('friendships')
@@ -167,6 +182,8 @@ export async function findExistingFriendship(supabaseAdmin: SupabaseClient, firs
   return data as FriendshipRow | null;
 }
 
+// Loads the other user's profile so a newly changed friendship can be returned
+// in the same UI-friendly shape as the summary endpoint.
 export async function loadProfilesForFriendship(supabaseAdmin: SupabaseClient, row: FriendshipRow, currentUserId: string) {
   const otherUserId = row.requester_id === currentUserId ? row.addressee_id : row.requester_id;
   const { data, error } = await supabaseAdmin

@@ -1,3 +1,6 @@
+// Saved journal entries browser.
+// This page focuses on listing, searching, opening, editing, sharing, deleting,
+// and commenting on owned/shared entries outside the Canva-first workspace.
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
@@ -70,6 +73,8 @@ const searchScopeOptions: { value: JournalSearchScope; label: string }[] = [
   { value: 'text', label: 'Text' },
 ];
 
+// Entry data can be normalized or raw database rows, so these helpers hide
+// field-shape differences from the rendering code.
 const getEntryDate = (entry: EntryCardData) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: EntryCardData) => entry.countryId || entry.country_id || '';
 const formatEntryCountry = (countryId: string) =>
@@ -88,6 +93,7 @@ const getEntryTripEndDate = (entry: EntryCardData) =>
   decodeJournalContentWithCanva(String(entry.content || '')).canva?.tripEndDate ||
   getEntryTripStartDate(entry);
 const isSummaryEntry = (entry: EntryCardData) => Boolean((entry as { isSummary?: boolean }).isSummary);
+// Reads Canva images from structured fields first, then legacy embedded payloads.
 const getEntryCanvaPages = (entry: EntryCardData | null) => {
   const fallbackPages = entry ? decodeJournalContentWithCanva(String(entry.content || '')).canva?.pages : [];
   const pages = entry?.canvaPages ?? entry?.canva_pages ?? fallbackPages ?? [];
@@ -110,10 +116,14 @@ const getEntryInsertedPhotos = (entry: EntryCardData) => {
       )
     : [];
 };
+// Summary list responses omit heavy image payloads, so entries may need a full
+// hydration fetch before showing a cover.
 const needsEntryCoverHydration = (entry: EntryCardData) =>
   !getEntryCoverPhoto(entry) &&
   (isSummaryEntry(entry) || typeof entry.content !== 'string' || entry.content.length === 0);
 
+// Protected entries page that coordinates owned entries, shared entries, search,
+// editing, sharing, comments, and deletion.
 export default function JournalEntriesPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -201,6 +211,7 @@ export default function JournalEntriesPage() {
   const editDateRangeErrors = getJournalDateRangeErrors(editForm.tripStartDate, editForm.tripEndDate);
 
   useEffect(() => {
+    // Protects the entries page and loads accepted friends for sharing controls.
     if (!isLoading && !user) {
       router.replace('/login');
       return;
@@ -315,6 +326,7 @@ export default function JournalEntriesPage() {
     void loadFriends();
   }, [router, user, isLoading]);
 
+  // Summary entries omit heavy image payloads, so this fetches the full row when needed.
   const loadFullEntry = async (entry: SavedEntry) => {
     if (!isSummaryEntry(entry) && typeof entry.content === 'string' && entry.content.length > 0) {
       return entry;
@@ -337,12 +349,14 @@ export default function JournalEntriesPage() {
     return fullEntry;
   };
 
+  // Opens an owned entry, hydrating it first if the card only has summary data.
   const openSavedEntry = async (entry: SavedEntry) => {
     const fullEntry = await loadFullEntry(entry);
     setOpenedSharedEntry(null);
     setOpenedEntry(fullEntry);
   };
 
+  // Hydrates a shared entry before opening if summary mode omitted heavy data.
   const loadFullSharedEntry = async (entry: SharedJournalEntry) => {
     if (!isSummaryEntry(entry) && typeof entry.content === 'string' && entry.content.length > 0) {
       return entry;
@@ -473,6 +487,7 @@ export default function JournalEntriesPage() {
     };
   }, [sharedEntries, user]);
 
+  // Opens a shared entry modal.
   const openSharedEntry = async (entry: SharedJournalEntry) => {
     const fullEntry = await loadFullSharedEntry(entry);
 
@@ -480,6 +495,7 @@ export default function JournalEntriesPage() {
     setOpenedSharedEntry(fullEntry);
   };
 
+  // Seeds the edit form from a full owned entry.
   const openEditEntry = async (entry: SavedEntry) => {
     const fullEntry = await loadFullEntry(entry);
 
@@ -509,6 +525,7 @@ export default function JournalEntriesPage() {
     setEditError(null);
   };
 
+  // Persists full journal edits through the journal service.
   const saveEditedEntry = async () => {
     if (!editingEntry) {
       return;
@@ -569,6 +586,7 @@ export default function JournalEntriesPage() {
     setCommentEntryId(null);
   };
 
+  // Deletes the selected owned entry and removes it from local list state.
   const confirmDeleteEntry = async () => {
     if (!entryPendingDelete) {
       return;
@@ -597,6 +615,7 @@ export default function JournalEntriesPage() {
     setEntryPendingDelete(null);
   };
 
+  // Loads current share recipients before opening the share panel.
   const openSharePanel = async (entry: SavedEntry) => {
     setSharingEntryId(entry.id);
     setShareLoading(true);
@@ -624,6 +643,7 @@ export default function JournalEntriesPage() {
     );
   };
 
+  // Replaces share recipients for an owned entry.
   const saveEntryShares = async (entryId: string) => {
     setShareSaving(true);
     setShareError(null);
@@ -640,6 +660,7 @@ export default function JournalEntriesPage() {
     setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
   };
 
+  // Loads comments for the selected owned/shared entry.
   const openCommentPanel = async (entryId: string) => {
     setCommentEntryId(entryId);
     setCommentError(null);
@@ -659,6 +680,7 @@ export default function JournalEntriesPage() {
     }));
   };
 
+  // Sends a comment and appends it to the local comment thread.
   const sendComment = async (entryId: string) => {
     const draft = commentDrafts[entryId]?.trim() ?? '';
 

@@ -1,3 +1,5 @@
+// Shared card primitive.
+// Keeps borders, shadows, padding, and surface variants consistent across pages.
 'use client';
 
 import React from 'react';
@@ -8,6 +10,7 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   variant?: 'default' | 'elevated' | 'subtle';
 }
 
+// Forwarding refs keeps the primitive flexible for measurements or focus scopes.
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, variant = 'default', children, ...props }, ref) => {
     const baseStyles =

@@ -1,9 +1,13 @@
+// Dynamic Canva export polling route.
+// Kept for callers that prefer /api/canva/exports/:id over the query-param
+// variant used by the client service.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import { downloadExportUrlsAsDataUrls, getCanvaExportJob, getValidCanvaAccessToken } from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
 
+// Polls a specific export job id from the dynamic route segment.
 export async function GET(request: NextRequest, context: RouteContext<'/api/canva/exports/[exportId]'>) {
   try {
     const authContext = await getAuthenticatedRouteContext(request, 'Canva');
@@ -28,4 +32,3 @@ export async function GET(request: NextRequest, context: RouteContext<'/api/canv
     return jsonError(message, status);
   }
 }
-

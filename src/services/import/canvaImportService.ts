@@ -1,3 +1,6 @@
+// Converts exported Canva page images into scrapbook page data.
+// This lets Canva-designed pages enter the journal workspace using the same
+// saved shape as hand-built scrapbook pages.
 import {
   BOARD_FALLBACK_WIDTH,
   BOARD_HEIGHT,
@@ -22,6 +25,7 @@ export type CanvaImportResult = {
   scrapbookPages: ScrapbookPageData[];
 };
 
+// Creates one scrapbook page per exported Canva image.
 export function createCanvaImportPages({
   design,
   dataUrls,

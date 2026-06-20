@@ -1,3 +1,5 @@
+-- Adds date-range metadata so a journal entry can describe a multi-day trip
+-- instead of only relying on created_at.
 alter table public.journal_entries
   add column if not exists trip_start_date date,
   add column if not exists trip_end_date date;

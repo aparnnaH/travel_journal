@@ -1,3 +1,6 @@
+// Legacy/simple scratch-map component.
+// This renders a lightweight SVG-style map from local country positions and is
+// separate from the newer WorldAtlas experience.
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -77,9 +80,11 @@ const continentShapes = [
   },
 ];
 
+// Renders clickable country markers for a simplified map view.
 export default function ScratchMap({ visitedCountries, onToggleCountry }: ScratchMapProps) {
   const [hoveredCountryId, setHoveredCountryId] = useState<string | null>(null);
 
+  // Hover state controls the small country detail label above the map.
   const hoveredCountry = useMemo(
     () => placeholderCountries.find((country) => country.id === hoveredCountryId),
     [hoveredCountryId]

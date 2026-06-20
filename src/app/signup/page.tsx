@@ -1,3 +1,6 @@
+// Signup page.
+// Creates a Supabase Auth user from the browser and then relies on the shared
+// auth provider/session cookie flow used by the rest of the app.
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -8,6 +11,7 @@ import { createOrUpdateProfile } from '@/lib/profileService';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
 
+// Prevents open redirects by only allowing local absolute paths.
 const getSafeRedirectPath = (value: string | null) => {
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
     return '/';
@@ -16,12 +20,14 @@ const getSafeRedirectPath = (value: string | null) => {
   return value;
 };
 
+// Reads the redirect target from the URL in the browser.
 const getRedirectPath = () => {
   if (typeof window === 'undefined') return '/';
 
   return getSafeRedirectPath(new URLSearchParams(window.location.search).get('from'));
 };
 
+// Renders the email/password signup form and handles account creation.
 export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

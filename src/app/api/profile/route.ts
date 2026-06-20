@@ -1,6 +1,10 @@
+// Authenticated profile route.
+// Route handlers run on the server and validate the app session cookie before
+// reading or writing Supabase profile data.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
+// Loads the profile row for the signed-in user.
 export async function GET(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'profile');
 
@@ -20,6 +24,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ success: true, data });
 }
 
+// Upserts profile data for the signed-in user. The user id/email come from the
+// verified Supabase session, not from a trusted client payload.
 export async function POST(request: NextRequest) {
   const context = await getAuthenticatedRouteContext(request, 'profile');
 

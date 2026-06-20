@@ -1,3 +1,6 @@
+// Trip import modal.
+// Lets users paste text or choose files, then previews parsed itinerary data
+// before handing it back to the journal workspace.
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +21,7 @@ type ImportTripModalProps = {
   onImport: (result: TripImportResult) => void;
 };
 
+// Converts byte counts into compact UI labels.
 const formatFileSize = (size: number) => {
   if (size >= 1024 * 1024) {
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
@@ -26,6 +30,7 @@ const formatFileSize = (size: number) => {
   return `${Math.max(1, Math.round(size / 1024))} KB`;
 };
 
+// Renders the import workflow and returns a parsed trip draft to the caller.
 export default function ImportTripModal({
   open,
   inline = false,
@@ -41,12 +46,14 @@ export default function ImportTripModal({
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Parsing is enabled when the user has either pasted text or selected files.
   const canParse = useMemo(
     () => Boolean(itineraryText.trim() || selectedFiles.length),
     [itineraryText, selectedFiles.length]
   );
 
   useEffect(() => {
+    // Escape closes the modal to match common dialog behavior.
     if (!open) {
       return;
     }

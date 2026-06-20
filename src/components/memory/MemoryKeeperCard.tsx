@@ -1,5 +1,8 @@
 'use client';
 
+// Memory Keeper sidebar card for the journal workspace.
+// It combines local FAQ/template responses with server-backed AI writing so the
+// editor can get help without leaving the current trip draft.
 import { type FormEvent, useMemo, useState } from 'react';
 import { BookOpen, Camera, Clipboard, Feather, MessageCircleQuestion, Plus, Sparkles, Wand2, type LucideIcon } from 'lucide-react';
 import { askMemoryKeeper } from '@/lib/ai/memoryKeeperClient';
@@ -27,6 +30,8 @@ type MemoryKeeperCardProps = {
 
 const helpQuestionPattern = /\b(how|where|can i|what do|help|add|save|import)\b/i;
 
+// Quick actions map to Lucide icons here so the service layer can stay focused
+// on writing behavior instead of presentation details.
 const actionIcons: Record<MemoryKeeperQuickAction, LucideIcon> = {
   'fix-grammar': Feather,
   'make-more-descriptive': Wand2,
@@ -36,7 +41,12 @@ const actionIcons: Record<MemoryKeeperQuickAction, LucideIcon> = {
   'summarize-trip': Sparkles,
 };
 
+// Renders contextual trip facts, suggested prompts, quick actions, and a small
+// question form. This is a client component because it owns transient UI state
+// and calls the Memory Keeper API from browser interactions.
 export default function MemoryKeeperCard({ context, draftText = '', onUseDraft, onAppendDraft }: MemoryKeeperCardProps) {
+  // Memoized derived values keep prompt/fact rebuilding tied to context changes
+  // instead of every keystroke in the question input.
   const prompts = useMemo(() => buildMemoryKeeperPrompts(context), [context]);
   const facts = useMemo(() => buildMemoryKeeperFacts(context), [context]);
   const displayTripName = useMemo(() => getMemoryKeeperDisplayTripName(context), [context]);
@@ -48,6 +58,8 @@ export default function MemoryKeeperCard({ context, draftText = '', onUseDraft, 
   const [error, setError] = useState('');
   const [copyNotice, setCopyNotice] = useState('');
 
+  // Sends a writing action to the Memory Keeper client. The service decides
+  // whether the response comes from OpenAI or from a deterministic template.
   const runAction = async (action: MemoryKeeperQuickAction, selectedText?: string) => {
     setActiveAction(action);
     setError('');
@@ -69,10 +81,14 @@ export default function MemoryKeeperCard({ context, draftText = '', onUseDraft, 
     }
   };
 
+  // Suggested prompts are pre-seeded with trip context so one click can produce
+  // a useful draft even if the user has not typed a custom instruction.
   const handlePromptClick = (prompt: MemoryKeeperPrompt) => {
     void runAction(prompt.action, buildMemoryKeeperPromptSeed(prompt, context, draftText));
   };
 
+  // Keeps basic app-help questions local and deterministic, then sends creative
+  // writing requests through the AI/template pipeline.
   const handleQuestionSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const cleanQuestion = question.trim();
@@ -101,6 +117,8 @@ export default function MemoryKeeperCard({ context, draftText = '', onUseDraft, 
     setQuestion('');
   };
 
+  // Clipboard access is browser-only and can fail depending on permissions, so
+  // the UI falls back to an instruction rather than treating copy as critical.
   const handleCopyResult = async () => {
     if (!result.trim()) {
       return;

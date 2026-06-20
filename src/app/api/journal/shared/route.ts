@@ -1,9 +1,13 @@
+// Shared journal route.
+// Lets the signed-in user list or open entries that other travelers shared with them.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
 import { loadSharedJournalEntries, loadSharedJournalEntry } from '@/lib/server/journalSharing';
 
 const SHARED_SEARCH_SCOPES = new Set(['all', 'title', 'country', 'tag', 'text']);
 
+// Supports list/search/summary mode and single-entry lookup through the same GET
+// handler, matching the owned journal endpoint shape.
 export async function GET(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 

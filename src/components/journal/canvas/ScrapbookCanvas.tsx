@@ -1,3 +1,6 @@
+// Visual renderer for the scrapbook canvas.
+// The journal page owns all state and event handlers; this component receives
+// that state and renders notes, photos, stickers, stamps, strokes, and controls.
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -39,6 +42,7 @@ type ScrapbookCanvasProps = {
   onMoveableRotate: (itemId: string, rotation: number) => void;
 };
 
+// Renders a text note item inside the canvas.
 function MemoryNote({
   item,
   selected,
@@ -69,6 +73,8 @@ function MemoryNote({
   );
 }
 
+// Renders a complete scrapbook page and wires pointer/keyboard events back to
+// the journal page.
 export default function ScrapbookCanvas({
   boardWidth,
   currentTheme,
@@ -98,9 +104,12 @@ export default function ScrapbookCanvas({
   const selectedItem = items.find((item) => item.id === selectedItemId) || null;
 
   useEffect(() => {
+    // Moveable needs a real DOM target for the selected item, so the ref map is
+    // synchronized whenever selection or item rendering changes.
     setSelectedTarget(selectedItemId ? itemRefs.current[selectedItemId] || null : null);
   }, [items, selectedItemId]);
 
+  // The same board node is shared with dnd-kit and the parent journal page.
   const setCanvasNode = (node: HTMLDivElement | null) => {
     setBoardNode(node);
     setNodeRef(node);

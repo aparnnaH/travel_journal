@@ -1,3 +1,6 @@
+// Travel Audit comparison helper.
+// This converts visited map countries into passport stamp matches, missing stamp
+// links, and still-locked passport goals.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { findCountryStamp } from '@/lib/stamps/matching';
 import type { CountryStamp } from '@/types/stamps';
@@ -23,6 +26,7 @@ export type PassportMapComparison = {
   passportCompletionPercent: number;
 };
 
+// Compares map state against the static passport stamp catalog.
 export function comparePassportStampsToMap({
   countryLabels,
   visitedCountries,
@@ -35,6 +39,8 @@ export function comparePassportStampsToMap({
   const missingStamps: MapStampGap[] = [];
   const unlockedStampIds = new Set<string>();
 
+  // De-duplicate visited countries before matching so audit percentages are not
+  // skewed by repeated ids.
   uniqueVisitedCountries.forEach((countryId) => {
     const countryName = countryLabels[countryId] || countryId;
     const stamp = findCountryStamp(countryId, countryName);

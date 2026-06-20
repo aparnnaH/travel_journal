@@ -1,3 +1,5 @@
+// AI companion trip summary card.
+// Presents the computed high-level summary of the user's archive.
 'use client';
 
 import React from 'react';
@@ -8,6 +10,7 @@ type AITripSummaryCardProps = {
   summary: CompanionTripSummary;
 };
 
+// Renders the companion trip summary.
 export default function AITripSummaryCard({ summary }: AITripSummaryCardProps) {
   return (
     <motion.section
@@ -31,4 +34,3 @@ export default function AITripSummaryCard({ summary }: AITripSummaryCardProps) {
     </motion.section>
   );
 }
-

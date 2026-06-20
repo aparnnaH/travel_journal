@@ -1,3 +1,6 @@
+// Travel Circle page.
+// Lets signed-in users send friend requests, accept/block incoming requests, and
+// manage relationships that journal sharing depends on.
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -29,9 +32,11 @@ const emptyFriends: FriendsResponse = {
   blocked: [],
 };
 
+// Uses display name when available and falls back to email.
 const getFriendLabel = (friendship: Friendship) =>
   friendship.profile.displayName || friendship.profile.email || 'Travel friend';
 
+// Creates avatar initials for friends without profile images.
 const getInitials = (value: string) => {
   const words = value
     .trim()
@@ -48,6 +53,7 @@ const getInitials = (value: string) => {
     .join('');
 };
 
+// Formats friendship dates without crashing on invalid values.
 const formatDate = (value: string) => {
   const date = new Date(value);
 
@@ -61,6 +67,7 @@ const formatDate = (value: string) => {
   }).format(date);
 };
 
+// Protected page that loads grouped friendship data through the friends service.
 export default function FriendsPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -73,6 +80,7 @@ export default function FriendsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Redirect anonymous users and fetch Travel Circle data for signed-in users.
     if (!isLoading && !user) {
       router.replace('/login');
       return;
@@ -375,6 +383,7 @@ export default function FriendsPage() {
   );
 }
 
+// Displays either a profile image or initials for a friendship row.
 function FriendAvatar({ friendship }: { friendship: Friendship }) {
   const label = getFriendLabel(friendship);
   const avatarUrl = friendship.profile.avatar?.trim();
@@ -395,6 +404,7 @@ function FriendAvatar({ friendship }: { friendship: Friendship }) {
   );
 }
 
+// Reusable card for accepted, incoming, outgoing, and blocked friendships.
 function FriendCard({
   actionIcon: ActionIcon,
   actionLabel,
@@ -442,6 +452,7 @@ function FriendCard({
   );
 }
 
+// Shared empty state for friend-list sections.
 function EmptyState({
   compact = false,
   description,

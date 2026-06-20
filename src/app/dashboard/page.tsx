@@ -1,3 +1,6 @@
+// Signed-in dashboard page.
+// This page composes small summaries from map state, journal entries, and
+// friends so users have a command center after login.
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -51,11 +54,15 @@ const emptyFriends: FriendsResponse = {
   blocked: [],
 };
 
+// Dashboard entries may include both normalized and database field names, so
+// these helpers keep rendering logic tolerant of either shape.
 const getEntryDate = (entry: DashboardJournalEntry) => entry.createdAt || entry.created_at || new Date().toISOString();
 const getEntryCountry = (entry: DashboardJournalEntry) => entry.countryId || entry.country_id || '';
 const getFriendLabel = (friendship: Friendship) =>
   friendship.profile.displayName || friendship.profile.email || 'Travel friend';
 
+// Formats timestamps defensively because dashboard cards should not crash on
+// missing or invalid dates.
 const formatDate = (value?: string) => {
   if (!value) {
     return 'No date yet';
@@ -74,7 +81,10 @@ const formatDate = (value?: string) => {
   }).format(date);
 };
 
+// Resolves country ids from local placeholder data first, then atlas data, then
+// falls back to the raw id.
 const formatCountryName = (countryId: string) => countryNameLookup.get(countryId) || atlasCountryLookup.get(countryId)?.name || countryId || 'Unplaced';
+// Creates compact visual labels for country badges.
 const getCountryInitials = (countryName: string) => {
   const words = countryName.match(/[A-Za-z]+/g) ?? [];
 
@@ -89,6 +99,7 @@ const getCountryInitials = (countryName: string) => {
   return countryName.slice(0, 2).toUpperCase();
 };
 
+// Builds a small badge label for visited-country summaries.
 const formatCountryBadge = (countryId: string) => {
   const atlasCountry = atlasCountryLookup.get(countryId);
   const alphaAlias = atlasCountry?.aliases?.find((alias) => /^[A-Z]{2,3}$/.test(alias));
@@ -96,6 +107,8 @@ const formatCountryBadge = (countryId: string) => {
   return alphaAlias || (atlasCountry ? getCountryInitials(atlasCountry.name) : countryId);
 };
 
+// Loads dashboard data after auth is ready and redirects anonymous users away
+// from this protected page.
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -111,6 +124,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Protected client pages use the auth store populated by AuthProvider.
     if (!isLoading && !user) {
       router.replace('/login');
       return;
@@ -120,6 +134,8 @@ export default function DashboardPage() {
       return;
     }
 
+    // Journal and friend summaries are fetched on the client because this page
+    // is an interactive dashboard that depends on the signed-in session.
     const loadJournal = async () => {
       setLoading(true);
       const response = await fetchJournalEntries();
@@ -140,6 +156,8 @@ export default function DashboardPage() {
     loadFriends();
   }, [router, user, isLoading]);
 
+  // Derived dashboard stats are memoized so rendering can reuse the same
+  // calculations until journal/city data changes.
   const dashboardStats = useMemo(() => {
     const journalCountries = new Set(journalEntries.map(getEntryCountry).filter(Boolean));
     const allTags = journalEntries.flatMap((entry) => entry.tags ?? []);
@@ -175,6 +193,7 @@ export default function DashboardPage() {
     };
   }, [countryCities, journalEntries]);
 
+  // Shows the most recently added visited countries as quick visual context.
   const visitedCountryCards = useMemo(
     () =>
       visitedCountries
@@ -196,6 +215,7 @@ export default function DashboardPage() {
   const totalPendingFriends = friendsData.incoming.length + friendsData.outgoing.length;
   const pendingApprovals = friendsData.incoming.slice(0, 2);
 
+  // Reloads friendship groups after accepting a request.
   const refreshFriends = async () => {
     const response = await fetchFriends();
     if (response.success && response.data) {
@@ -203,6 +223,7 @@ export default function DashboardPage() {
     }
   };
 
+  // Accepts a pending friend request and then refreshes the dashboard summary.
   const acceptFriendRequest = async (friendshipId: string) => {
     setAcceptingFriendshipId(friendshipId);
     const response = await updateFriendRequest(friendshipId, 'accept');
@@ -627,6 +648,7 @@ export default function DashboardPage() {
   );
 }
 
+// Reusable metric tile for dashboard stats.
 function MetricCard({
   detail,
   icon: Icon,

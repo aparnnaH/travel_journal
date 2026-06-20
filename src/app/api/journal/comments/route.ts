@@ -1,3 +1,6 @@
+// Comments route for shared/accessible journal entries.
+// Access checks happen in the server sharing helper so owners and recipients can
+// participate safely.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
 import { createJournalComment, loadJournalComments } from '@/lib/server/journalSharing';
@@ -7,6 +10,7 @@ type CommentRequestBody = {
   body?: string;
 };
 
+// Loads the comment thread for an accessible journal entry.
 export async function GET(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 
@@ -28,6 +32,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Creates a comment authored by the signed-in user.
 export async function POST(request: NextRequest) {
   const context = await getFriendRouteContext(request);
 

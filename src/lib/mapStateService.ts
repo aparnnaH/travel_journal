@@ -1,3 +1,6 @@
+// Client-side service for the map_states table.
+// It maps between the app's camelCase ScratchMapState and the database's
+// snake_case row shape used by Supabase.
 import { getSupabaseClient } from '@/lib/supabase';
 import type { ScratchMapState } from '@/types';
 
@@ -17,6 +20,8 @@ export type CloudMapState = ScratchMapState & {
   syncedAt: string;
 };
 
+// Normalizes nullable database fields into the complete map state expected by
+// the Zustand store.
 function mapRowToState(row: MapStateRow): CloudMapState {
   const lastUpdated = row.last_updated ?? row.updated_at ?? new Date().toISOString();
 
@@ -32,6 +37,7 @@ function mapRowToState(row: MapStateRow): CloudMapState {
   };
 }
 
+// Loads the signed-in user's cloud map snapshot, if one exists.
 export async function fetchCloudMapState(userId: string): Promise<CloudMapState | null> {
   const supabase = getSupabaseClient();
   const { data, error } = await supabase
@@ -49,6 +55,7 @@ export async function fetchCloudMapState(userId: string): Promise<CloudMapState 
   return data ? mapRowToState(data as MapStateRow) : null;
 }
 
+// Upserts the full map state using user_id as the single-row conflict key.
 export async function saveCloudMapState(userId: string, state: ScratchMapState): Promise<CloudMapState> {
   const now = new Date().toISOString();
   const supabase = getSupabaseClient();

@@ -1,6 +1,10 @@
+// Single-friendship route.
+// Used for removing an existing friendship/request after validating that the
+// signed-in user is one of the participants.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, getFriendshipById, isRouteError, jsonError } from '@/lib/server/friendships';
 
+// Deletes the friendship/request identified by the dynamic route segment.
 export async function DELETE(_request: NextRequest, context: RouteContext<'/api/friends/[friendshipId]'>) {
   const routeContext = await getFriendRouteContext(_request);
 

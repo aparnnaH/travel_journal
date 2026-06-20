@@ -1,3 +1,6 @@
+// Public landing-page world map preview.
+// This is intentionally separate from the authenticated map store so the home
+// page can show an interactive demo without loading user state.
 'use client';
 
 import { useMemo, useState } from 'react';

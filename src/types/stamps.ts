@@ -1,3 +1,5 @@
+// Passport stamp catalog and rendering types.
+// The static stamp data, renderer, and passport page all share these shapes.
 export type StampShape = 'square' | 'circle' | 'hexagon' | 'diamond' | 'rounded-square' | 'organic';
 export type StampRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type StampAssetFormat = 'svg' | 'png';

@@ -1,3 +1,6 @@
+// Local itinerary parser for imported travel plans.
+// This parser turns pasted text, screenshots, PDFs, and Wanderlog-style copies
+// into the structured draft shape used by journal import and AI memory flows.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { normalizeCountryToStampId } from '@/lib/stamps/assets';
@@ -67,6 +70,8 @@ const MONTHS: Record<string, number> = {
 
 const MONTH_PATTERN = Object.keys(MONTHS).sort((a, b) => b.length - a.length).join('|');
 
+// Extra aliases cover common cities and country nicknames that are not present
+// in the placeholder country seed data.
 const EXTRA_PLACE_ALIASES: PlaceAlias[] = [
   { alias: 'nyc', name: 'New York', countryId: 'US', countryName: 'United States', weight: 9 },
   { alias: 'new york city', name: 'New York', countryId: 'US', countryName: 'United States', weight: 10 },
@@ -94,6 +99,8 @@ const EXTRA_PLACE_ALIASES: PlaceAlias[] = [
   { alias: 'suwon', name: 'Suwon', countryName: 'South Korea', weight: 8 },
 ];
 
+// Activity keywords and cleanup patterns help distinguish real itinerary items
+// from copied UI chrome, addresses, map links, and raw travel-distance rows.
 const ACTIVITY_KEYWORDS = [
   'arrival',
   'beach',
@@ -174,6 +181,8 @@ const GENERIC_LOCATION_STOP_WORDS = new Set([
 
 const availableStampIds = new Set(COUNTRY_STAMPS.map((stamp) => stamp.id));
 
+// Parser ids are client-safe and do not need database stability; they only need
+// to be unique enough for React keys and draft editing.
 const createParserId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return `${prefix}-${crypto.randomUUID()}`;
@@ -184,6 +193,7 @@ const createParserId = (prefix: string) => {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Small text cleanup helpers normalize imported content before regex parsing.
 const titleCase = (value: string) =>
   value
     .split(/\s+/)
@@ -206,6 +216,8 @@ const normalizeLine = (line: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// Creates a validated ISO date. Invalid dates like February 31 return undefined
+// instead of rolling forward.
 const toIsoDate = (year: number, month: number, day: number) => {
   const date = new Date(Date.UTC(year, month - 1, day));
 
@@ -220,6 +232,8 @@ const toIsoDate = (year: number, month: number, day: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+// Two-digit years are mapped near the present because imported itineraries are
+// overwhelmingly current/future travel documents.
 const normalizeYear = (yearText: string | undefined, fallbackYear: number) => {
   if (!yearText) {
     return fallbackYear;
@@ -242,6 +256,8 @@ const formatIsoDate = (isoDate: string) =>
     timeZone: 'UTC',
   }).format(new Date(`${isoDate}T00:00:00Z`));
 
+// Extracts date/day signals from many common itinerary formats. The parser uses
+// these signals to decide when to start a new timeline day.
 const parseDateSignal = (line: string, fallbackYear: number): DateSignal | null => {
   const dayMatch = line.match(/\bday\s+(\d{1,2})\b/i);
 
@@ -350,6 +366,8 @@ const parseDateSignal = (line: string, fallbackYear: number): DateSignal | null 
   return null;
 };
 
+// Pulls a time label from an activity line without trying to fully model time
+// zones or calendar events.
 const extractTime = (line: string) => {
   const timeMatch = line.match(
     /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b|\b([01]?\d|2[0-3]):([0-5]\d)\b/i
@@ -362,6 +380,8 @@ const extractTime = (line: string) => {
   return timeMatch[0].toUpperCase();
 };
 
+// Detects lines that are only a time marker so the next place/activity can
+// inherit that time in copied itinerary formats.
 const isTimeOnlyLine = (line: string) => {
   const time = extractTime(line);
 
@@ -372,12 +392,16 @@ const isTimeOnlyLine = (line: string) => {
   return normalizeLine(line).toLowerCase().replace(time.toLowerCase(), '').replace(/[:|-]/g, '').trim().length === 0;
 };
 
+// Wanderlog exports often include stop numbers as separate lines; those should
+// steer parsing but never become activities.
 const isStandaloneStopNumber = (line: string) => /^\d{1,3}$/.test(line.trim());
 
 const hasLetters = (line: string) => /[^\W\d_]/u.test(line);
 
 const isWanderlogTravelLine = (line: string) => WANDERLOG_TRAVEL_LINE_PATTERN.test(line);
 
+// Identifies combined date/time rows from Wanderlog so they do not become
+// duplicate timeline activities.
 const isWanderlogDateTimeOnlyLine = (line: string) => {
   if (WANDERLOG_DATE_TIME_ONLY_PATTERN.test(line)) {
     return true;
@@ -397,6 +421,8 @@ const isWanderlogDateTimeOnlyLine = (line: string) => {
     .trim().length === 0;
 };
 
+// Removes leading schedule text from Wanderlog place rows before location
+// matching runs.
 const cleanWanderlogPlaceLine = (line: string) =>
   line
     .replace(new RegExp(`^(?:${MONTH_PATTERN})\\.?\\s+\\d{1,2}\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)\\s+`, 'i'), '')
@@ -405,6 +431,8 @@ const cleanWanderlogPlaceLine = (line: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+// Builds a weighted place dictionary from seeded countries, stamp metadata, and
+// hand-authored aliases. Longer aliases are sorted first to avoid partial hits.
 const buildPlaceAliases = (): PlaceAlias[] => {
   const aliases: PlaceAlias[] = [];
 
@@ -467,6 +495,8 @@ const buildPlaceAliases = (): PlaceAlias[] => {
 
 const PLACE_ALIASES = buildPlaceAliases();
 
+// Generic title-case candidates catch places that are not in the known alias
+// list while filtering out headings and low-signal copied text.
 const isGenericLocationCandidate = (candidate: string) => {
   const cleanCandidate = candidate
     .replace(/[()[\]{}]/g, '')
@@ -492,6 +522,7 @@ const isGenericLocationCandidate = (candidate: string) => {
   return words.some((word) => /^[A-Z][A-Za-z.'-]{2,}$/.test(word));
 };
 
+// Finds generic location-looking phrases in text using conservative patterns.
 const getGenericLocationCandidates = (text: string) => {
   const candidates = new Set<string>();
   const cleanText = normalizeLine(text);
@@ -513,6 +544,8 @@ const getGenericLocationCandidates = (text: string) => {
   return Array.from(candidates);
 };
 
+// Combines known alias matching with generic location extraction for a single
+// line or text block.
 const findLocationsInText = (text: string): ParsedTripLocation[] => {
   const found = new Map<string, ParsedTripLocation>();
 
@@ -560,6 +593,8 @@ const findLocationsInText = (text: string): ParsedTripLocation[] => {
   return Array.from(found.values());
 };
 
+// Strips dates, times, bullets, and numbering so saved activities read like
+// human labels instead of copied itinerary rows.
 const cleanActivityTitle = (line: string, dateSignal: DateSignal | null) => {
   let title = normalizeLine(line)
     .replace(/^[-\d.)\s]+/, '')
@@ -580,6 +615,8 @@ const cleanActivityTitle = (line: string, dateSignal: DateSignal | null) => {
   return title;
 };
 
+// Avoids creating an activity when a line is only a location name already
+// captured by the parser.
 const isLocationOnly = (title: string, locations: ParsedTripLocation[]) => {
   const normalizedTitle = title.toLowerCase();
 
@@ -594,6 +631,8 @@ const isLocationOnly = (title: string, locations: ParsedTripLocation[]) => {
   );
 };
 
+// Wanderlog copies have repeated stop numbers plus travel-time rows; this shape
+// triggers a specialized parser.
 const isLikelyWanderlogCopy = (lines: string[]) => {
   const stopNumberCount = lines.filter(isStandaloneStopNumber).length;
   const travelLineCount = lines.filter(isWanderlogTravelLine).length;
@@ -601,6 +640,8 @@ const isLikelyWanderlogCopy = (lines: string[]) => {
   return travelLineCount >= 2 && stopNumberCount >= 2;
 };
 
+// Validates candidate place lines from a Wanderlog copy and rejects map chrome,
+// addresses, time rows, and paragraph-like descriptions.
 const isWanderlogPlaceNameLine = (line: string) => {
   const cleanLine = cleanWanderlogPlaceLine(line);
 
@@ -626,6 +667,8 @@ const isWanderlogPlaceNameLine = (line: string) => {
   return cleanLine.split(/\s+/).length <= 14;
 };
 
+// Converts noisy Wanderlog copied text into only the date/place lines that are
+// useful for timeline construction.
 const parseWanderlogCopiedLines = (
   rawLines: string[],
   kind: SourceLine['kind'],
@@ -653,6 +696,7 @@ const parseWanderlogCopiedLines = (
     }
 
     if (isStandaloneStopNumber(line)) {
+      // The next meaningful row after a stop number is usually the place name.
       sawStopNumber = true;
       expectingPlace = true;
       return;
@@ -700,6 +744,8 @@ const parseWanderlogCopiedLines = (
   return parsedLines.length ? parsedLines : null;
 };
 
+// Normalizes pasted text and uploaded-file text into one line stream. This is
+// the parser boundary between raw import sources and structured itinerary logic.
 const buildSourceLines = (text: string | undefined, files: TripImportFile[]): SourceLine[] => {
   const lines: SourceLine[] = [];
   const fallbackYear = new Date().getFullYear();
@@ -752,6 +798,8 @@ const buildSourceLines = (text: string | undefined, files: TripImportFile[]): So
   return lines;
 };
 
+// Creates a timeline day shell from the current date/location signal. Activities
+// are appended later after the line passes noise filters.
 const createDay = (
   index: number,
   dateSignal: DateSignal | null,
@@ -780,6 +828,7 @@ const createDay = (
   };
 };
 
+// Rebuilds a day title as more locations are discovered while scanning lines.
 const updateDayTitle = (day: ParsedTripDay, index: number) => {
   const existingDayLabel = day.title.match(/^Day \d+/i)?.[0];
   const dateLabel =
@@ -801,6 +850,8 @@ const updateDayTitle = (day: ParsedTripDay, index: number) => {
   day.title = titleParts.join(' / ');
 };
 
+// De-duplicates locations by name and country so repeated itinerary mentions do
+// not inflate the imported trip summary.
 const mergeLocations = (current: ParsedTripLocation[], next: ParsedTripLocation[]) => {
   const byKey = new Map<string, ParsedTripLocation>();
 
@@ -812,6 +863,8 @@ const mergeLocations = (current: ParsedTripLocation[], next: ParsedTripLocation[
   return Array.from(byKey.values());
 };
 
+// Adds an activity only when the source line looks like an actual itinerary
+// item rather than a heading, address, date, or standalone location.
 const addActivityToDay = (
   day: ParsedTripDay,
   source: SourceLine,
@@ -849,6 +902,8 @@ const addActivityToDay = (
   day.activities.push(activity);
 };
 
+// Walks the normalized source lines and builds ordered trip days. A date, day
+// marker, or first discovered location can start the first/new timeline day.
 const buildTimeline = (sourceLines: SourceLine[], fallbackYear: number) => {
   const timeline: ParsedTripDay[] = [];
   let currentDay: ParsedTripDay | null = null;
@@ -860,6 +915,8 @@ const buildTimeline = (sourceLines: SourceLine[], fallbackYear: number) => {
       return;
     }
 
+    // Some copied itineraries put the time on one line and the place/activity on
+    // the next; carrying `pendingTime` preserves that useful schedule detail.
     const source =
       pendingTime && !extractTime(rawSource.line)
         ? {
@@ -900,6 +957,8 @@ const buildTimeline = (sourceLines: SourceLine[], fallbackYear: number) => {
   return timeline;
 };
 
+// Combines locations found during timeline parsing with locations found in the
+// full raw text, catching places that only appear in headers or summaries.
 const getAllLocations = (timeline: ParsedTripDay[], rawText: string) => {
   const allLocations = timeline.reduce<ParsedTripLocation[]>(
     (locations, day) => mergeLocations(locations, day.locations),
@@ -909,6 +968,8 @@ const getAllLocations = (timeline: ParsedTripDay[], rawText: string) => {
   return mergeLocations(allLocations, findLocationsInText(rawText));
 };
 
+// Chooses the country mentioned most often as the imported trip's primary
+// country for journal metadata and passport stamp suggestions.
 const getPrimaryCountry = (locations: ParsedTripLocation[]) => {
   const counts = new Map<string, { id?: string; name?: string; count: number }>();
 
@@ -930,6 +991,7 @@ const getPrimaryCountry = (locations: ParsedTripLocation[]) => {
   return Array.from(counts.values()).sort((first, second) => second.count - first.count)[0];
 };
 
+// Collapses timeline day dates into the trip-level range shown in import review.
 const getDateRange = (timeline: ParsedTripDay[]) => {
   const starts = timeline
     .map((day) => day.date)
@@ -954,6 +1016,8 @@ const getDateRange = (timeline: ParsedTripDay[]) => {
   };
 };
 
+// Finds a reasonable trip title from explicit heading text, then falls back to
+// country/location labels when the import does not include a title.
 const getTitle = (rawText: string, primaryCountryName?: string, firstLocationName?: string) => {
   const firstLine = rawText.split(/\r?\n/).map(normalizeLine).find(Boolean);
   const explicitTitle = firstLine?.match(/\b(?:trip|itinerary|plan)\s+(?:to|for)\s+(.{3,48})/i);
@@ -988,6 +1052,8 @@ const getTitle = (rawText: string, primaryCountryName?: string, firstLocationNam
   return 'Imported Trip';
 };
 
+// Creates lightweight tags from locations and common activity words so imported
+// trips can be searched or summarized without additional AI work.
 const getTags = (locations: ParsedTripLocation[], sourceLines: SourceLine[]) => {
   const tags = new Set<string>();
 
@@ -1007,6 +1073,7 @@ const getTags = (locations: ParsedTripLocation[], sourceLines: SourceLine[]) => 
   return Array.from(tags).slice(0, 8);
 };
 
+// Maps parsed locations to available stamp ids for passport unlock suggestions.
 const getPassportStampIds = (locations: ParsedTripLocation[]) =>
   Array.from(
     new Set(
@@ -1027,6 +1094,8 @@ const getPassportStampIds = (locations: ParsedTripLocation[]) =>
     )
   );
 
+// Produces a simple confidence score based on how many useful signals the parser
+// found. This is an explainability score, not a machine-learning probability.
 const getConfidence = (
   rawText: string,
   timeline: ParsedTripDay[],
@@ -1044,6 +1113,7 @@ const getConfidence = (
   return Math.min(96, 30 + textScore + fileScore + activityScore + locationScore + dateScore);
 };
 
+// Builds the small "what we detected" chips shown in the import review UI.
 const getSourceSignals = (
   text: string | undefined,
   files: TripImportFile[],
@@ -1101,6 +1171,8 @@ const getSourceSignals = (
   return signals;
 };
 
+// Generates a deterministic summary sentence for imported drafts before any AI
+// polishing is involved.
 const getSummary = (
   activityCount: number,
   dayCount: number,
@@ -1118,6 +1190,8 @@ const getSummary = (
   }${datePart}${placePart}.`;
 };
 
+// Public parser entry point used by the import flow. It returns a complete draft
+// object that the journal page can preview, edit, and save as a real entry.
 export const parseTripItinerary = ({ text, files = [], now = new Date() }: TripParserInput): ParsedTripDraft => {
   const sourceLines = buildSourceLines(text, files);
   const rawText = sourceLines.map((source) => source.line).join('\n');

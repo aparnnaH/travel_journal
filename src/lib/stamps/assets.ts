@@ -1,3 +1,6 @@
+// Stamp asset helpers.
+// The static stamp catalog references artwork, textures, and CSS variables
+// through these helpers so renderers do not hard-code public paths.
 import type { CSSProperties } from 'react';
 import type {
   CountryStamp,
@@ -37,6 +40,7 @@ interface StampLayerInput {
   unlocked_visible?: boolean;
 }
 
+// Creates a normalized stamp asset descriptor.
 export const createStampAsset = ({
   transparent_background = true,
   ai_ready = true,
@@ -47,6 +51,7 @@ export const createStampAsset = ({
   ai_ready,
 });
 
+// Creates a country artwork asset with the expected public path.
 export const createCountryArtworkAsset = (
   stampId: string,
   countryName: string,
@@ -64,6 +69,7 @@ export const createCountryArtworkAsset = (
     prompt_hint: promptHint,
   });
 
+// Creates the fallback artwork asset used when custom country art is missing.
 export const createPlaceholderArtworkAsset = (stampId: string, countryName: string): StampAsset =>
   createStampAsset({
     id: `${stampId}-placeholder-artwork`,
@@ -77,6 +83,7 @@ export const createPlaceholderArtworkAsset = (stampId: string, countryName: stri
     prompt_hint: `Generate transparent country stamp centerpiece artwork for ${countryName}.`,
   });
 
+// Creates a reusable texture asset descriptor.
 export const createTextureAsset = (id: string, fileName: string, alt: string): StampAsset =>
   createStampAsset({
     id,
@@ -88,6 +95,7 @@ export const createTextureAsset = (id: string, fileName: string, alt: string): S
     height: 1024,
   });
 
+// Defines how a texture layer should be composited over a stamp.
 export const createStampLayer = ({
   opacity = 0.5,
   blend_mode = 'multiply',
@@ -106,14 +114,17 @@ export const createStampLayer = ({
   unlocked_visible,
 });
 
+// Returns the main artwork path for a stamp.
 export const getStampAssetPath = (stamp: CountryStamp): string => stamp.asset.src;
 
+// Converts a texture layer into CSS custom properties consumed by the renderer.
 export const getStampLayerStyle = (layer: StampTextureLayer): StampCssVariables => ({
   opacity: layer.opacity,
   mixBlendMode: layer.blend_mode,
   transform: `rotate(${layer.rotation ?? 0}deg) scale(${layer.scale ?? 1})`,
 });
 
+// Builds CSS variables for stamp colors and locked-state overrides.
 export const getStampCssVariables = (stamp: CountryStamp, isLocked = false): StampCssVariables => ({
   '--stamp-primary': isLocked ? '#4b4a45' : stamp.colors.primary,
   '--stamp-secondary': isLocked ? '#777168' : stamp.colors.secondary,
@@ -125,6 +136,7 @@ export const getStampCssVariables = (stamp: CountryStamp, isLocked = false): Sta
   '--stamp-emboss': stamp.visual.emboss,
 });
 
+// Normalizes country names/ids into stable uppercase stamp ids.
 export const normalizeCountryToStampId = (country: string): string =>
   country
     .trim()

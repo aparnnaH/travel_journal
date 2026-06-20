@@ -1,8 +1,12 @@
+// Canva return route.
+// Canva can send users back here from its editor; the app then routes them back
+// into the journal workspace with the returned query parameters preserved.
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyCanvaReturnJwt } from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
 
+// Redirects back to /journal after a Canva-side return action.
 export async function GET(request: NextRequest) {
   try {
     const correlationJwt = request.nextUrl.searchParams.get('correlation_jwt');
@@ -29,4 +33,3 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL(`/journal?canva=error&message=${encodeURIComponent(message)}`, request.url));
   }
 }
-

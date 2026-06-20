@@ -1,3 +1,5 @@
+// Barrel exports for shared UI primitives.
+// Importing from "@/components/ui" keeps feature components concise.
 export { default as Button } from './Button';
 export { default as Card } from './Card';
 export { default as Input } from './Input';

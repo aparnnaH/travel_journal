@@ -1,3 +1,7 @@
+// Main AI companion page.
+// This component gathers travel context from journal entries, local scrapbook
+// storage, imported trips, map state, and passport data, then passes that context
+// to the chat hook and side-rail insight cards.
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -56,6 +60,7 @@ const initialDataState: CompanionDataState = {
 
 const worldAtlasGeoUrl = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
+// Recursively extracts country labels from the world-atlas TopoJSON structure.
 const collectTopologyCountryNames = (geometry: TopologyGeometry, map: Record<string, string>) => {
   if (geometry.type === 'GeometryCollection' && Array.isArray(geometry.geometries)) {
     geometry.geometries.forEach((child) => collectTopologyCountryNames(child, map));
@@ -75,6 +80,7 @@ const collectTopologyCountryNames = (geometry: TopologyGeometry, map: Record<str
   map[String(geometry.id).toUpperCase()] = name;
 };
 
+// Protected companion page that builds archive context after auth is ready.
 export default function TravelCompanionPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -89,12 +95,15 @@ export default function TravelCompanionPage() {
   const [railView, setRailView] = useState<CompanionRailView>('prompts');
 
   useEffect(() => {
+    // Redirect anonymous users away from the protected companion.
     if (!isLoading && !user) {
       router.replace('/login');
     }
   }, [isLoading, router, user]);
 
   useEffect(() => {
+    // Journal entries come from Supabase while scrapbook/import data is recovered
+    // from local browser storage.
     if (!user) {
       return;
     }
@@ -134,6 +143,7 @@ export default function TravelCompanionPage() {
   }, [user]);
 
   useEffect(() => {
+    // Atlas country names improve map id labels inside the companion context.
     let isActive = true;
 
     const loadAtlasCountryLabels = async () => {
@@ -173,6 +183,8 @@ export default function TravelCompanionPage() {
     [atlasCountryLabels, countryLabels]
   );
 
+  // Build one memoized travel context object so prompt generation and chat
+  // behavior share the same source of truth.
   const context = useMemo(() => {
     if (!user) {
       return null;

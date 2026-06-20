@@ -1,3 +1,6 @@
+// Reusable chat panel UI.
+// The behavior lives in useTravelCompanionChat; this component focuses on
+// rendering messages, prompt buttons, input state, and save/clear actions.
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,6 +19,7 @@ type ChatPanelProps = {
   onSaveJournalDraft?: () => void | Promise<void>;
 };
 
+// Renders a message feed and composer for the companion experience.
 export default function ChatPanel({
   messages,
   isThinking,
@@ -30,6 +34,7 @@ export default function ChatPanel({
   const feedRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    // Auto-scroll to the newest message after the feed updates.
     const feedNode = feedRef.current;
     if (!feedNode) {
       return;
@@ -41,6 +46,7 @@ export default function ChatPanel({
     });
   }, [messages, isThinking]);
 
+  // Adds lightweight grouping metadata for styling consecutive messages.
   const groupedMessages = useMemo(
     () =>
       messages.map((message) => ({
@@ -50,6 +56,7 @@ export default function ChatPanel({
     [messages]
   );
 
+  // Sends non-empty drafts and clears the composer.
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const cleanDraft = draft.trim();

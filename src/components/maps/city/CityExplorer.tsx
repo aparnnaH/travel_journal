@@ -1,3 +1,6 @@
+// Country Explorer modal.
+// It combines curated city data, saved city pins, coordinate lookup tables, and
+// OpenStreetMap tiles to show a focused view of a selected country.
 'use client';
 
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -2093,6 +2096,7 @@ const countryViewportLookup: Record<string, CountryViewportConfig> = Object.from
   )
 );
 
+// Generates visually distinct fallback coordinates when a city lacks exact data.
 function getFallbackCityCoordinates(country: Country, cityIndex: number, cityCount: number): Coordinates {
   const fallbackCenter = getCountryViewport(country, [])?.center ?? [0, 20];
   const [countryLongitude, countryLatitude] = country.coordinates ?? fallbackCenter;
@@ -2105,6 +2109,7 @@ function getFallbackCityCoordinates(country: Country, cityIndex: number, cityCou
   ];
 }
 
+// Normalizes city names for lookup keys.
 function normalizeCityName(cityName: string) {
   return cityName
     .normalize('NFD')
@@ -2118,6 +2123,7 @@ function getCityRegionCoordinateKey(cityName: string, region: string) {
   return `${normalizeCityName(cityName)}|${normalizeCityName(region)}`;
 }
 
+// Looks up city coordinates by id, city name, or city+region pair.
 function getCityCoordinates(cityId: string, cityName: string, region: string) {
   return (
     cityCoordinateLookup[cityId] ??
@@ -2135,6 +2141,7 @@ function getKnownCityCoordinates(city: CountryCity) {
   return city.coordinates ?? getCityCoordinates(city.id, city.name, city.region);
 }
 
+// Merges curated city lists while removing duplicate ids.
 function mergeCityOptions(cityOptionGroups: CityOption[][]) {
   const mergedOptions = new Map<string, CityOption>();
 
@@ -2174,6 +2181,7 @@ function getCountryViewportKeys(country: Country) {
   );
 }
 
+// Chooses a country-level map viewport so the preview focuses on the selected country.
 function getCountryViewport(country: Country, points: CityPreviewPoint[]) {
   for (const countryKey of getCountryViewportKeys(country)) {
     const countryViewport = countryViewportLookup[countryKey];
@@ -2234,6 +2242,7 @@ function mergeCountryCities(sampleCities: CountryCity[], savedCities: CountryCit
   return Array.from(mergedCities.values());
 }
 
+// Converts saved/sample cities into positioned map markers.
 function buildCityPreviewPoints(country: Country, cities: CountryCity[]): CityPreviewPoint[] {
   if (cities.length === 0) {
     const countryViewport = getCountryViewport(country, []);
@@ -2273,6 +2282,7 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+// Projects longitude/latitude into Web Mercator tile coordinates.
 function projectCoordinates([longitude, latitude]: Coordinates, zoom: number) {
   const scale = tileSize * 2 ** zoom;
   const clampedLatitude = clampNumber(latitude, -maxMercatorLatitude, maxMercatorLatitude);
@@ -2303,6 +2313,7 @@ function getFittingZoom(points: CityPreviewPoint[], viewport: TileViewport) {
   return 2;
 }
 
+// Computes the OpenStreetMap tile grid and marker positions for the preview.
 function getTileMapLayout(
   points: CityPreviewPoint[],
   viewport: TileViewport,
@@ -2360,6 +2371,7 @@ function getTileMapLayout(
   return { pins, tiles, zoom };
 }
 
+// Renders the tile-map preview for the selected country.
 function CityMapPreview({ country, points }: { country: Country; points: CityPreviewPoint[] }) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState<TileViewport>({ width: 720, height: 380 });
@@ -2375,6 +2387,8 @@ function CityMapPreview({ country, points }: { country: Country; points: CityPre
   );
 
   useEffect(() => {
+    // ResizeObserver keeps tile calculations aligned with the actual rendered
+    // preview size.
     const container = mapContainerRef.current;
     if (!container) return;
 
@@ -2488,6 +2502,7 @@ function CityMapPreview({ country, points }: { country: Country; points: CityPre
   );
 }
 
+// Main modal for city selection and country-level exploration.
 export default function CityExplorer({ country, onClose }: CityExplorerProps) {
   const router = useRouter();
   const countryCities = useMapStore((state) => state.countryCities ?? {});

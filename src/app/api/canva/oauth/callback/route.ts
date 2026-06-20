@@ -1,3 +1,6 @@
+// Handles the return from Canva OAuth.
+// This validates both the signed-in app user and the short-lived OAuth state
+// cookie before exchanging the code and storing encrypted Canva tokens.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 import {
@@ -9,7 +12,10 @@ import {
 
 export const runtime = 'nodejs';
 
+// Completes the OAuth code exchange and returns the user to the journal page.
 export async function GET(request: NextRequest) {
+  // Centralizes callback redirects so both success and failure clean up the
+  // temporary OAuth cookie.
   const redirectToJournal = (status: string, message?: string) => {
     const url = new URL('/journal', request.url);
     url.searchParams.set('canva', status);
@@ -51,4 +57,3 @@ export async function GET(request: NextRequest) {
     return redirectToJournal('error', message);
   }
 }
-

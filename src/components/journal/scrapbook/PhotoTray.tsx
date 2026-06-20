@@ -1,5 +1,8 @@
 'use client';
 
+// Photo tray for the scrapbook editor.
+// It exposes uploaded assets as both drag sources and explicit "Place" actions
+// so the editor works for mouse users and simpler click workflows.
 import Image from 'next/image';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -17,6 +20,9 @@ type PhotoTrayItemProps = {
   onPlacePhoto: (asset: PhotoAsset) => void;
 };
 
+// Individual draggable photo asset. dnd-kit supports the in-app drag workflow,
+// while the native dataTransfer payload preserves a lightweight browser drag
+// fallback for the scrapbook canvas.
 function PhotoTrayItem({ asset, onPlacePhoto }: PhotoTrayItemProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `photo-tray-${asset.id}`,
@@ -29,6 +35,8 @@ function PhotoTrayItem({ asset, onPlacePhoto }: PhotoTrayItemProps) {
       draggable
       style={{ transform: CSS.Translate.toString(transform), opacity: isDragging ? 0.68 : 1 }}
       onDragStart={(event) => {
+        // The canvas reads this MIME key to identify which uploaded asset should
+        // become a scrapbook photo item when dropped.
         event.dataTransfer.setData('text/scrapbook-photo', asset.id);
         event.dataTransfer.effectAllowed = 'copy';
       }}
@@ -53,6 +61,8 @@ function PhotoTrayItem({ asset, onPlacePhoto }: PhotoTrayItemProps) {
   );
 }
 
+// Lists available photo assets and provides the upload entry point for adding
+// more images to the current scrapbook session.
 export default function PhotoTray({ assets, onUpload, onPlacePhoto }: PhotoTrayProps) {
   return (
     <section className="rounded-lg border border-gold/25 bg-white p-5 shadow-soft">

@@ -1,3 +1,5 @@
+// Parsed timeline preview.
+// Shows itinerary days/stops extracted by the trip parser.
 'use client';
 
 import { motion } from 'framer-motion';
@@ -7,8 +9,10 @@ type ParsedTimelineViewProps = {
   timeline: ParsedTripDay[];
 };
 
+// Prefers the original human-readable date label when the parser found one.
 const getDayDateLabel = (day: ParsedTripDay) => day.originalDateText || day.date || 'Draft day';
 
+// Renders parsed trip days in order.
 export default function ParsedTimelineView({ timeline }: ParsedTimelineViewProps) {
   if (!timeline.length) {
     return (

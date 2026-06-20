@@ -1,3 +1,5 @@
+// Trip import preview card.
+// Displays the parsed trip summary before it is imported into the journal.
 'use client';
 
 import { motion } from 'framer-motion';
@@ -7,6 +9,7 @@ type TripPreviewCardProps = {
   result: TripImportResult | null;
 };
 
+// Renders parsed trip details for review.
 export default function TripPreviewCard({ result }: TripPreviewCardProps) {
   if (!result) {
     return (

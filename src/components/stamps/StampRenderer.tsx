@@ -1,3 +1,6 @@
+// Core visual renderer for stamp artwork.
+// It combines static artwork, metadata-driven text, CSS variables, and texture
+// layers into the final collected or locked stamp presentation.
 'use client';
 
 import React from 'react';
@@ -17,6 +20,7 @@ interface StampRendererProps {
   isHovered?: boolean;
 }
 
+// Texture layers can opt in/out of locked stamps so locked visuals stay subdued.
 const isLayerVisible = (layer: StampTextureLayer, isLocked: boolean): boolean => {
   if (isLocked) {
     return layer.locked_visible !== false;
@@ -25,6 +29,7 @@ const isLayerVisible = (layer: StampTextureLayer, isLocked: boolean): boolean =>
   return layer.unlocked_visible !== false;
 };
 
+// Renders a single stamp from catalog metadata.
 export const StampRenderer: React.FC<StampRendererProps> = ({
   stamp,
   isLocked = false,

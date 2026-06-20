@@ -1,3 +1,6 @@
+// Canva integration types.
+// These mirror the subset of Canva design/export response data the journal
+// workspace needs.
 export type CanvaDesignOwner = {
   user_id: string;
   team_id: string;
@@ -45,4 +48,3 @@ export type CanvaExportResult = {
   job: CanvaExportJob;
   dataUrls?: string[];
 };
-

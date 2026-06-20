@@ -1,3 +1,6 @@
+// Server route for AI-assisted Memory Keeper prompts.
+// The journal UI can use deterministic local templates, while this route adds
+// optional OpenAI generation when configured.
 import { NextRequest, NextResponse } from 'next/server';
 import {
   buildMemoryKeeperPromptInput,
@@ -30,6 +33,7 @@ type MemoryKeeperRequestPayload = {
 
 export const runtime = 'nodejs';
 
+// Removes common model wrapper phrases so UI receives clean prose.
 const stripResponseWrapper = (value: string) =>
   value
     .replace(/^```(?:text|markdown)?\s*/i, '')
@@ -37,6 +41,7 @@ const stripResponseWrapper = (value: string) =>
     .replace(/^here is .+?:\s*/i, '')
     .trim();
 
+// Supports the Responses API output shape by collecting text parts.
 const extractOutputText = (payload: OpenAIResponsePayload) => {
   if (payload.output_text && payload.output_text.trim()) {
     return payload.output_text.trim();
@@ -52,9 +57,11 @@ const extractOutputText = (payload: OpenAIResponsePayload) => {
   return textParts.join('\n').trim();
 };
 
+// Validates that the request includes enough trip context to generate useful output.
 const hasTripContext = (context: MemoryKeeperTripContext | undefined): context is MemoryKeeperTripContext =>
   Boolean(context && typeof context.tripName === 'string');
 
+// Calls OpenAI for one memory-focused response.
 const callOpenAIText = async (params: {
   apiKey: string;
   model: string;
@@ -92,6 +99,7 @@ const callOpenAIText = async (params: {
   return text ? stripResponseWrapper(text) : null;
 };
 
+// Handles one Memory Keeper generation request.
 export async function POST(request: NextRequest) {
   const payload = (await request.json()) as MemoryKeeperRequestPayload;
   const action = String(payload.action ?? '');

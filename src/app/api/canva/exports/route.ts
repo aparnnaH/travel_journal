@@ -1,3 +1,6 @@
+// Canva export route.
+// Canva exports are asynchronous jobs, so this route can either create a job or
+// poll one by id and optionally download the finished assets as data URLs.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import {
@@ -9,6 +12,7 @@ import {
 
 export const runtime = 'nodejs';
 
+// Polls an export job and optionally embeds completed export URLs as data URLs.
 export async function GET(request: NextRequest) {
   try {
     const context = await getAuthenticatedRouteContext(request, 'Canva');
@@ -39,6 +43,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Starts a new export job for a Canva design.
 export async function POST(request: NextRequest) {
   try {
     const context = await getAuthenticatedRouteContext(request, 'Canva');

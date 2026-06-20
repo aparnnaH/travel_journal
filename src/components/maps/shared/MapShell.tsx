@@ -1,3 +1,5 @@
+// Generic map page shell.
+// Provides a reusable framed layout for map-like surfaces.
 'use client';
 
 import type { ReactNode } from 'react';
@@ -11,6 +13,7 @@ interface MapShellProps {
   className?: string;
 }
 
+// Renders a title/subtitle/actions header above map content.
 export default function MapShell({ title, subtitle, actions, children, className }: MapShellProps) {
   return (
     <section className={cn('rounded-[2rem] border border-ink/10 bg-cream/90 p-6 shadow-soft', className)}>

@@ -1,3 +1,6 @@
+// Root layout for the App Router application.
+// Everything rendered by Next.js passes through this file, so it is the right
+// place for global fonts, metadata, analytics snippets, and app-wide providers.
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import AuthProvider from "@/components/AuthProvider";
@@ -28,16 +31,22 @@ const caveat = Caveat({
 
 const GTM_ID = "GTM-TX54NCRN";
 
+// Next.js App Router reads exported metadata from layouts/pages and turns it
+// into document <head> tags for every route nested under this layout.
 export const metadata: Metadata = {
   title: "Travel Journal",
   description: "Document your travels with interactive maps, journals, and passport stamps",
 };
 
+// The viewport export is the App Router replacement for hand-writing the
+// viewport meta tag in a custom document.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
 };
 
+// RootLayout is a Server Component by default. It composes static shell concerns
+// and then hands interactive auth/session work to the client-side AuthProvider.
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -49,6 +58,7 @@ export default function RootLayout({
       className={`${playfairDisplay.variable} ${crimsonPro.variable} ${caveat.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-cream text-ink">
+        {/* Google Tag Manager needs to run before the page becomes interactive so analytics sees all routes. */}
         <Script id="google-tag-manager" strategy="beforeInteractive">
           {`
             (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -59,6 +69,7 @@ export default function RootLayout({
           `}
         </Script>
         <noscript>
+          {/* The noscript iframe keeps GTM functional for users with JavaScript disabled. */}
           <iframe
             src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`}
             height="0"
@@ -66,6 +77,7 @@ export default function RootLayout({
             style={{ display: "none", visibility: "hidden" }}
           />
         </noscript>
+        {/* AuthProvider owns client-side Supabase session hydration for the whole app. */}
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

@@ -1,3 +1,6 @@
+// Collected stamp card component.
+// This wraps StampRenderer with celebration particles and motion used when a
+// passport stamp is unlocked or highlighted.
 'use client';
 
 import React, { useState } from 'react';
@@ -23,6 +26,7 @@ const burstParticles = [
   { x: -68, y: -36 },
 ];
 
+// Renders a collected passport stamp with optional locked-state styling.
 export const PassportStamp: React.FC<PassportStampProps> = ({
   stamp,
   isLocked = false,

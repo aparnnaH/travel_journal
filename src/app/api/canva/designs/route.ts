@@ -1,3 +1,6 @@
+// Canva designs route.
+// Proxies design listing/creation through the server so Canva access tokens and
+// organization logic stay out of the browser.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import {
@@ -9,6 +12,7 @@ import {
 
 export const runtime = 'nodejs';
 
+// Lists recent Canva designs for the connected user.
 export async function GET(request: NextRequest) {
   try {
     const context = await getAuthenticatedRouteContext(request, 'Canva');
@@ -28,6 +32,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Creates a journal-sized Canva design and best-effort moves it into the user's
+// Travel Journal folder when folder scopes are available.
 export async function POST(request: NextRequest) {
   try {
     const context = await getAuthenticatedRouteContext(request, 'Canva');

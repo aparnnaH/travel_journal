@@ -1,3 +1,7 @@
+// Collectible country stamp catalog.
+// Curated entries define finished stamp art, while atlas placeholder entries
+// ensure every map country can still produce a passport slot before custom art
+// exists.
 import type {
   CountryStamp,
   StampAssetFormat,
@@ -18,6 +22,8 @@ import {
 import { ATLAS_STAMP_COUNTRIES } from './atlasCountries';
 import type { AtlasStampCountry } from './atlasCountries';
 
+// Shared texture assets are layered onto every stamp so curated and placeholder
+// artwork have the same archival passport feel.
 const paperFiber = createTextureAsset('paper-fiber', 'paper-fiber.svg', 'Subtle archival paper fiber');
 const inkBleed = createTextureAsset('ink-bleed', 'ink-bleed.svg', 'Soft uneven ink bleed texture');
 const wornEdge = createTextureAsset('worn-edge', 'worn-edge.svg', 'Worn passport stamp edge texture');
@@ -27,6 +33,8 @@ const cancellationRings = createTextureAsset(
   'Layered passport cancellation rings',
 );
 
+// Base layers are reused by all stamps to avoid repeating texture metadata in
+// every country entry.
 const baseTextureLayers = [
   createStampLayer({
     id: 'paper-fiber-layer',
@@ -45,6 +53,8 @@ const baseTextureLayers = [
   }),
 ];
 
+// Overlay layers sit above the central artwork and add worn-edge/cancellation
+// effects during rendering.
 const baseOverlayLayers = [
   createStampLayer({
     id: 'worn-edge-layer',
@@ -82,10 +92,14 @@ interface StampInput {
   aliases?: string[];
 }
 
+// Name lookup connects curated country names to the atlas metadata used by the
+// map/passport matching layer.
 const atlasCountryByName = new Map(
   ATLAS_STAMP_COUNTRIES.map((country) => [normalizeCountryToStampId(country.name), country]),
 );
 
+// Pulls atlas ids and aliases for a country when a curated stamp does not define
+// them manually.
 const getAtlasStampMetadata = (countryName: string) => {
   const atlasCountry = atlasCountryByName.get(normalizeCountryToStampId(countryName));
 
@@ -95,6 +109,8 @@ const getAtlasStampMetadata = (countryName: string) => {
   };
 };
 
+// Factory for curated country stamps. It attaches artwork, shared textures,
+// atlas metadata, and alias de-duplication in one place.
 const createCountryStamp = ({
   prompt_hint,
   artwork_format = 'png',
@@ -113,6 +129,8 @@ const createCountryStamp = ({
   };
 };
 
+// Placeholder palettes rotate through neutral stamp colors so countries without
+// custom artwork still look intentionally designed in the passport.
 const placeholderPalettes: StampColor[] = [
   { primary: '#4d4a45', secondary: '#9b7a3f', background: '#f1e6d2', border: '#3b3128' },
   { primary: '#1f6677', secondary: '#b68d32', background: '#eef1e9', border: '#253842' },
@@ -121,6 +139,8 @@ const placeholderPalettes: StampColor[] = [
   { primary: '#8f3a21', secondary: '#1f6677', background: '#f5e6ce', border: '#3d2b1f' },
 ];
 
+// Some placeholder countries already have imported raster artwork. This map
+// keeps those filenames separate from the normalized stamp ids.
 const importedPlaceholderArtworkFiles: Record<string, string> = {
   afghanistan: 'Afghanistan.png',
   albania: 'Albania.png',
@@ -130,6 +150,7 @@ const importedPlaceholderArtworkFiles: Record<string, string> = {
   armenia: 'Armenia.png',
 };
 
+// Wraps imported placeholder art in the same asset shape used by curated art.
 const createImportedPlaceholderArtworkAsset = (
   stampId: string,
   countryName: string,
@@ -146,6 +167,8 @@ const createImportedPlaceholderArtworkAsset = (
     prompt_hint: `Imported transparent country stamp centerpiece artwork for ${countryName}.`,
   });
 
+// Region groupings are keyed by atlas id because placeholder stamps are created
+// directly from the atlas country catalog.
 const atlasRegionGroups: Record<string, string[]> = {
   Africa: [
     '834',
@@ -329,14 +352,17 @@ const atlasRegionGroups: Record<string, string[]> = {
   Antarctica: ['260', '010'],
 };
 
+// Fast lookup for assigning a placeholder stamp to a broad passport region.
 const atlasRegionById = new Map(
   Object.entries(atlasRegionGroups).flatMap(([region, atlasIds]) =>
     atlasIds.map((atlasId) => [atlasId, region] as const),
   ),
 );
 
+// Defaults to a global bucket if a country id is not in the curated region map.
 const getAtlasCountryRegion = (atlasId: string) => atlasRegionById.get(atlasId) ?? 'Global Archive';
 
+// Produces a short cancellation code from a country name for placeholder stamps.
 const getPlaceholderCode = (countryName: string) => {
   const initials = countryName
     .replace(/[^a-zA-Z\s-]/g, ' ')
@@ -350,6 +376,8 @@ const getPlaceholderCode = (countryName: string) => {
   return initials.padEnd(3, 'X');
 };
 
+// Builds a usable stamp for every atlas country that does not have custom
+// metadata. This keeps the passport complete while marking unfinished artwork.
 const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number): CountryStamp => {
   const id = normalizeCountryToStampId(country.name);
   const colors = placeholderPalettes[index % placeholderPalettes.length];
@@ -400,6 +428,7 @@ const createAtlasPlaceholderStamp = (country: AtlasStampCountry, index: number):
   };
 };
 
+// Hand-authored stamps with country-specific visual identity and prompt hints.
 const CURATED_COUNTRY_STAMPS: CountryStamp[] = [
   createCountryStamp({
     id: 'japan',

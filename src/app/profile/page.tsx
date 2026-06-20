@@ -1,3 +1,6 @@
+// Profile page.
+// Lets the signed-in user edit display name/avatar fields stored in both
+// Supabase Auth metadata and the app's public profiles table.
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -44,6 +47,7 @@ const emptyDraft: ProfileDraft = {
   avatar: '',
 };
 
+// Creates initials for avatar fallbacks.
 const getInitials = (value: string) => {
   const words = value
     .trim()
@@ -60,6 +64,7 @@ const getInitials = (value: string) => {
     .join('');
 };
 
+// Formats account/profile dates for display without throwing on bad input.
 const formatDate = (value?: string | null) => {
   if (!value) {
     return 'Not recorded';
@@ -78,9 +83,11 @@ const formatDate = (value?: string | null) => {
   }).format(date);
 };
 
+// Profile data may arrive in camelCase or snake_case depending on source.
 const getProfileDisplayName = (profile?: ProfileRecord) => profile?.displayName ?? profile?.display_name ?? '';
 const getProfileAvatar = (profile?: ProfileRecord) => profile?.avatar ?? profile?.avatar_url ?? '';
 
+// Loads profile state, protects the page, and saves profile updates.
 export default function ProfilePage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -96,6 +103,7 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Redirect anonymous users once AuthProvider has finished checking auth.
     if (!isLoading && !user) {
       router.replace('/login');
       return;
@@ -107,6 +115,8 @@ export default function ProfilePage() {
 
     let isActive = true;
 
+    // Fetches the persisted profile row and journal count in parallel for the
+    // profile summary UI.
     const loadProfile = async () => {
       setProfileLoaded(false);
       const [profileResponse, journalResponse] = await Promise.all([
@@ -140,6 +150,7 @@ export default function ProfilePage() {
 
   const profileName = draft.displayName || user?.displayName || user?.email || 'Traveler';
   const avatarUrl = draft.avatar.trim();
+  // City pins live in the map store by country; the profile shows a total count.
   const cityCount = useMemo(
     () => Object.values(countryCities ?? {}).reduce((total, cities) => total + cities.length, 0),
     [countryCities]
@@ -193,6 +204,8 @@ export default function ProfilePage() {
     return null;
   }
 
+  // Saves both the app profile row and Supabase Auth metadata so identity is
+  // consistent in the header, sharing, and auth-backed account data.
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 

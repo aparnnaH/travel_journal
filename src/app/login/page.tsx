@@ -1,3 +1,6 @@
+// Login page.
+// Uses the browser Supabase helper to sign in, then redirects to a safe in-app
+// route once AuthProvider can hydrate global auth state.
 'use client';
 
 import React, { useEffect, useState } from 'react';
@@ -7,6 +10,7 @@ import { signInWithEmail } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useRouter } from 'next/navigation';
 
+// Prevents open redirects by only allowing local absolute paths.
 const getSafeRedirectPath = (value: string | null) => {
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
     return '/';
@@ -15,12 +19,14 @@ const getSafeRedirectPath = (value: string | null) => {
   return value;
 };
 
+// Reads the redirect target from the URL in the browser.
 const getRedirectPath = () => {
   if (typeof window === 'undefined') return '/';
 
   return getSafeRedirectPath(new URLSearchParams(window.location.search).get('from'));
 };
 
+// Renders the email/password login form and handles Supabase sign-in.
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

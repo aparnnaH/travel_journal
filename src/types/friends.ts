@@ -1,3 +1,5 @@
+// Travel Circle types.
+// These shapes are shared by friends UI, client services, and server row mappers.
 export type FriendshipStatus = 'pending' | 'accepted' | 'blocked';
 
 export type FriendProfile = {

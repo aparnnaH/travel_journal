@@ -1,3 +1,6 @@
+// Passport route wrapper.
+// This route reads map state, computes unlocked stamp ids, handles ?stamp= deep
+// links, and lazy-loads the heavier passport UI for better perceived loading.
 'use client';
 
 import React, { Suspense, useEffect } from 'react';
@@ -14,6 +17,7 @@ const PassportPageComponent = dynamic(() => import('@/components/passport/Passpo
   loading: () => <PassportLoadingShell />,
 });
 
+// Lightweight shell used while the dynamic passport UI loads.
 function PassportRouteLoadingShell() {
   return (
     <div className="min-h-screen bg-cream">
@@ -23,6 +27,7 @@ function PassportRouteLoadingShell() {
   );
 }
 
+// Contains the client-side route logic that depends on auth and URL search params.
 function PassportRouteContent() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -32,6 +37,7 @@ function PassportRouteContent() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
+    // Protected client route guard.
     if (!isLoading && !user) {
       router.replace('/login');
     }
@@ -43,6 +49,8 @@ function PassportRouteContent() {
 
   const visitedStampKeys = new Set<string>();
 
+  // Build every normalized key that could unlock a stamp: raw ids, labels, and
+  // matched atlas ids all count.
   visitedCountries.forEach((countryId) => {
     visitedStampKeys.add(countryId.toUpperCase());
     visitedStampKeys.add(normalizeCountryToStampId(countryId));
@@ -54,6 +62,7 @@ function PassportRouteContent() {
     }
   });
 
+  // A stamp unlocks when any of its known ids/aliases match the visited map keys.
   const unlockedStampIds = COUNTRY_STAMPS.filter((stamp) => {
     if (visitedStampKeys.has(stamp.id) || visitedStampKeys.has(normalizeCountryToStampId(stamp.country_name))) {
       return true;
@@ -72,6 +81,7 @@ function PassportRouteContent() {
         visitedStampKeys.has(normalizeCountryToStampId(alias)),
     );
   }).map((stamp) => stamp.id);
+  // Query targeting lets /map send users directly to the stamp they revealed.
   const requestedStampId = searchParams.get('stamp');
   const targetStampId = COUNTRY_STAMPS.some((stamp) => stamp.id === requestedStampId) ? requestedStampId : null;
 
@@ -87,6 +97,7 @@ function PassportRouteContent() {
   );
 }
 
+// Suspense is required because useSearchParams participates in client routing.
 export default function PassportPage() {
   return (
     <Suspense fallback={<PassportRouteLoadingShell />}>

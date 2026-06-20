@@ -1,3 +1,6 @@
+// Session-cookie route for bridging Supabase browser auth to server APIs.
+// The browser gets an access token from Supabase; this route verifies it and
+// stores it in an HTTP-only cookie that route handlers can trust.
 import { NextRequest, NextResponse } from 'next/server';
 import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
@@ -9,6 +12,8 @@ type SessionRequestBody = {
   expiresAt?: number | null;
 };
 
+// Caps the cookie lifetime so stale tokens are not kept indefinitely, while
+// still respecting the Supabase token expiration when provided.
 const getSessionMaxAge = (expiresAt?: number | null) => {
   if (!expiresAt) return 60 * 60;
 
@@ -16,6 +21,7 @@ const getSessionMaxAge = (expiresAt?: number | null) => {
   return Math.max(60, Math.min(secondsRemaining, 60 * 60));
 };
 
+// Validates a Supabase access token and writes it to the app session cookie.
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as SessionRequestBody;
   const token = typeof body.token === 'string' ? body.token.trim() : '';
@@ -43,6 +49,7 @@ export async function POST(request: NextRequest) {
   return response;
 }
 
+// Clears the app session cookie during sign-out or auth initialization failure.
 export async function DELETE(request: NextRequest) {
   const response = NextResponse.json({ success: true });
   response.cookies.set(authCookieName, '', {

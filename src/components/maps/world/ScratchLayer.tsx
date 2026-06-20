@@ -1,3 +1,6 @@
+// Scratch overlay for the atlas.
+// It tracks pointer movement over SVG geometry and reports scratch progress
+// without owning the higher-level visited-country state.
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -41,6 +44,7 @@ const SCRATCH_SAMPLE_SPACING = 10;
 const SCRATCH_STROKE_WIDTH = 36;
 const INPUT_CAPTURE_FILL = 'rgba(0, 0, 0, 0.001)';
 
+// Renders the scratch interaction layer for atlas geographies.
 export default function ScratchLayer({
   width,
   height,
@@ -64,6 +68,7 @@ export default function ScratchLayer({
   const countsRef = useRef<Record<string, number>>({});
   const revealedRef = useRef<Record<string, boolean>>({});
 
+  // Starts a scratch stroke only when the pointer begins inside a revealable country.
   const handleMouseDown = (e: ScratchEvent) => {
     const pos = getPointerPosition(e);
     if (!pos) return;
@@ -78,6 +83,7 @@ export default function ScratchLayer({
     recordScratchAtPoint(pos, POINTER_DOWN_UNITS, targetCountryId);
   };
 
+  // Extends the current stroke while the pointer stays inside the active country.
   const handleMouseMove = (e: ScratchEvent) => {
     if (!isDrawing.current) return;
     const point = getPointerPosition(e);
@@ -116,6 +122,7 @@ export default function ScratchLayer({
     lastPointRef.current = point;
   };
 
+  // Ends the active scratch stroke.
   const handleMouseUp = () => {
     isDrawing.current = false;
     lastPointRef.current = null;

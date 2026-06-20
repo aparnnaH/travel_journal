@@ -1,3 +1,6 @@
+// Synchronizes local scratch-map state with Supabase.
+// The map must feel instant locally, so Zustand/localStorage remains the fast
+// path while this component reconciles and saves cloud state for signed-in users.
 'use client';
 
 import { AlertTriangle, X } from 'lucide-react';
@@ -14,6 +17,7 @@ import type { ScratchMapState } from '@/types';
 const localOwnerKey = 'travel-journal-map-owner';
 const syncDebounceMs = 900;
 
+// A blank local store should not overwrite a useful remote map.
 function hasMapContent(state: ScratchMapState) {
   return (
     state.visitedCountries.length > 0 ||
@@ -23,21 +27,27 @@ function hasMapContent(state: ScratchMapState) {
   );
 }
 
+// Safely compares timestamps that may be missing or malformed.
 function getTime(value?: string) {
   const timestamp = value ? Date.parse(value) : Number.NaN;
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+// Tracks which user last owned the local map snapshot. This prevents one user's
+// local map from being uploaded into another user's account on shared devices.
 function getLocalOwner() {
   if (typeof window === 'undefined') return null;
   return window.localStorage.getItem(localOwnerKey);
 }
 
+// Records the signed-in user that the current local map belongs to.
 function setLocalOwner(userId: string) {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(localOwnerKey, userId);
 }
 
+// Zustand persistence hydrates asynchronously. Cloud reconciliation waits for
+// localStorage first so it compares the real local snapshot, not the empty default.
 async function waitForMapHydration() {
   if (useMapStore.persist.hasHydrated()) return;
 
@@ -49,6 +59,8 @@ async function waitForMapHydration() {
   });
 }
 
+// Mounted by AuthProvider so map syncing is available across the app, not only
+// while the user is on /map.
 export default function MapCloudSync() {
   const user = useAuthStore((state) => state.user);
   const isAuthLoading = useAuthStore((state) => state.isLoading);
@@ -62,6 +74,8 @@ export default function MapCloudSync() {
     let isCancelled = false;
     let unsubscribeFromMap: (() => void) | undefined;
 
+    // Persists the current local map snapshot to Supabase and records local
+    // ownership after a successful save.
     const saveSnapshot = async (snapshot: ScratchMapState) => {
       try {
         await saveCloudMapState(user.id, snapshot);
@@ -73,6 +87,8 @@ export default function MapCloudSync() {
       }
     };
 
+    // Debounces Zustand updates because map interactions can produce bursts of
+    // color/label/country changes.
     const scheduleSave = () => {
       if (isApplyingRemoteRef.current) return;
 
@@ -86,6 +102,8 @@ export default function MapCloudSync() {
       }, syncDebounceMs);
     };
 
+    // Reconciliation chooses the newer meaningful state. Local newer content can
+    // seed the cloud; otherwise remote state replaces the local store.
     const startSync = async () => {
       await waitForMapHydration();
       if (isCancelled) return;
@@ -148,6 +166,8 @@ export default function MapCloudSync() {
   }
 
   return (
+    // Sync issues are non-blocking: the local map still works, but the user gets
+    // a clear notice that cloud persistence is unavailable.
     <div
       role="status"
       aria-live="polite"

@@ -1,3 +1,5 @@
+// Memory insight card for the AI companion rail.
+// Shows one derived insight about the user's travel archive.
 'use client';
 
 import React from 'react';
@@ -9,6 +11,7 @@ type MemoryInsightCardProps = {
   cta?: string;
 };
 
+// Renders a single companion insight.
 export default function MemoryInsightCard({ title, detail, cta }: MemoryInsightCardProps) {
   return (
     <motion.article
@@ -22,4 +25,3 @@ export default function MemoryInsightCard({ title, detail, cta }: MemoryInsightC
     </motion.article>
   );
 }
-

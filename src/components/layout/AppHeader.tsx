@@ -1,3 +1,6 @@
+// App-wide navigation header.
+// This client component reads auth state, renders route groups, supports mobile
+// navigation, and owns the sign-out action shown in the Account menu.
 'use client';
 
 import Link from 'next/link';
@@ -47,6 +50,7 @@ const accountLinks = [
   { label: 'Friends / Travel Circle', href: '/friends', description: 'Manage friends and shared journal access.', icon: UsersRound },
 ] satisfies HeaderLink[];
 
+// Creates a compact fallback avatar from the user's name or email.
 const getInitials = (value: string) => {
   const words = value
     .trim()
@@ -63,6 +67,8 @@ const getInitials = (value: string) => {
     .join('');
 };
 
+// The header groups routes into product areas so the top nav stays readable as
+// the app grows.
 export default function AppHeader() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
@@ -76,6 +82,8 @@ export default function AppHeader() {
   const accountLabel = user?.displayName || user?.email || 'Signed in';
   const avatarUrl = user?.avatar?.trim();
 
+  // Dropdowns use a small close delay so moving the pointer from trigger to menu
+  // does not immediately dismiss the menu.
   const clearCloseTimer = useCallback(() => {
     if (!closeTimerRef.current) return;
     clearTimeout(closeTimerRef.current);
@@ -100,6 +108,7 @@ export default function AppHeader() {
     }, 180);
   };
 
+  // Signs out from Supabase, clears local auth state, and returns to login.
   const handleSignOut = async () => {
     await signOut();
     logout();
@@ -121,6 +130,7 @@ export default function AppHeader() {
     scheduleMenuClose(menu);
   };
 
+  // Clicking outside a pinned desktop menu or pressing Escape closes all menus.
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!pinnedMenu) return;

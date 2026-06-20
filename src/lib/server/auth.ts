@@ -1,3 +1,6 @@
+// Shared authentication helper for protected App Router route handlers.
+// It converts the app's HTTP-only session cookie or Authorization header into a
+// verified Supabase user plus the privileged admin client.
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
 import { authCookieName } from '@/lib/supabase';
@@ -8,10 +11,13 @@ export type AuthenticatedRouteContext = {
   user: User;
 };
 
+// Standard error envelope used by protected route handlers.
 export function jsonError(error: string, status = 400) {
   return NextResponse.json({ success: false, error }, { status });
 }
 
+// Validates the request session and returns the route context used by API
+// handlers. This keeps token parsing and expired-session messages consistent.
 export async function getAuthenticatedRouteContext(
   request: NextRequest,
   featureName = 'this feature'
@@ -32,6 +38,7 @@ export async function getAuthenticatedRouteContext(
   return { supabaseAdmin, user: data.user };
 }
 
+// Type guard that lets handlers return early when auth failed.
 export function isRouteError(context: AuthenticatedRouteContext | NextResponse): context is NextResponse {
   return context instanceof NextResponse;
 }

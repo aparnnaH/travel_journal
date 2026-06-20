@@ -1,5 +1,8 @@
 'use client';
 
+// Visual renderer for scrapbook decoration items.
+// The scrapbook model stores generic decoration kinds, and this component maps
+// those kinds to the small visual treatments shown on the canvas.
 import type { ScrapbookDecorationItem } from '@/lib/canvas/scrapbook';
 import PassportStampOverlay from './PassportStampOverlay';
 
@@ -7,7 +10,11 @@ type StickerLayerProps = {
   item: ScrapbookDecorationItem;
 };
 
+// Renders stickers, pins, tickets, tape, and paper notes from the same saved
+// decoration shape so the canvas can position all decoration types uniformly.
 export default function StickerLayer({ item }: StickerLayerProps) {
+  // Passport stickers get a richer circular overlay; the other kinds use the
+  // shared block renderer below with kind-specific classes.
   if (item.kind === 'sticker') {
     return <PassportStampOverlay label={item.label} color={item.color} />;
   }
