@@ -1,6 +1,6 @@
 # Travel Journal
 
-A Next.js travel archive for mapping visited countries, building scrapbook-style journals, collecting passport stamps, sharing entries with friends, and auditing map progress against passport coverage.
+A Next.js travel archive for mapping visited countries, building Canva-backed scrapbook journals, collecting passport stamps, sharing entries with friends, and auditing map progress against passport coverage.
 
 ## Current App Surface
 
@@ -11,7 +11,7 @@ A Next.js travel archive for mapping visited countries, building scrapbook-style
 - `/dashboard` - signed-in command center with map, journal, passport, profile, and Travel Circle shortcuts
 - `/profile` - editable profile details, avatar display, profile completeness, and account shortcuts
 - `/map` - scratch-map experience with visited countries, country explorer, city pins, and atlas controls
-- `/journal` - journal entries, scrapbook canvas, trip import, entry sharing, shared entries, and comments
+- `/journal` - Canva journal studio, journal entries, scrapbook canvas, trip import, entry sharing, shared entries, and comments
 - `/passport` - passport stamp collection, locked/unlocked stamp states, and map-to-stamp reveal links
 - `/compare` - user-facing **Travel Audit** page that compares map visits with passport stamp coverage
 - `/friends` - **Travel Circle** friend requests, accepted friends, blocked users, and friend discovery by email
@@ -23,6 +23,7 @@ A Next.js travel archive for mapping visited countries, building scrapbook-style
 - `Explore` dropdown includes Map, Passport, Travel Audit, and Companion.
 - `Account` dropdown includes Profile, Friends / Travel Circle, and Sign out.
 - Dashboard and Profile now surface Travel Circle without keeping Friends in the main header nav.
+- Canva Connect lets users create Canva journal pages, import finished designs, save Canva previews, and organize created designs in a Travel Journal Canva folder.
 - Journal sharing prompts users to open Travel Circle when no friends exist.
 - Travel Audit compares visited countries with passport stamp matches, missing map-stamp links, and still-locked stamp goals.
 - Signed-in header shows the profile image or initials beside the account label.
@@ -40,10 +41,18 @@ A Next.js travel archive for mapping visited countries, building scrapbook-style
 ### Journal and Scrapbook
 
 - Journal entry creation and listing.
+- Canva Connect workspace for creating new journal pages, browsing Canva designs, exporting/importing pages, saving page previews, and reopening saved Canva-backed entries.
 - Scrapbook canvas with draggable memories, rotatable photos, decorations, and page themes.
 - Trip import components for parsing itinerary-like content into draft journal material.
 - Shared journal section for entries shared with the current user.
 - Comments on accessible shared journal entries.
+
+### Canva Integration
+
+- OAuth-backed Canva connection with encrypted token storage.
+- In-app design picker, new-design creation, async export polling, and PNG page import into journal entries.
+- Saved Canva metadata includes design IDs, edit URLs, page previews, cover-page selection, and fallback content payloads for migrations.
+- Best-effort organization moves created Canva designs into a per-user Travel Journal folder when folder scopes are available.
 
 ### Passport Stamps
 
@@ -88,10 +97,10 @@ A Next.js travel archive for mapping visited countries, building scrapbook-style
 ```text
 src/
 ├── app/
-│   ├── api/                  # Next route handlers
+│   ├── api/                  # Next route handlers, including Canva, journal, friends, profile, and AI
 │   ├── dashboard/            # Signed-in dashboard
 │   ├── map/                  # Scratch map route
-│   ├── journal/              # Journal, scrapbook, sharing, comments
+│   ├── journal/              # Canva journal studio, scrapbook, sharing, comments
 │   ├── passport/             # Passport route
 │   ├── compare/              # Travel Audit route
 │   ├── friends/              # Travel Circle route
@@ -113,7 +122,7 @@ src/
 ├── lib/
 │   ├── ai/                   # Companion context, storage, polishing
 │   ├── canvas/               # Scrapbook data model
-│   ├── server/               # Server helpers for friends/sharing
+│   ├── server/               # Server helpers for Canva, friends, and sharing
 │   ├── stamps/               # Stamp matching and map comparison
 │   └── trip-parser/          # Trip import parsing
 ├── store/                    # Zustand auth/map stores
