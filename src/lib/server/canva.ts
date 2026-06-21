@@ -439,20 +439,37 @@ export async function getCanvaExportJob(accessToken: string, exportId: string) {
 
 // Downloads Canva's short-lived export URLs and converts them to data URLs so
 // journal entries can persist image pages without depending on remote links.
-export async function downloadExportUrlsAsDataUrls(urls: string[]) {
-  return Promise.all(
-    urls.map(async (url) => {
-      const response = await fetch(url);
+export async function downloadExportUrlsAsDataUrls(
+  urls: string[],
+  options: { maxUrls?: number; maxTotalBytes?: number } = {}
+) {
+  const maxUrls = options.maxUrls ?? 8;
+  const maxTotalBytes = options.maxTotalBytes ?? 12 * 1024 * 1024;
+  const limitedUrls = urls.slice(0, maxUrls);
+  const dataUrls: string[] = [];
+  let totalBytes = 0;
 
-      if (!response.ok) {
-        throw new Error('Could not download exported Canva page.');
-      }
+  for (const url of limitedUrls) {
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(15_000),
+    });
 
-      const contentType = response.headers.get('content-type') || 'image/png';
-      const buffer = Buffer.from(await response.arrayBuffer());
-      return `data:${contentType};base64,${buffer.toString('base64')}`;
-    })
-  );
+    if (!response.ok) {
+      throw new Error('Could not download exported Canva page.');
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/png';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    totalBytes += buffer.byteLength;
+
+    if (totalBytes > maxTotalBytes) {
+      throw new Error('Canva export is too large to save in the journal.');
+    }
+
+    dataUrls.push(`data:${contentType};base64,${buffer.toString('base64')}`);
+  }
+
+  return dataUrls;
 }
 
 // Decodes one base64url JWT part without verifying it. Verification happens in

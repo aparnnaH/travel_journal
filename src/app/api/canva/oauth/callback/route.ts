@@ -3,6 +3,7 @@
 // cookie before exchanging the code and storing encrypted Canva tokens.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
+import { resolveSameOriginPath } from '@/lib/server/apiSafety';
 import {
   decodeCanvaOAuthCookie,
   exchangeCanvaAuthorizationCode,
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
     const token = await exchangeCanvaAuthorizationCode(code, oauthCookie.codeVerifier);
     await saveCanvaConnection(context.supabaseAdmin, context.user.id, token);
 
-    const returnUrl = new URL(oauthCookie.returnTo || '/journal', request.url);
+    const returnUrl = new URL(resolveSameOriginPath(oauthCookie.returnTo, '/journal'), request.url);
     returnUrl.searchParams.set('canva', 'connected');
     const response = NextResponse.redirect(returnUrl);
     response.cookies.delete(getCanvaOAuthCookieName());

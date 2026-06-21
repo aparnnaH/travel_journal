@@ -2,6 +2,7 @@
 // Canva exports are asynchronous jobs, so this route can either create a job or
 // poll one by id and optionally download the finished assets as data URLs.
 import { NextRequest, NextResponse } from 'next/server';
+import { clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import {
   createCanvaExportJob,
@@ -32,7 +33,10 @@ export async function GET(request: NextRequest) {
     const includeDataUrls = request.nextUrl.searchParams.get('includeDataUrls') === 'true';
     const dataUrls =
       includeDataUrls && data.job.status === 'success' && data.job.urls?.length
-        ? await downloadExportUrlsAsDataUrls(data.job.urls)
+        ? await downloadExportUrlsAsDataUrls(data.job.urls, {
+            maxUrls: 8,
+            maxTotalBytes: 12 * 1024 * 1024,
+          })
         : undefined;
 
     return NextResponse.json({ success: true, data: { ...data.job, dataUrls } });
@@ -52,8 +56,16 @@ export async function POST(request: NextRequest) {
       return context;
     }
 
-    const body = await request.json();
-    const designId = typeof body.designId === 'string' ? body.designId : '';
+    const body = await readJsonBody<{ designId?: string; format?: string }>(request, {
+      maxBytes: 4 * 1024,
+      errorMessage: 'Canva export request is too large.',
+    });
+
+    if (isApiError(body)) {
+      return body;
+    }
+
+    const designId = clampText(body.designId, 200);
     const format = body.format === 'jpg' || body.format === 'pdf' ? body.format : 'png';
 
     if (!designId) {

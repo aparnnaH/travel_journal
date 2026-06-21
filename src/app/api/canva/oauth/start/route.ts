@@ -3,6 +3,7 @@
 // HTTP-only cookie, and redirects the browser to Canva.
 import { NextRequest, NextResponse } from 'next/server';
 import { createCanvaAuthorizationUrl, getCanvaOAuthCookieName } from '@/lib/server/canva';
+import { resolveSameOriginPath } from '@/lib/server/apiSafety';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +11,7 @@ export const runtime = 'nodejs';
 // the app after OAuth completes.
 export async function GET(request: NextRequest) {
   try {
-    const returnTo = request.nextUrl.searchParams.get('returnTo') || '/journal';
+    const returnTo = resolveSameOriginPath(request.nextUrl.searchParams.get('returnTo'), '/journal');
     const { url, cookie } = createCanvaAuthorizationUrl(returnTo);
     const response = NextResponse.redirect(url);
 

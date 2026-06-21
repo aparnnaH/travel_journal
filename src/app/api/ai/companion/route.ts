@@ -3,6 +3,8 @@
 // grounded prompt and returns a concise assistant reply.
 import { NextRequest, NextResponse } from 'next/server';
 import type { CompanionArchiveSnapshot, CompanionChatRole } from '@/lib/ai/types';
+import { checkApiRateLimit, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
+import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 type OpenAIResponseContentItem = {
   type?: string;
@@ -200,8 +202,28 @@ const callOpenAICompanion = async (params: {
 
 // Handles one companion chat request.
 export async function POST(request: NextRequest) {
-  const payload = (await request.json()) as CompanionRoutePayload;
-  const message = String(payload.message ?? '').trim();
+  const context = await getAuthenticatedRouteContext(request, 'AI companion');
+
+  if (isRouteError(context)) {
+    return context;
+  }
+
+  const rateLimitError = checkApiRateLimit('ai-companion', context.user.id);
+
+  if (rateLimitError) {
+    return rateLimitError;
+  }
+
+  const payload = await readJsonBody<CompanionRoutePayload>(request, {
+    maxBytes: 80 * 1024,
+    errorMessage: 'Companion request is too large.',
+  });
+
+  if (isApiError(payload)) {
+    return payload;
+  }
+
+  const message = clampText(payload.message, 1600);
   const archive = payload.archive;
 
   if (!message) {
@@ -225,7 +247,14 @@ export async function POST(request: NextRequest) {
       model,
       message,
       archive,
-      activeJournalDraft: payload.activeJournalDraft,
+      activeJournalDraft: payload.activeJournalDraft
+        ? {
+            ...payload.activeJournalDraft,
+            countryName: clampText(payload.activeJournalDraft.countryName, 120),
+            places: payload.activeJournalDraft.places?.map((place) => clampText(place, 120)).filter(Boolean).slice(0, 12),
+            draft: clampText(payload.activeJournalDraft.draft, 5000),
+          }
+        : payload.activeJournalDraft,
       history: payload.history,
     });
 

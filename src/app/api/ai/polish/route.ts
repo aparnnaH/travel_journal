@@ -2,6 +2,8 @@
 // It improves generated writing while preserving required places/details and
 // gracefully falls back when OpenAI is unavailable.
 import { NextRequest, NextResponse } from 'next/server';
+import { checkApiRateLimit, clampStringList, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
+import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 type OpenAIResponseContentItem = {
   type?: string;
@@ -332,12 +334,30 @@ const polishWithOpenAI = async (input: OpenAIPolishInput) => {
 
 // Handles one polish request from the companion chat hook.
 export async function POST(request: NextRequest) {
-  const payload = (await request.json()) as PolishRequestPayload;
-  const draft = String(payload.draft ?? '').trim();
-  const lastUserInput = String(payload.lastUserInput ?? '').trim();
-  const requiredMentions = Array.isArray(payload.requiredMentions)
-    ? payload.requiredMentions.map((item) => String(item).trim()).filter(Boolean).slice(0, 8)
-    : [];
+  const context = await getAuthenticatedRouteContext(request, 'AI polish');
+
+  if (isRouteError(context)) {
+    return context;
+  }
+
+  const rateLimitError = checkApiRateLimit('ai-polish', context.user.id);
+
+  if (rateLimitError) {
+    return rateLimitError;
+  }
+
+  const payload = await readJsonBody<PolishRequestPayload>(request, {
+    maxBytes: 48 * 1024,
+    errorMessage: 'Polish request is too large.',
+  });
+
+  if (isApiError(payload)) {
+    return payload;
+  }
+
+  const draft = clampText(payload.draft, 12000);
+  const lastUserInput = clampText(payload.lastUserInput, 3000);
+  const requiredMentions = clampStringList(payload.requiredMentions, 8, 220);
 
   if (!draft) {
     return NextResponse.json({ success: false, error: 'Missing draft.' }, { status: 400 });

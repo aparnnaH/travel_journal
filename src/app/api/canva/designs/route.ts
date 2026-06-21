@@ -2,6 +2,7 @@
 // Proxies design listing/creation through the server so Canva access tokens and
 // organization logic stay out of the browser.
 import { NextRequest, NextResponse } from 'next/server';
+import { clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import {
   createCanvaDesign,
@@ -42,8 +43,17 @@ export async function POST(request: NextRequest) {
       return context;
     }
 
-    const body = await request.json();
-    const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'Travel Journal Page';
+    const body = await readJsonBody<{ title?: string }>(request, {
+      maxBytes: 4 * 1024,
+      errorMessage: 'Canva design request is too large.',
+    });
+
+    if (isApiError(body)) {
+      return body;
+    }
+
+    const cleanTitle = clampText(body.title, 255);
+    const title = cleanTitle || 'Travel Journal Page';
     const accessToken = await getValidCanvaAccessToken(context.supabaseAdmin, context.user.id);
     const data = await createCanvaDesign(accessToken, title.slice(0, 255));
     const organization: { folderId?: string; warning?: string } = await organizeCanvaDesignInTravelJournalFolder(

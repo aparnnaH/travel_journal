@@ -22,7 +22,10 @@ export async function GET(request: NextRequest, context: RouteContext<'/api/canv
     const includeDataUrls = request.nextUrl.searchParams.get('includeDataUrls') === 'true';
     const dataUrls =
       includeDataUrls && data.job.status === 'success' && data.job.urls?.length
-        ? await downloadExportUrlsAsDataUrls(data.job.urls)
+        ? await downloadExportUrlsAsDataUrls(data.job.urls, {
+            maxUrls: 8,
+            maxTotalBytes: 12 * 1024 * 1024,
+          })
         : undefined;
 
     return NextResponse.json({ success: true, data: { ...data.job, dataUrls } });

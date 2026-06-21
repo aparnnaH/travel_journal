@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
+import { clampStringList, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
@@ -18,6 +19,10 @@ const JOURNAL_SUMMARY_FIELDS =
   'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count,trip_start_date,trip_end_date';
 const JOURNAL_LEGACY_SUMMARY_FIELDS =
   'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
+const JOURNAL_SEARCH_FIELDS =
+  'id,user_id,country_id,title,content,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count,trip_start_date,trip_end_date';
+const JOURNAL_LEGACY_SEARCH_FIELDS =
+  'id,user_id,country_id,title,content,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
 
 // Supabase schema caches can lag after migrations. These helpers detect missing
 // Canva/date columns so the route can give a useful migration message or use a
@@ -38,6 +43,24 @@ type JournalEntryRow = {
   title?: string | null;
   content?: string | null;
   tags?: string[] | null;
+};
+
+type JournalMutationBody = {
+  entryId?: string;
+  countryId?: string;
+  title?: string;
+  content?: string;
+  mood?: string;
+  tags?: unknown;
+  canvaDesignId?: string;
+  canvaDesignTitle?: string;
+  canvaDesignEditUrl?: string;
+  canvaPages?: unknown;
+  coverPhoto?: string | null;
+  coverPageIndex?: number | null;
+  insertedPhotos?: unknown;
+  tripStartDate?: string;
+  tripEndDate?: string;
 };
 
 // Search happens after decoding content because some entries store Canva
@@ -144,14 +167,31 @@ export async function GET(request: NextRequest) {
   // Search is currently in-memory after loading the user's entries so decoded
   // fallback content can be searched consistently with structured columns.
   if (search) {
-    const { data, error } = await context.supabaseAdmin
+    const searchResult = await context.supabaseAdmin
       .from('journal_entries')
-      .select('*')
+      .select(JOURNAL_SEARCH_FIELDS)
       .eq('user_id', context.user.id)
       .order('created_at', { ascending: false });
+    let data = searchResult.data as JournalEntryRow[] | null;
+    let error = searchResult.error;
 
     if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      if (!isMissingJournalMetadataColumnError(error.message)) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+
+      const legacyResult = await context.supabaseAdmin
+        .from('journal_entries')
+        .select(JOURNAL_LEGACY_SEARCH_FIELDS)
+        .eq('user_id', context.user.id)
+        .order('created_at', { ascending: false });
+
+      data = legacyResult.data as JournalEntryRow[] | null;
+      error = legacyResult.error;
+
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
     }
 
     const filteredData = (data ?? []).filter((entry) => entryMatchesSearch(entry, search, searchScope));
@@ -227,16 +267,24 @@ export async function POST(request: NextRequest) {
     return context;
   }
 
-  const body = await request.json();
+  const body = await readJsonBody<JournalMutationBody>(request, {
+    maxBytes: 18 * 1024 * 1024,
+    errorMessage: 'Journal entry is too large to save.',
+  });
+
+  if (isApiError(body)) {
+    return body;
+  }
+
   const {
-    countryId,
-    title,
-    content,
-    mood,
-    tags,
-    canvaDesignId,
-    canvaDesignTitle,
-    canvaDesignEditUrl,
+    countryId: rawCountryId,
+    title: rawTitle,
+    content: rawContent,
+    mood: rawMood,
+    tags: rawTags,
+    canvaDesignId: rawCanvaDesignId,
+    canvaDesignTitle: rawCanvaDesignTitle,
+    canvaDesignEditUrl: rawCanvaDesignEditUrl,
     canvaPages,
     coverPhoto,
     coverPageIndex,
@@ -244,9 +292,21 @@ export async function POST(request: NextRequest) {
     tripStartDate,
     tripEndDate,
   } = body;
+  const countryId = clampText(rawCountryId, 120);
+  const title = clampText(rawTitle, 180);
+  const content = typeof rawContent === 'string' ? rawContent.trim() : '';
+  const mood = clampText(rawMood, 80);
+  const tags = clampStringList(rawTags, 12, 40);
+  const canvaDesignId = clampText(rawCanvaDesignId, 200);
+  const canvaDesignTitle = clampText(rawCanvaDesignTitle, 255);
+  const canvaDesignEditUrl = clampText(rawCanvaDesignEditUrl, 600);
 
   if (!countryId || !title || !content) {
     return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
+  }
+
+  if (content.length > 60_000) {
+    return NextResponse.json({ success: false, error: 'Journal story is too long to save.' }, { status: 413 });
   }
 
   const fallbackDate = getTodayJournalDate();
@@ -391,7 +451,15 @@ export async function PATCH(request: NextRequest) {
     return context;
   }
 
-  const body = await request.json();
+  const body = await readJsonBody<JournalMutationBody>(request, {
+    maxBytes: 512 * 1024,
+    errorMessage: 'Journal update is too large.',
+  });
+
+  if (isApiError(body)) {
+    return body;
+  }
+
   const { entryId, countryId, title, content, mood, tags, tripStartDate, tripEndDate } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
   // Rename flows only send entryId/title; edit flows include the rest of the
@@ -416,6 +484,10 @@ export async function PATCH(request: NextRequest) {
 
   if (hasFullEntryUpdate && (!cleanCountryId || !cleanContent || !cleanMood)) {
     return NextResponse.json({ success: false, error: 'Missing required journal fields.' }, { status: 400 });
+  }
+
+  if (hasFullEntryUpdate && cleanContent.length > 60_000) {
+    return NextResponse.json({ success: false, error: 'Journal story is too long to save.' }, { status: 413 });
   }
 
   const fallbackDate = getTodayJournalDate();
@@ -538,7 +610,15 @@ export async function DELETE(request: NextRequest) {
     return context;
   }
 
-  const body = await request.json();
+  const body = await readJsonBody<JournalMutationBody>(request, {
+    maxBytes: 8 * 1024,
+    errorMessage: 'Journal delete request is too large.',
+  });
+
+  if (isApiError(body)) {
+    return body;
+  }
+
   const { entryId } = body;
 
   if (!entryId) {

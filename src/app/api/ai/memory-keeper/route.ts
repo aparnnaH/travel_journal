@@ -8,6 +8,8 @@ import {
   isMemoryKeeperCreativeAction,
   type MemoryKeeperTripContext,
 } from '@/services/memoryKeeperService';
+import { checkApiRateLimit, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
+import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 
 type OpenAIResponseContentItem = {
   type?: string;
@@ -101,9 +103,29 @@ const callOpenAIText = async (params: {
 
 // Handles one Memory Keeper generation request.
 export async function POST(request: NextRequest) {
-  const payload = (await request.json()) as MemoryKeeperRequestPayload;
+  const authContext = await getAuthenticatedRouteContext(request, 'Memory Keeper');
+
+  if (isRouteError(authContext)) {
+    return authContext;
+  }
+
+  const rateLimitError = checkApiRateLimit('ai-memory-keeper', authContext.user.id);
+
+  if (rateLimitError) {
+    return rateLimitError;
+  }
+
+  const payload = await readJsonBody<MemoryKeeperRequestPayload>(request, {
+    maxBytes: 64 * 1024,
+    errorMessage: 'Memory Keeper request is too large.',
+  });
+
+  if (isApiError(payload)) {
+    return payload;
+  }
+
   const action = String(payload.action ?? '');
-  const selectedText = String(payload.selectedText ?? '').trim();
+  const selectedText = clampText(payload.selectedText, 4000);
 
   if (!isMemoryKeeperCreativeAction(action)) {
     return NextResponse.json({ success: false, error: 'Unsupported memory action.' }, { status: 400 });

@@ -66,6 +66,19 @@ type SharedEntryQueryOptions = {
   searchScope?: JournalSearchScope;
 };
 
+const SHARED_JOURNAL_ENTRY_SUMMARY_FIELDS =
+  'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count,trip_start_date,trip_end_date';
+const SHARED_JOURNAL_ENTRY_SEARCH_FIELDS =
+  'id,user_id,country_id,title,content,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count,trip_start_date,trip_end_date';
+const SHARED_JOURNAL_ENTRY_LEGACY_SUMMARY_FIELDS =
+  'id,user_id,country_id,title,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
+const SHARED_JOURNAL_ENTRY_LEGACY_SEARCH_FIELDS =
+  'id,user_id,country_id,title,content,mood,tags,created_at,updated_at,canva_design_id,canva_design_title,canva_design_edit_url,canva_page_count';
+
+const isMissingSharedJournalMetadataColumnError = (message: string) =>
+  /trip_(start|end)_date/i.test(message) &&
+  /(column|schema cache|could not find)/i.test(message);
+
 const normalizeSearchValue = (value: string) => value.trim().toLocaleLowerCase();
 
 const getCountrySearchValues = (countryId?: string | null) => {
@@ -362,21 +375,39 @@ export async function loadSharedJournalEntries(
   const entryIds = [...new Set(shares.map((share) => share.journal_entry_id))];
   const ownerIds = [...new Set(shares.map((share) => share.shared_by))];
 
-  const [{ data: entryData, error: entryError }, { data: profileData, error: profileError }] = await Promise.all([
-    supabaseAdmin.from('journal_entries').select('*').in('id', entryIds),
+  let entrySelectFields = search ? SHARED_JOURNAL_ENTRY_SEARCH_FIELDS : summary ? SHARED_JOURNAL_ENTRY_SUMMARY_FIELDS : '*';
+  const [entryResult, profileResult] = await Promise.all([
+    supabaseAdmin.from('journal_entries').select(entrySelectFields).in('id', entryIds),
     supabaseAdmin.from('profiles').select('id,email,display_name,avatar_url').in('id', ownerIds),
   ]);
+  let entryData = entryResult.data;
+  let entryError = entryResult.error;
+  const profileData = profileResult.data;
+  const profileError = profileResult.error;
 
   if (entryError) {
-    throw new Error(entryError.message);
+    if (!isMissingSharedJournalMetadataColumnError(entryError.message) || (!search && !summary)) {
+      throw new Error(entryError.message);
+    }
+
+    entrySelectFields = search ? SHARED_JOURNAL_ENTRY_LEGACY_SEARCH_FIELDS : SHARED_JOURNAL_ENTRY_LEGACY_SUMMARY_FIELDS;
+    const retry = await supabaseAdmin.from('journal_entries').select(entrySelectFields).in('id', entryIds);
+    entryData = retry.data;
+    entryError = retry.error;
+
+    if (entryError) {
+      throw new Error(entryError.message);
+    }
   }
 
   if (profileError) {
     throw new Error(profileError.message);
   }
 
-  const entryLookup = new Map((entryData ?? []).map((entry) => [String(entry.id), entry as JournalEntryRow]));
-  const profileLookup = new Map((profileData ?? []).map((profile) => [String(profile.id), profile as ProfileRow]));
+  const entryRows = (entryData ?? []) as unknown as JournalEntryRow[];
+  const profileRows = (profileData ?? []) as unknown as ProfileRow[];
+  const entryLookup = new Map(entryRows.map((entry) => [String(entry.id), entry]));
+  const profileLookup = new Map(profileRows.map((profile) => [String(profile.id), profile]));
 
   const sharedEntries = shares.flatMap<SharedJournalEntry>((share) => {
     const entry = entryLookup.get(share.journal_entry_id);
