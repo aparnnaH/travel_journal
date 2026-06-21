@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import AppHeader from '@/components/layout/AppHeader';
 import ChatPanel from '@/components/chat/ChatPanel';
+import AppPageSkeleton, { InlineLoadingSkeleton } from '@/components/loading/PageSkeletons';
 import SuggestedPromptCard from '@/components/ai/SuggestedPromptCard';
 import MemoryInsightCard from '@/components/ai/MemoryInsightCard';
 import TravelReflectionCard from '@/components/ai/TravelReflectionCard';
@@ -218,7 +219,7 @@ export default function TravelCompanionPage() {
   });
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="companion" />;
   }
 
   return (
@@ -246,12 +247,6 @@ export default function TravelCompanionPage() {
             </div>
           </motion.header>
 
-          {loadingState ? (
-            <div className="rounded-lg border border-gold/20 bg-white/84 px-5 py-4 text-sm text-ink/72 shadow-soft">
-              Syncing travel archive...
-            </div>
-          ) : null}
-
           {loadError ? (
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</div>
           ) : null}
@@ -268,7 +263,9 @@ export default function TravelCompanionPage() {
                 onSaveJournalDraft={saveJournalDraft}
               />
 
-              {insights ? (
+              {loadingState ? (
+                <InlineLoadingSkeleton variant="companionSuggestions" />
+              ) : insights ? (
                 <section className="rounded-lg border border-gold/20 bg-[#fffaf0] px-4 py-4 shadow-soft">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-2xl font-serif text-ink">Journal + Caption Studio</h2>
@@ -312,44 +309,48 @@ export default function TravelCompanionPage() {
             </div>
 
             <aside className="space-y-4 xl:sticky xl:top-6">
-              {context ? <AITripSummaryCard summary={context.tripSummary} /> : null}
+              {loadingState ? (
+                <InlineLoadingSkeleton variant="companionRail" />
+              ) : (
+                <>
+                  {context ? <AITripSummaryCard summary={context.tripSummary} /> : null}
 
-              <section className="rounded-lg border border-gold/24 bg-[#f9f2e2] px-3 py-3 shadow-soft">
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    ['prompts', 'Prompts'],
-                    ['insights', 'Insights'],
-                    ['memories', 'Memories'],
-                    ['passport', 'Passport'],
-                  ].map(([key, label]) => {
-                    const isActive = railView === key;
+                  <section className="rounded-lg border border-gold/24 bg-[#f9f2e2] px-3 py-3 shadow-soft">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        ['prompts', 'Prompts'],
+                        ['insights', 'Insights'],
+                        ['memories', 'Memories'],
+                        ['passport', 'Passport'],
+                      ].map(([key, label]) => {
+                        const isActive = railView === key;
 
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => setRailView(key as CompanionRailView)}
-                        className={[
-                          'rounded-md border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition',
-                          isActive
-                            ? 'border-gold/60 bg-white text-ink shadow-soft'
-                            : 'border-gold/25 bg-cream/55 text-ink/70 hover:border-gold/45',
-                        ].join(' ')}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setRailView(key as CompanionRailView)}
+                            className={[
+                              'rounded-md border px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition',
+                              isActive
+                                ? 'border-gold/60 bg-white text-ink shadow-soft'
+                                : 'border-gold/25 bg-cream/55 text-ink/70 hover:border-gold/45',
+                            ].join(' ')}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
 
-              <motion.div
-                key={railView}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
-                className="max-h-[62vh] space-y-2.5 overflow-y-auto pr-1 xl:max-h-[calc(100vh-18rem)]"
-              >
+                  <motion.div
+                    key={railView}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18, ease: 'easeOut' }}
+                    className="max-h-[62vh] space-y-2.5 overflow-y-auto pr-1 xl:max-h-[calc(100vh-18rem)]"
+                  >
                 {railView === 'prompts' && insights ? (
                   <section className="space-y-2.5">
                     {insights.prompts.map((prompt) => (
@@ -421,7 +422,9 @@ export default function TravelCompanionPage() {
                     </div>
                   </section>
                 ) : null}
-              </motion.div>
+                  </motion.div>
+                </>
+              )}
             </aside>
           </div>
         </div>

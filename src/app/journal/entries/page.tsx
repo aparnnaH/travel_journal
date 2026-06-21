@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton, { InlineLoadingSkeleton } from '@/components/loading/PageSkeletons';
 import { Button, Input } from '@/components/ui';
 import { fetchFriends } from '@/lib/friendService';
 import {
@@ -1305,14 +1306,7 @@ export default function JournalEntriesPage() {
   };
 
   if (isLoading || !user) {
-    return (
-      <div className="min-h-screen bg-cream">
-        <AppHeader />
-        <main className="container mx-auto px-4 py-16">
-          <p className="text-ink/70">Loading journal entries...</p>
-        </main>
-      </div>
-    );
+    return <AppPageSkeleton variant="journalEntries" />;
   }
 
   return (
@@ -1405,9 +1399,7 @@ export default function JournalEntriesPage() {
         {loadError ? <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p> : null}
 
         {entriesLoading ? (
-          <div className="rounded-lg border border-gold/20 bg-white p-8 text-center text-ink/60 shadow-soft">
-            Loading entries...
-          </div>
+          <InlineLoadingSkeleton variant="journalEntryCards" />
         ) : entries.length === 0 ? (
           <div className="rounded-lg border border-gold/20 bg-white p-8 text-center text-ink/60 shadow-soft">
             {isSearching ? 'No matching journal entries.' : 'No journal entries yet.'}
@@ -1465,9 +1457,7 @@ export default function JournalEntriesPage() {
           ) : null}
 
           {sharedEntriesLoading ? (
-            <div className="rounded-lg border border-gold/20 bg-white p-8 text-center text-ink/60 shadow-soft">
-              Loading shared entries...
-            </div>
+            <InlineLoadingSkeleton variant="journalEntryCards" />
           ) : sharedEntries.length === 0 ? (
             <div className="rounded-lg border border-gold/20 bg-white p-8 text-center text-ink/60 shadow-soft">
               {isSearching ? 'No matching shared entries.' : 'No shared journal entries yet.'}

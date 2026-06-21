@@ -20,6 +20,7 @@ import {
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card, Input } from '@/components/ui';
 import { fetchFriends, removeFriendship, sendFriendRequest, updateFriendRequest } from '@/lib/friendService';
 import { useAuthStore } from '@/store/authStore';
@@ -136,7 +137,7 @@ export default function FriendsPage() {
   );
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="friends" />;
   }
 
   const refreshFriends = async () => {

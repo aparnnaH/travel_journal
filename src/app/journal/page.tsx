@@ -12,6 +12,7 @@ import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink,
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Input } from '@/components/ui';
 import ImportTripModal from '@/components/import/ImportTripModal';
 import MemoryKeeperCard from '@/components/memory/MemoryKeeperCard';
@@ -832,7 +833,7 @@ export default function JournalPage() {
   }, []);
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="journal" />;
   }
 
   const updateCurrentPage = (updater: (page: ScrapbookPageData) => ScrapbookPageData) => {

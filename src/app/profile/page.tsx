@@ -23,6 +23,7 @@ import {
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card, Input } from '@/components/ui';
 import { fetchJournalEntries } from '@/lib/journalService';
 import { createOrUpdateProfile, fetchProfile } from '@/lib/profileService';
@@ -201,7 +202,7 @@ export default function ProfilePage() {
   ];
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="profile" />;
   }
 
   // Saves both the app profile row and Supabase Auth metadata so identity is

@@ -21,6 +21,7 @@ import {
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card } from '@/components/ui';
 import { fetchFriends, updateFriendRequest } from '@/lib/friendService';
 import { fetchJournalEntries } from '@/lib/journalService';
@@ -273,7 +274,7 @@ export default function DashboardPage() {
   ];
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="dashboard" />;
   }
 
   return (

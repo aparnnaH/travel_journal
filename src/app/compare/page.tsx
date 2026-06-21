@@ -18,6 +18,7 @@ import {
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card } from '@/components/ui';
 import { comparePassportStampsToMap } from '@/lib/stamps/passportMapComparison';
 import { useAuthStore } from '@/store/authStore';
@@ -57,7 +58,7 @@ export default function ComparePage() {
   );
 
   if (isLoading || !user) {
-    return null;
+    return <AppPageSkeleton variant="compare" />;
   }
 
   const matchedPreview = comparison.matched.slice(0, previewLimit);

@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Card, Button, Badge, Input } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
+import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import WorldAtlas from '@/components/maps/world/WorldAtlas';
 import CityExplorer from '@/components/maps/city/CityExplorer';
 import type { AtlasCountryReference } from '@/components/maps/world/WorldAtlas';
@@ -553,14 +554,7 @@ export default function MapPage() {
   }, [atlasRevealPercent, isAtlasRevealLoaded]);
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen bg-cream">
-        <AppHeader />
-        <PageShell title="Your Travel Map" description="Checking your session before opening the atlas.">
-          <Card className="p-6 text-ink/70">Loading your map...</Card>
-        </PageShell>
-      </div>
-    );
+    return <AppPageSkeleton variant="map" />;
   }
 
   if (!user) {
