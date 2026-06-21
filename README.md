@@ -190,7 +190,15 @@ CANVA_RETURN_URL=<your-app-journal-return-url>
 CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 ```
 
-The example file still includes Instagram variables, but the current active app routes do not require them for the core map, journal, passport, friends, profile, dashboard, or companion flows.
+Optional for Instagram post import in the journal workspace:
+
+```env
+NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
+INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
+NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback
+```
+
+Instagram variables are only needed for the Instagram import button. The core map, journal, passport, friends, profile, dashboard, Canva, and companion flows can run without them.
 
 ### Supabase setup
 
@@ -274,10 +282,10 @@ CANVA_REDIRECT_URI=<your-canva-oauth-callback-url>
 CANVA_RETURN_URL=<your-app-journal-return-url>
 CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 
-# Present in .env.local.example, not required by current core routes
+# Optional Instagram post import
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
 INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
-NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-instagram-redirect-url>
+NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback
 NEXT_PUBLIC_APP_URL=<your-public-app-url>
 ```
 
