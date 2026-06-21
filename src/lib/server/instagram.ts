@@ -23,11 +23,11 @@ type InstagramApiMedia = {
   username?: string;
 };
 
-const INSTAGRAM_AUTH_BASE_URL = 'https://api.instagram.com/oauth/authorize';
+const INSTAGRAM_AUTH_BASE_URL = 'https://www.instagram.com/oauth/authorize';
 const INSTAGRAM_TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
 const INSTAGRAM_LONG_LIVED_TOKEN_URL = 'https://graph.instagram.com/access_token';
 const INSTAGRAM_MEDIA_URL = 'https://graph.instagram.com/me/media';
-const DEFAULT_INSTAGRAM_SCOPES = ['user_profile', 'user_media'];
+const DEFAULT_INSTAGRAM_SCOPES = ['instagram_business_basic'];
 const TOKEN_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 55;
 const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10;
 
@@ -72,6 +72,8 @@ export function buildInstagramAuthorizationUrl({
   url.searchParams.set('scope', process.env.INSTAGRAM_SCOPES || DEFAULT_INSTAGRAM_SCOPES.join(','));
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('state', state);
+  url.searchParams.set('enable_fb_login', '0');
+  url.searchParams.set('force_authentication', '1');
   return url;
 }
 

@@ -196,6 +196,7 @@ Optional for Instagram post import in the journal workspace:
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
 INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
 NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback
+INSTAGRAM_SCOPES=instagram_business_basic
 ```
 
 Instagram variables are only needed for the Instagram import button. The core map, journal, passport, friends, profile, dashboard, Canva, and companion flows can run without them.
@@ -286,6 +287,7 @@ CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
 INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
 NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback
+INSTAGRAM_SCOPES=instagram_business_basic
 NEXT_PUBLIC_APP_URL=<your-public-app-url>
 ```
 
