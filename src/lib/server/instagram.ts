@@ -31,8 +31,22 @@ const DEFAULT_INSTAGRAM_SCOPES = ['instagram_business_basic'];
 const TOKEN_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 55;
 const STATE_COOKIE_MAX_AGE_SECONDS = 60 * 10;
 
+function getInstagramClientIdConfig() {
+  const candidates = [
+    ['INSTAGRAM_CLIENT_ID', process.env.INSTAGRAM_CLIENT_ID],
+    ['NEXT_PUBLIC_INSTAGRAM_CLIENT_ID', process.env.NEXT_PUBLIC_INSTAGRAM_CLIENT_ID],
+    ['NEXT_PUBLIC_INSTAGRAM_APP_ID', process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID],
+  ] as const;
+  const selected = candidates.find(([, value]) => Boolean(value));
+
+  return {
+    source: selected?.[0] ?? 'none',
+    value: selected?.[1] ?? '',
+  };
+}
+
 function getInstagramClientId() {
-  return process.env.INSTAGRAM_CLIENT_ID || process.env.NEXT_PUBLIC_INSTAGRAM_CLIENT_ID || process.env.NEXT_PUBLIC_INSTAGRAM_APP_ID || '';
+  return getInstagramClientIdConfig().value;
 }
 
 function getInstagramClientSecret() {
@@ -43,9 +57,19 @@ export function getInstagramRedirectUri(request: NextRequest) {
   return process.env.INSTAGRAM_REDIRECT_URI || process.env.NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI || new URL('/api/instagram/oauth/callback', request.url).toString();
 }
 
+function getInstagramScopes() {
+  return process.env.INSTAGRAM_SCOPES || DEFAULT_INSTAGRAM_SCOPES.join(',');
+}
+
+function maskClientId(value: string) {
+  if (!value) return '';
+  return value.length <= 6 ? value : `${value.slice(0, 3)}...${value.slice(-4)}`;
+}
+
 export function getInstagramStatus(request: NextRequest, appUserId?: string): InstagramStatus {
+  const clientIdConfig = getInstagramClientIdConfig();
   const missing = [
-    ['INSTAGRAM_CLIENT_ID or NEXT_PUBLIC_INSTAGRAM_APP_ID', getInstagramClientId()],
+    ['INSTAGRAM_CLIENT_ID or NEXT_PUBLIC_INSTAGRAM_APP_ID', clientIdConfig.value],
     ['INSTAGRAM_CLIENT_SECRET or INSTAGRAM_APP_SECRET', getInstagramClientSecret()],
   ]
     .filter(([, value]) => !value)
@@ -54,7 +78,11 @@ export function getInstagramStatus(request: NextRequest, appUserId?: string): In
   return {
     configured: missing.length === 0,
     connected: Boolean(getInstagramTokenCookie(request, appUserId)),
+    authBaseUrl: INSTAGRAM_AUTH_BASE_URL,
+    clientId: maskClientId(clientIdConfig.value),
+    clientIdSource: clientIdConfig.source,
     redirectUri: getInstagramRedirectUri(request),
+    scopes: getInstagramScopes(),
     missing,
   };
 }
@@ -69,7 +97,7 @@ export function buildInstagramAuthorizationUrl({
   const url = new URL(INSTAGRAM_AUTH_BASE_URL);
   url.searchParams.set('client_id', getInstagramClientId());
   url.searchParams.set('redirect_uri', getInstagramRedirectUri(request));
-  url.searchParams.set('scope', process.env.INSTAGRAM_SCOPES || DEFAULT_INSTAGRAM_SCOPES.join(','));
+  url.searchParams.set('scope', getInstagramScopes());
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('state', state);
   url.searchParams.set('enable_fb_login', '0');

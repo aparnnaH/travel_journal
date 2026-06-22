@@ -3551,6 +3551,15 @@ export default function JournalPage() {
                 </div>
               ) : null}
 
+              {instagramStatus ? (
+                <div className="mb-4 rounded-lg border border-gold/15 bg-white/72 px-4 py-3 text-xs leading-5 text-ink/60">
+                  <p>OAuth: {instagramStatus.authBaseUrl}</p>
+                  <p>App ID: {instagramStatus.clientId || 'missing'} via {instagramStatus.clientIdSource || 'unknown'}</p>
+                  <p>Scopes: {instagramStatus.scopes || 'missing'}</p>
+                  <p>Redirect: {instagramStatus.redirectUri}</p>
+                </div>
+              ) : null}
+
               {instagramNotice ? (
                 <div className="mb-4 rounded-lg border border-gold/20 bg-white px-4 py-3 text-sm text-ink/70">
                   {instagramNotice}

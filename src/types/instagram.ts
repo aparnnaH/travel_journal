@@ -14,6 +14,10 @@ export type InstagramMediaItem = {
 export type InstagramStatus = {
   configured: boolean;
   connected: boolean;
+  authBaseUrl?: string;
+  clientId?: string;
+  clientIdSource?: string;
   redirectUri?: string;
+  scopes?: string;
   missing: string[];
 };
