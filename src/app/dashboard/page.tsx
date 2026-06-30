@@ -211,8 +211,11 @@ export default function DashboardPage() {
 
   const revealProgress = Math.max(0, Math.min(100, Math.round(scratchPercentage)));
   const archiveScore = visitedCountries.length + journalEntries.length + dashboardStats.cityCount;
-  const profileName = user?.displayName ?? user?.email ?? 'Traveler';
+  const dashboardDisplayName = user?.displayName?.trim();
+  const profileCardName = dashboardDisplayName || user?.email || 'Add your name';
+  const profileName = dashboardDisplayName || user?.email || 'Traveler';
   const nextRevealMilestone = Math.min(100, Math.max(10, Math.ceil((revealProgress + 1) / 10) * 10));
+  const friendCount = friendsData.friends.length;
   const totalPendingFriends = friendsData.incoming.length + friendsData.outgoing.length;
   const pendingApprovals = friendsData.incoming.slice(0, 2);
 
@@ -500,8 +503,8 @@ export default function DashboardPage() {
             <MetricCard
               icon={UserRound}
               label="Profile"
-              value={user.displayName ? 'Named' : 'Email only'}
-              detail={user.displayName ?? user.email}
+              value={profileCardName}
+              detail={dashboardDisplayName ? 'Display name' : 'Profile details'}
               tone="bg-[#F3E6D8] text-[#71481F]"
               onClick={() => router.push('/profile')}
             />
@@ -524,8 +527,8 @@ export default function DashboardPage() {
             <MetricCard
               icon={UsersRound}
               label="Travel Circle"
-              value="New"
-              detail="Friend requests and invites"
+              value={String(friendCount)}
+              detail={`${friendCount === 1 ? 'friend' : 'friends'} in your circle`}
               tone="bg-[#F6E8EE] text-[#7A3E59]"
               onClick={() => router.push('/friends')}
             />
@@ -678,7 +681,7 @@ function MetricCard({
         <ArrowRight className="h-4 w-4 text-ink/40 transition group-hover:translate-x-1 group-hover:text-ink" aria-hidden="true" />
       </div>
       <p className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-ink/52">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-ink">{value}</p>
+      <p className="mt-2 truncate text-3xl font-semibold text-ink">{value}</p>
       <p className="mt-1 truncate text-sm text-ink/62">{detail}</p>
     </button>
   );

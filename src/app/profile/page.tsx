@@ -298,7 +298,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                {completionPercent < 100 ? (
+                {profileLoaded && completionPercent < 100 ? (
                   <div className="mt-8 rounded-lg border border-gold/18 bg-white/72 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>

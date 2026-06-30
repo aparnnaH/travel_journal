@@ -41,7 +41,7 @@ const features: FeatureCard[] = [
       'Connect Canva to create new travel pages, import finished designs, save page previews, and keep designs organized in a Travel Journal folder.',
     ctaText: 'Design in Canva',
     ctaHref: '/journal',
-    imageUrl: '/images/features/journal.png',
+    imageUrl: '/images/features/canva.png',
     gradient: 'gray',
   },
   {
@@ -83,7 +83,7 @@ const features: FeatureCard[] = [
       'Invite friends, manage requests, share journal entries privately, and keep conversations with comments on shared memories.',
     ctaText: 'Open friends',
     ctaHref: '/friends',
-    imageUrl: '/images/features/companion.png',
+    imageUrl: '/images/features/travel_circle.png',
     gradient: 'purple',
   },
   {
@@ -94,7 +94,7 @@ const features: FeatureCard[] = [
       'Compare your scratch map with passport coverage, find countries that need stamp matches, and spot goals still waiting on the map.',
     ctaText: 'Run audit',
     ctaHref: '/compare',
-    imageUrl: '/images/features/passport.png',
+    imageUrl: '/images/features/travel_audit.png',
     gradient: 'green',
   },
   {
@@ -115,7 +115,7 @@ const features: FeatureCard[] = [
       'See recent entries, map progress, travel stats, friend requests, profile details, and quick actions from one signed-in home base.',
     ctaText: 'Open dashboard',
     ctaHref: '/dashboard',
-    imageUrl: '/images/features/map.png',
+    imageUrl: '/images/features/profile.png',
     gradient: 'orange',
   },
 ];
