@@ -15,10 +15,11 @@ import WorldAtlas from '@/components/maps/world/WorldAtlas';
 import CityExplorer from '@/components/maps/city/CityExplorer';
 import type { AtlasCountryReference } from '@/components/maps/world/WorldAtlas';
 import { findCountryStamp } from '@/lib/stamps/matching';
+import { fetchJournalEntries } from '@/lib/journalService';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
-import type { Country } from '@/types';
+import type { Country, JournalEntry } from '@/types';
 
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 const visitedColorPalette = ['#4ECFFF', '#59D98E', '#FF9F6B', '#FFD166', '#9B8CFF', '#4CD7D0', '#FF7FB0', '#7FD3FF'];
@@ -193,6 +194,67 @@ interface AtlasRevealCelebration {
 
 type VisitedCountrySort = 'name-asc' | 'name-desc' | 'recent';
 
+type ExplorerJournalEntry = JournalEntry & {
+  country_id?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+const favoriteJournalTags = new Set(['favorite', 'favourite', 'highlight', 'highlights']);
+
+const getJournalEntryCountryId = (entry: ExplorerJournalEntry) => entry.countryId || entry.country_id || '';
+
+const getJournalEntryCreatedAt = (entry: ExplorerJournalEntry) => entry.createdAt || entry.created_at || '';
+
+const isFavoriteJournalEntry = (entry: ExplorerJournalEntry) =>
+  (entry.tags ?? []).some((tag) => favoriteJournalTags.has(tag.trim().toLowerCase()));
+
+const normalizeCountryMatchToken = (value: string) => normalizeCountryName(value).replace(/\s+/g, '');
+
+// Journal rows can store country data as app ids, ISO codes, or labels from
+// older flows. These tokens let Country Explorer match all of those shapes.
+const getEntryCountryMatchTokens = (entry: ExplorerJournalEntry, countryLabels: Record<string, string>) => {
+  const entryCountryId = getJournalEntryCountryId(entry);
+  const knownCountry = placeholderCountries.find(
+    (country) =>
+      country.id.toLowerCase() === entryCountryId.toLowerCase() ||
+      country.code.toLowerCase() === entryCountryId.toLowerCase()
+  );
+
+  return [entryCountryId, countryLabels[entryCountryId], knownCountry?.id, knownCountry?.code, knownCountry?.name]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeCountryMatchToken);
+};
+
+const getSelectedCountryMatchTokens = (country: Country) =>
+  [country.id, country.code, country.name]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeCountryMatchToken);
+
+const countryMatchesJournalEntry = (
+  entry: ExplorerJournalEntry,
+  country: Country,
+  countryLabels: Record<string, string>
+) => {
+  const selectedTokens = new Set(getSelectedCountryMatchTokens(country));
+
+  return getEntryCountryMatchTokens(entry, countryLabels).some((token) => selectedTokens.has(token));
+};
+
+const sortJournalEntriesForExplorer = (firstEntry: ExplorerJournalEntry, secondEntry: ExplorerJournalEntry) => {
+  const firstIsFavorite = isFavoriteJournalEntry(firstEntry);
+  const secondIsFavorite = isFavoriteJournalEntry(secondEntry);
+
+  if (firstIsFavorite !== secondIsFavorite) {
+    return firstIsFavorite ? -1 : 1;
+  }
+
+  const firstCreatedAt = Date.parse(getJournalEntryCreatedAt(firstEntry)) || 0;
+  const secondCreatedAt = Date.parse(getJournalEntryCreatedAt(secondEntry)) || 0;
+
+  return secondCreatedAt - firstCreatedAt;
+};
+
 // Main map route. It is client-heavy because it coordinates Zustand state,
 // atlas interaction, modals, confirmations, and navigation.
 export default function MapPage() {
@@ -221,6 +283,9 @@ export default function MapPage() {
   const [visitedCountrySearch, setVisitedCountrySearch] = useState('');
   const [visitedCountrySort, setVisitedCountrySort] = useState<VisitedCountrySort>('name-asc');
   const [atlasRevealCelebration, setAtlasRevealCelebration] = useState<AtlasRevealCelebration | null>(null);
+  const [journalEntries, setJournalEntries] = useState<ExplorerJournalEntry[]>([]);
+  const [journalHighlightsError, setJournalHighlightsError] = useState('');
+  const [isJournalHighlightsLoading, setIsJournalHighlightsLoading] = useState(false);
   const previousAtlasRevealPercentRef = useRef<number | null>(null);
 
   // WorldAtlas reports neighbor relationships upward so page-level color
@@ -325,6 +390,58 @@ export default function MapPage() {
   }, [user, router, isLoading]);
 
   useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const loadJournalEntries = async () => {
+      setIsJournalHighlightsLoading(true);
+      setJournalHighlightsError('');
+
+      try {
+        const loadedEntries: ExplorerJournalEntry[] = [];
+        let offset = 0;
+        let hasMore = true;
+
+        // Country Explorer only displays three entries, but loading a few pages
+        // lets older country-specific favorites still appear in the modal.
+        while (hasMore && offset < 200) {
+          const response = await fetchJournalEntries({ limit: 50, offset, summary: true });
+
+          if (!response.success) {
+            throw new Error(response.error || 'Could not load journal highlights.');
+          }
+
+          loadedEntries.push(...((response.data ?? []) as ExplorerJournalEntry[]));
+          hasMore = Boolean(response.hasMore);
+          offset += 50;
+        }
+
+        if (isMounted) {
+          setJournalEntries(loadedEntries);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setJournalEntries([]);
+          setJournalHighlightsError(error instanceof Error ? error.message : 'Could not load journal highlights.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsJournalHighlightsLoading(false);
+        }
+      }
+    };
+
+    loadJournalEntries();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (atlasCountries.length === 0) return;
 
     const percent = Math.round((visitedAtlasCountryIds.size / atlasCountries.length) * 100);
@@ -367,35 +484,54 @@ export default function MapPage() {
     if (!selectedCountryId) return null;
 
     const knownCountry = placeholderCountries.find((country) => country.id === selectedCountryId);
-    if (knownCountry) return knownCountry;
-
     const displayName =
+      knownCountry?.name ??
       getRegionDisplayName(regionNames, selectedCountryId) ??
       atlasCountryById.get(selectedCountryId)?.name ??
       selectedCountryId;
     const name = countryLabels[selectedCountryId] ?? displayName;
     const normalizedName = normalizeCountryName(name);
     const alpha2Code =
+      knownCountry?.code ??
       (/^[A-Z]{2}$/.test(selectedCountryId) ? selectedCountryId : undefined) ??
       countryNameAliases[normalizedName] ??
       alpha2CountryLookup.get(normalizedName) ??
       selectedCountryId;
-
-    return {
+    const country: Country = {
+      ...(knownCountry ?? {
+        id: selectedCountryId,
+        name,
+        code: alpha2Code,
+        pathData: '',
+        visited: isCountryAlreadyVisited(selectedCountryId),
+        journalEntries: [],
+        cities: [],
+        highlights: [],
+      }),
       id: selectedCountryId,
       name,
       code: alpha2Code,
-      pathData: '',
       visited: isCountryAlreadyVisited(selectedCountryId),
-      journalEntries: [],
-      cities: [],
-      highlights: [],
+    };
+    const countryJournalEntries = journalEntries
+      .filter((entry) => countryMatchesJournalEntry(entry, country, countryLabels))
+      .sort(sortJournalEntriesForExplorer)
+      .slice(0, 3);
+    const journalHighlights = countryJournalEntries.map((entry) => entry.title);
+
+    // CityExplorer reads journalEntries for full cards and highlights for the
+    // text fallback, so both stay country-specific and capped to the same set.
+    return {
+      ...country,
+      journalEntries: countryJournalEntries,
+      highlights: journalHighlights.length > 0 ? journalHighlights : country.highlights ?? [],
     };
   }, [
     alpha2CountryLookup,
     atlasCountryById,
     countryLabels,
     isCountryAlreadyVisited,
+    journalEntries,
     regionNames,
     selectedCountryId,
   ]);
@@ -947,7 +1083,12 @@ export default function MapPage() {
         </div>
       </PageShell>
 
-      <CityExplorer country={selectedCountry} onClose={() => setSelectedCountryId(null)} />
+      <CityExplorer
+        country={selectedCountry}
+        journalHighlightsError={journalHighlightsError}
+        isJournalHighlightsLoading={isJournalHighlightsLoading}
+        onClose={() => setSelectedCountryId(null)}
+      />
 
       <AnimatePresence>
         {isAtlasResetConfirmationOpen && (

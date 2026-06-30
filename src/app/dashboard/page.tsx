@@ -238,6 +238,10 @@ export default function DashboardPage() {
     }
   };
 
+  const openJournalEntry = (entryId: string) => {
+    router.push(`/journal/entries?entryId=${encodeURIComponent(entryId)}`);
+  };
+
   const nextActions: DashboardAction[] = [
     {
       title: journalEntries.length > 0 ? 'Write another memory' : 'Start your first entry',
@@ -550,7 +554,20 @@ export default function DashboardPage() {
               {dashboardStats.recentEntries.length > 0 ? (
                 <div className="space-y-3">
                   {dashboardStats.recentEntries.map((entry) => (
-                    <article key={entry.id} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
+                    <article
+                      key={entry.id}
+                      className="cursor-pointer rounded-lg border border-gold/16 bg-cream/36 p-4 transition hover:border-gold/45 hover:bg-cream/60 focus:outline-none focus:ring-2 focus:ring-gold"
+                      onClick={() => openJournalEntry(entry.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openJournalEntry(entry.id);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open journal entry ${entry.title}`}
+                    >
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <h3 className="truncate text-lg font-semibold text-ink">{entry.title}</h3>
@@ -570,6 +587,11 @@ export default function DashboardPage() {
                       </div>
                     </article>
                   ))}
+                </div>
+              ) : loading ? (
+                <div className="rounded-lg border border-dashed border-gold/30 bg-cream/40 p-6 text-ink/65">
+                  <p className="font-semibold text-ink">Loading journal entries...</p>
+                  <p className="mt-2 text-sm leading-6">Checking your latest saved stories.</p>
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-gold/30 bg-cream/40 p-6 text-ink/65">
@@ -623,7 +645,9 @@ export default function DashboardPage() {
                       <CalendarDays className="h-4 w-4" aria-hidden="true" />
                       Mood
                     </p>
-                    <p className="mt-2 text-xl font-semibold capitalize text-ink">{dashboardStats.favoriteMood ?? 'Unwritten'}</p>
+                    <p className="mt-2 text-xl font-semibold capitalize text-ink">
+                      {loading ? 'Loading' : dashboardStats.favoriteMood ?? 'Unwritten'}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-gold/16 bg-cream/36 p-4">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/52">Tags</p>
@@ -635,6 +659,8 @@ export default function DashboardPage() {
                           </span>
                         ))}
                       </div>
+                    ) : loading ? (
+                      <p className="mt-2 text-sm text-ink/62">Loading</p>
                     ) : (
                       <p className="mt-2 text-sm text-ink/62">Tags from saved entries will collect here.</p>
                     )}

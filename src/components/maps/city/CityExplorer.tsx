@@ -12,6 +12,8 @@ import { useMapStore } from '@/store/mapStore';
 
 interface CityExplorerProps {
   country: Country | null;
+  isJournalHighlightsLoading?: boolean;
+  journalHighlightsError?: string;
   onClose: () => void;
 }
 
@@ -57,6 +59,38 @@ interface CountryViewportConfig {
 }
 
 type CityOptionSeed = readonly [slug: string, name: string, region: string];
+type ExplorerJournalEntry = Country['journalEntries'][number] & {
+  created_at?: string | null;
+  trip_start_date?: string | null;
+};
+
+const journalEntryDeepLinkStorageKey = 'travel-journal:country-explorer-entry';
+const favoriteJournalTags = new Set(['favorite', 'favourite', 'highlight', 'highlights']);
+
+function isFavoriteJournalEntry(entry: ExplorerJournalEntry) {
+  return (entry.tags ?? []).some((tag) => favoriteJournalTags.has(tag.trim().toLowerCase()));
+}
+
+function getJournalEntryDateLabel(entry: ExplorerJournalEntry) {
+  const dateValue = entry.tripStartDate || entry.trip_start_date || entry.createdAt || entry.created_at;
+
+  if (!dateValue) return '';
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+}
+
+function getJournalEntryPreview(entry: ExplorerJournalEntry) {
+  const cleanContent = (entry.content || '').replace(/\s+/g, ' ').trim();
+
+  if (!cleanContent) {
+    return 'Saved journal page';
+  }
+
+  return cleanContent.length > 120 ? `${cleanContent.slice(0, 117).trim()}...` : cleanContent;
+}
 
 const cityCoordinateLookup: Record<string, Coordinates> = {
   nyc: [-74.006, 40.7128],
@@ -2015,11 +2049,13 @@ const popularCountryCityOptionsLookup: Record<string, CityOption[]> = Object.fro
 
 const countryViewportLookup: Record<string, CountryViewportConfig> = Object.fromEntries(
   [
-    [['840', 'US', 'USA', 'United States', 'United States of America'], [-98.5795, 39.8283], 4],
+    // Large countries use wider zooms so the preview reads as a whole-country
+    // view instead of cropping into the center of the country.
+    [['840', 'US', 'USA', 'United States', 'United States of America'], [-98.5795, 39.8283], 3],
     [['124', 'CA', 'Canada'], [-106.3468, 56.1304], 3],
     [['484', 'MX', 'Mexico'], [-102.5528, 23.6345], 5],
-    [['076', 'BR', 'Brazil'], [-51.9253, -14.235], 4],
-    [['032', 'AR', 'Argentina'], [-63.6167, -38.4161], 4],
+    [['076', 'BR', 'Brazil'], [-51.9253, -14.235], 3],
+    [['032', 'AR', 'Argentina'], [-63.6167, -38.4161], 3],
     [['152', 'CL', 'Chile'], [-71.543, -35.6751], 4],
     [['604', 'PE', 'Peru'], [-75.0152, -9.19], 5],
     [['170', 'CO', 'Colombia'], [-74.2973, 4.5709], 5],
@@ -2080,7 +2116,7 @@ const countryViewportLookup: Record<string, CountryViewportConfig> = Object.from
     [['104', 'MM', 'Myanmar', 'Burma'], [95.956, 21.9162], 5],
     [['524', 'Nepal'], [84.124, 28.3949], 6],
     [['144', 'Sri Lanka'], [80.7718, 7.8731], 7],
-    [['036', 'AU', 'Australia'], [134.491, -25.734], 4],
+    [['036', 'AU', 'Australia'], [134.491, -25.734], 3],
     [['554', 'NZ', 'New Zealand'], [171.5, -41.5], 5],
     [['242', 'Fiji'], [178.065, -17.7134], 6],
     [['784', 'AE', 'UAE', 'United Arab Emirates'], [53.8478, 23.4241], 7],
@@ -2503,7 +2539,12 @@ function CityMapPreview({ country, points }: { country: Country; points: CityPre
 }
 
 // Main modal for city selection and country-level exploration.
-export default function CityExplorer({ country, onClose }: CityExplorerProps) {
+export default function CityExplorer({
+  country,
+  isJournalHighlightsLoading = false,
+  journalHighlightsError = '',
+  onClose,
+}: CityExplorerProps) {
   const router = useRouter();
   const countryCities = useMapStore((state) => state.countryCities ?? {});
   const addCountryCity = useMapStore((state) => state.addCountryCity);
@@ -2545,6 +2586,9 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
   }
 
   const highlights = country.highlights ?? [];
+  // The map page has already selected and capped these to the best three
+  // country-matching journal entries; this component only formats the cards.
+  const journalHighlights = (country.journalEntries ?? []) as ExplorerJournalEntry[];
   const passportStamp = findCountryStamp(country.id, country.name, country.code);
   const cityPreviewPoints = buildCityPreviewPoints(country, cityList);
 
@@ -2552,6 +2596,16 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
     if (!passportStamp) return;
 
     router.push(`/passport?stamp=${encodeURIComponent(passportStamp.id)}`);
+  };
+
+  const handleOpenJournalEntry = (entry: ExplorerJournalEntry) => {
+    try {
+      window.sessionStorage.setItem(journalEntryDeepLinkStorageKey, JSON.stringify(entry));
+    } catch {
+      // The URL still carries the canonical entry id if session storage is unavailable.
+    }
+
+    router.push(`/journal/entries?entryId=${encodeURIComponent(entry.id)}`);
   };
 
   const handleClose = () => {
@@ -2620,9 +2674,6 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
                 <h3 className="text-xl font-semibold">City Explorer</h3>
                 <p className="text-sm text-white/70">Zoom into your favorite places and saved city pins.</p>
               </div>
-              <span className="rounded-full bg-gold/10 px-3 py-1 text-xs uppercase tracking-[0.26em] text-gold">
-                beta
-              </span>
             </div>
 
             <div className="rounded-3xl bg-[#0d0d0d] p-4">
@@ -2716,18 +2767,66 @@ export default function CityExplorer({ country, onClose }: CityExplorerProps) {
               </div>
 
               <div className="rounded-3xl bg-[#111111] p-4">
-                <p className="text-sm uppercase tracking-[0.26em] text-white/50">Scrapbook highlights</p>
-                <ul className="mt-3 space-y-3 text-sm text-white/80">
-                  {highlights.length > 0 ? (
-                    highlights.map((detail: string, index: number) => (
-                      <li key={index} className="rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3">
-                        {detail}
-                      </li>
-                    ))
-                  ) : (
-                    <li className="text-white/60">No highlights available.</li>
-                  )}
-                </ul>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm uppercase tracking-[0.26em] text-white/50">Scrapbook highlights</p>
+                  <span className="rounded-full border border-gold/25 bg-gold/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gold">
+                    max 3
+                  </span>
+                </div>
+                {isJournalHighlightsLoading ? (
+                  <div className="mt-3 space-y-3">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3">
+                        <div className="h-3 w-24 rounded-full bg-white/10" />
+                        <div className="mt-3 h-4 w-3/4 rounded-full bg-white/10" />
+                        <div className="mt-2 h-3 w-full rounded-full bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                ) : journalHighlights.length > 0 ? (
+                  <ul className="mt-3 space-y-3 text-sm text-white/80">
+                    {journalHighlights.map((entry) => {
+                      const dateLabel = getJournalEntryDateLabel(entry);
+                      const isFavorite = isFavoriteJournalEntry(entry);
+
+                      return (
+                        <li key={entry.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenJournalEntry(entry)}
+                            className="block w-full rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3 text-left transition hover:border-gold/45 hover:bg-[#171717] focus:outline-none focus:ring-2 focus:ring-gold"
+                            aria-label={`Open journal entry ${entry.title}`}
+                          >
+                            <span className="flex items-center justify-between gap-3">
+                              <span className="min-w-0 flex-1 truncate font-semibold text-white">{entry.title}</span>
+                              <span className="shrink-0 rounded-full border border-gold/25 bg-gold/10 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold">
+                                {isFavorite ? 'Favorite' : 'Journal'}
+                              </span>
+                            </span>
+                            <span className="mt-2 line-clamp-2 text-xs leading-5 text-white/60">{getJournalEntryPreview(entry)}</span>
+                            {dateLabel ? <span className="mt-2 block text-[11px] font-medium text-white/45">{dateLabel}</span> : null}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : journalHighlightsError ? (
+                  <p className="mt-3 rounded-3xl border border-red-300/20 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    {journalHighlightsError}
+                  </p>
+                ) : (
+                  <ul className="mt-3 space-y-3 text-sm text-white/80">
+                    {highlights.length > 0 ? (
+                      highlights.slice(0, 3).map((detail: string, index: number) => (
+                        <li key={index} className="rounded-3xl border border-white/10 bg-[#0d0d0d] px-4 py-3">
+                          {detail}
+                        </li>
+                      ))
+                    ) : (
+                      <li className="text-white/60">No journal favorites for this country yet.</li>
+                    )}
+                  </ul>
+                )}
               </div>
             </div>
           </section>
