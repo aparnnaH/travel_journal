@@ -3,12 +3,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
 import { getOwnedJournalEntry, loadJournalShareRecipients, replaceJournalShares } from '@/lib/server/journalSharing';
-import type { JournalSharePermission } from '@/types/journalSharing';
 
 type ShareRequestBody = {
   entryId?: string;
   friendIds?: string[];
-  permission?: JournalSharePermission;
 };
 
 // Loads current share recipients for an owned journal entry.
@@ -64,7 +62,7 @@ export async function POST(request: NextRequest) {
     const data = await replaceJournalShares({
       entryId: body.entryId,
       friendIds: body.friendIds ?? [],
-      permission: body.permission ?? 'view',
+      permission: 'comment',
       sharedBy: context.user.id,
       supabaseAdmin: context.supabaseAdmin,
     });

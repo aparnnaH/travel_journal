@@ -35,6 +35,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 
 - Interactive world atlas built around visited countries and country labels.
 - Country Explorer modal with city data and OpenStreetMap tile previews.
+- Country Explorer scrapbook highlights now pull from the user's saved journal entries for the selected country, preferring entries tagged `favorite`, `favourite`, `highlight`, or `highlights` and showing at most three cards.
 - City pins are stored with the map state.
 - Map state persists locally with Zustand persistence.
 
@@ -190,7 +191,7 @@ CANVA_RETURN_URL=<your-app-journal-return-url>
 CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 ```
 
-Optional for Instagram post import in the journal workspace:
+The active Instagram journal flow uses public post/Reel embed URLs and does not require Instagram OAuth environment variables. The old OAuth media-import path is paused; keep these only if you intentionally re-enable that legacy picker:
 
 ```env
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
@@ -199,7 +200,7 @@ NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback
 INSTAGRAM_SCOPES=instagram_business_basic
 ```
 
-Instagram variables are only needed for the Instagram import button. The core map, journal, passport, friends, profile, dashboard, Canva, and companion flows can run without them.
+Instagram OAuth variables are not needed for the active embed flow. The paused `/api/instagram/*` media-import endpoints return a 410 response. The core map, journal, passport, friends, profile, dashboard, Canva, and companion flows can run without them.
 
 ### Supabase setup
 
@@ -283,7 +284,7 @@ CANVA_REDIRECT_URI=<your-canva-oauth-callback-url>
 CANVA_RETURN_URL=<your-app-journal-return-url>
 CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 
-# Optional Instagram post import
+# Paused legacy Instagram OAuth media import
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
 INSTAGRAM_APP_SECRET=<your-instagram-app-secret>
 NEXT_PUBLIC_INSTAGRAM_REDIRECT_URI=<your-app-url>/api/instagram/oauth/callback

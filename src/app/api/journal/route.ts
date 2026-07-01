@@ -4,6 +4,7 @@
 // database writes constrained to the current user.
 import { NextRequest, NextResponse } from 'next/server';
 import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { clampStringList, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
@@ -59,6 +60,7 @@ type JournalMutationBody = {
   coverPhoto?: string | null;
   coverPageIndex?: number | null;
   insertedPhotos?: unknown;
+  instagramEmbeds?: unknown;
   tripStartDate?: string;
   tripEndDate?: string;
 };
@@ -289,6 +291,7 @@ export async function POST(request: NextRequest) {
     coverPhoto,
     coverPageIndex,
     insertedPhotos,
+    instagramEmbeds,
     tripStartDate,
     tripEndDate,
   } = body;
@@ -339,6 +342,17 @@ export async function POST(request: NextRequest) {
           caption: typeof photo.caption === 'string' ? photo.caption : '',
         }))
     : [];
+  const cleanInstagramEmbeds = sanitizeInstagramEmbedUrls(instagramEmbeds);
+  const hasRequestedInstagramEmbeds = Array.isArray(instagramEmbeds)
+    ? instagramEmbeds.length > 0
+    : typeof instagramEmbeds === 'string'
+      ? instagramEmbeds.trim().length > 0
+      : false;
+
+  if (hasRequestedInstagramEmbeds && cleanInstagramEmbeds.length === 0) {
+    return NextResponse.json({ success: false, error: 'Add a public Instagram post or Reel URL.' }, { status: 400 });
+  }
+
   // The content payload fallback preserves Canva/cover/photo metadata even when
   // newer database columns are not installed yet.
   const canvaPayload = {
@@ -350,8 +364,9 @@ export async function POST(request: NextRequest) {
     insertedPhotos: cleanInsertedPhotos,
     tripStartDate: cleanTripStartDate,
     tripEndDate: cleanTripEndDate,
+    instagramEmbeds: cleanInstagramEmbeds,
   };
-  const shouldEncodeCanvaPayload = Boolean(cleanCoverPhoto || cleanInsertedPhotos.length);
+  const shouldEncodeCanvaPayload = Boolean(cleanCoverPhoto || cleanInsertedPhotos.length || cleanInstagramEmbeds.length);
 
   const insertPayload: Record<string, unknown> = {
     user_id: context.user.id,

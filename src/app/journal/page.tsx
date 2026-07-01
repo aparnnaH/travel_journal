@@ -8,7 +8,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { BookOpen, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Mic, Palette, PencilLine, RefreshCw, Search, Send, Share2, Star, Type, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -16,6 +16,7 @@ import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Input } from '@/components/ui';
 import ImportTripModal from '@/components/import/ImportTripModal';
 import MemoryKeeperCard from '@/components/memory/MemoryKeeperCard';
+import InstagramEmbed from '@/components/journal/InstagramEmbed';
 import ScrapbookCanvas from '@/components/journal/canvas/ScrapbookCanvas';
 import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
@@ -34,8 +35,8 @@ import {
   updateJournalEntry,
   updateJournalEntryTitle,
 } from '@/lib/journalService';
-import { fetchInstagramMedia, fetchInstagramStatus } from '@/lib/instagramService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { normalizeInstagramEmbedUrl, sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import {
   formatJournalDateRange,
@@ -77,7 +78,6 @@ import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import type { TripImportResult } from '@/types/trips';
 import type { CanvaDesign } from '@/types/canva';
-import type { InstagramMediaItem, InstagramStatus } from '@/types/instagram';
 import type { MemoryKeeperTripContext } from '@/services/memoryKeeperService';
 import type {
   DrawingPoint,
@@ -108,11 +108,6 @@ type InsertedJournalPhoto = {
   src: string;
   alt: string;
   caption?: string;
-};
-
-type InstagramDraftMedia = InstagramMediaItem & {
-  selected: boolean;
-  highlighted: boolean;
 };
 
 type EditEntryForm = {
@@ -318,6 +313,8 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
       )
     : [];
 };
+const getEntryInstagramEmbeds = (entry: SavedEntry | SharedJournalEntry) =>
+  sanitizeInstagramEmbedUrls(decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? []);
 
 // Extracts scrapbook photos into the compact input shape expected by Memory Keeper.
 const getMemoryKeeperPhotos = (pages: ScrapbookPageData[]) =>
@@ -538,13 +535,8 @@ export default function JournalPage() {
   const [canvaPreviewTurnDirection, setCanvaPreviewTurnDirection] = useState<'next' | 'previous'>('next');
   const [canvaCoverPageIndex, setCanvaCoverPageIndex] = useState(0);
   const [insertedJournalPhotos, setInsertedJournalPhotos] = useState<InsertedJournalPhoto[]>([]);
-  const [instagramModalOpen, setInstagramModalOpen] = useState(false);
-  const [instagramStatus, setInstagramStatus] = useState<InstagramStatus | null>(null);
-  const [instagramMedia, setInstagramMedia] = useState<InstagramDraftMedia[]>([]);
-  const [instagramLoading, setInstagramLoading] = useState(false);
-  const [instagramSaving, setInstagramSaving] = useState(false);
+  const [instagramEmbedUrl, setInstagramEmbedUrl] = useState('');
   const [instagramError, setInstagramError] = useState<string | null>(null);
-  const [instagramNotice, setInstagramNotice] = useState<string | null>(null);
   const [openedCanvaPageIndex, setOpenedCanvaPageIndex] = useState(0);
   const [openedCanvaTurnDirection, setOpenedCanvaTurnDirection] = useState<'next' | 'previous'>('next');
   const [renamingEntryId, setRenamingEntryId] = useState<string | null>(null);
@@ -729,74 +721,6 @@ export default function JournalPage() {
 
     loadFriends();
   }, [router, user, isLoading]);
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    const loadInstagramConnection = async () => {
-      const response = await fetchInstagramStatus();
-      if (response.success && response.data) {
-        setInstagramStatus(response.data);
-      }
-    };
-
-    loadInstagramConnection();
-  }, [user]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const params = new URLSearchParams(window.location.search);
-    const instagramResult = params.get('instagram');
-
-    if (!instagramResult) {
-      return;
-    }
-
-    if (instagramResult === 'connected') {
-      queueMicrotask(() => {
-        setInstagramNotice('Instagram is connected. Choose posts to turn into a journal entry.');
-        setInstagramModalOpen(true);
-        setInstagramLoading(true);
-        setInstagramError(null);
-        void Promise.all([fetchInstagramStatus(), fetchInstagramMedia()]).then(([statusResponse, mediaResponse]) => {
-          setInstagramLoading(false);
-
-          if (statusResponse.success && statusResponse.data) {
-            setInstagramStatus(statusResponse.data);
-          }
-
-          if (!mediaResponse.success || !mediaResponse.data) {
-            setInstagramMedia([]);
-            setInstagramError(mediaResponse.error || 'Could not load Instagram posts.');
-            return;
-          }
-
-          setInstagramMedia(
-            mediaResponse.data.map((item) => ({
-              ...item,
-              selected: false,
-              highlighted: false,
-            }))
-          );
-        });
-      });
-    } else {
-      queueMicrotask(() => {
-        setInstagramError(params.get('message') || 'Instagram connection failed.');
-        setInstagramModalOpen(true);
-      });
-    }
-
-    params.delete('instagram');
-    params.delete('message');
-    const nextQuery = params.toString();
-    window.history.replaceState(null, '', `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}`);
-  }, []);
 
   useEffect(() => {
     if (!scrapbookStorageKey) {
@@ -1875,163 +1799,6 @@ export default function JournalPage() {
     window.location.href = `/api/canva/oauth/start?returnTo=${encodeURIComponent('/journal')}`;
   };
 
-  const connectInstagram = () => {
-    window.location.href = `/api/instagram/oauth/start?returnTo=${encodeURIComponent('/journal')}`;
-  };
-
-  const loadInstagramMedia = async () => {
-    setInstagramLoading(true);
-    setInstagramError(null);
-
-    const [statusResponse, mediaResponse] = await Promise.all([
-      fetchInstagramStatus(),
-      fetchInstagramMedia(),
-    ]);
-
-    setInstagramLoading(false);
-
-    if (statusResponse.success && statusResponse.data) {
-      setInstagramStatus(statusResponse.data);
-    }
-
-    if (!mediaResponse.success || !mediaResponse.data) {
-      setInstagramMedia([]);
-      setInstagramError(mediaResponse.error || 'Could not load Instagram posts.');
-      return;
-    }
-
-    setInstagramMedia(
-      mediaResponse.data.map((item) => ({
-        ...item,
-        selected: false,
-        highlighted: false,
-      }))
-    );
-  };
-
-  const openInstagramModal = () => {
-    setInstagramModalOpen(true);
-    setInstagramError(null);
-    setInstagramNotice(null);
-    void loadInstagramMedia();
-  };
-
-  const toggleInstagramMedia = (mediaId: string) => {
-    setInstagramMedia((current) =>
-      current.map((item) =>
-        item.id === mediaId
-          ? {
-              ...item,
-              selected: !item.selected,
-              highlighted: item.selected ? false : item.highlighted,
-            }
-          : item
-      )
-    );
-  };
-
-  const toggleInstagramHighlight = (mediaId: string) => {
-    setInstagramMedia((current) =>
-      current.map((item) =>
-        item.id === mediaId
-          ? {
-              ...item,
-              selected: true,
-              highlighted: !item.highlighted,
-            }
-          : item
-      )
-    );
-  };
-
-  const saveInstagramSelection = async () => {
-    if (!user) {
-      return;
-    }
-
-    const selectedMedia = instagramMedia.filter((item) => item.selected);
-    const highlightedMedia = selectedMedia.filter((item) => item.highlighted);
-    const highlightItems = highlightedMedia.length ? highlightedMedia : selectedMedia.slice(0, 3);
-    const title = form.title.trim() || `Instagram memories ${new Date().toLocaleDateString()}`;
-
-    if (!selectedMedia.length) {
-      setInstagramError('Choose at least one Instagram post to import.');
-      return;
-    }
-
-    if (!selectedVisitedCountry) {
-      setInstagramError('Pick a visited country for this Instagram journal entry.');
-      return;
-    }
-
-    const tripDateError = getJournalDateRangeError(form.tripStartDate, form.tripEndDate);
-
-    if (tripDateError) {
-      setInstagramError(tripDateError);
-      return;
-    }
-
-    const captionLines = selectedMedia.map((item, index) => {
-      const caption = item.caption?.trim() || `${item.mediaType.toLowerCase().replace('_', ' ')} post`;
-      const highlightLabel = highlightItems.some((highlight) => highlight.id === item.id) ? 'Highlight' : 'Post';
-      return `${index + 1}. ${highlightLabel}: ${caption}\n${item.permalink}`;
-    });
-    const content = [
-      form.content.trim(),
-      'Instagram highlights',
-      ...captionLines,
-    ].filter(Boolean).join('\n\n');
-    const tagSet = new Set([
-      ...form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-      'instagram',
-      'highlights',
-    ]);
-
-    setInstagramSaving(true);
-    setInstagramError(null);
-
-    try {
-      const response = await createJournalEntry({
-        countryId: form.countryId,
-        title,
-        content,
-        mood: form.mood,
-        tags: Array.from(tagSet),
-        tripStartDate: form.tripStartDate,
-        tripEndDate: form.tripEndDate,
-      });
-
-      if (!response.success || !response.data) {
-        setInstagramError(response.error || 'Could not save the Instagram journal entry.');
-        return;
-      }
-
-      const savedEntry = response.data as SavedEntry;
-      const today = getTodayJournalDate();
-      setSavedEntryNotice({
-        entry: savedEntry,
-        message: 'Imported from Instagram',
-      });
-      setInstagramNotice(`Saved "${savedEntry.title}" with ${selectedMedia.length} Instagram post${selectedMedia.length === 1 ? '' : 's'}.`);
-      setInstagramMedia((current) => current.map((item) => ({ ...item, selected: false, highlighted: false })));
-      setForm({
-        title: '',
-        content: '',
-        countryId: '',
-        mood: 'nostalgic',
-        tags: '',
-        tripStartDate: today,
-        tripEndDate: today,
-      });
-      setCountrySearch('');
-      setInstagramModalOpen(false);
-    } catch {
-      setInstagramError('Could not save the Instagram journal entry.');
-    } finally {
-      setInstagramSaving(false);
-    }
-  };
-
   const getCanvaEditUrl = (design: CanvaDesign) => {
     const editUrl = new URL(design.urls.edit_url);
     editUrl.searchParams.set('correlation_state', `journal-${design.id}`.slice(0, 50));
@@ -2196,7 +1963,15 @@ export default function JournalPage() {
       return;
     }
 
+    const normalizedInstagramUrl = instagramEmbedUrl.trim()
+      ? normalizeInstagramEmbedUrl(instagramEmbedUrl)
+      : null;
     const tripDateError = getJournalDateRangeError(form.tripStartDate, form.tripEndDate);
+
+    if (instagramEmbedUrl.trim() && !normalizedInstagramUrl) {
+      setInstagramError('Paste a public Instagram post or Reel URL.');
+      return;
+    }
 
     if (tripDateError) {
       setError(tripDateError);
@@ -2209,6 +1984,7 @@ export default function JournalPage() {
     }
 
     setError(null);
+    setInstagramError(null);
     setSaving(true);
 
     const response = await createJournalEntry({
@@ -2216,7 +1992,12 @@ export default function JournalPage() {
       title: form.title,
       content: form.content,
       mood: form.mood,
-      tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      tags: Array.from(
+        new Set([
+          ...form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+          ...(normalizedInstagramUrl ? ['instagram'] : []),
+        ])
+      ),
       canvaDesignId: canvaImportedPreview?.design.id,
       canvaDesignTitle: canvaImportedPreview?.title,
       canvaDesignEditUrl: canvaImportedPreview ? getCanvaEditUrl(canvaImportedPreview.design) : undefined,
@@ -2226,6 +2007,7 @@ export default function JournalPage() {
       coverPhoto: canvaImportedPreview?.dataUrls[canvaCoverPageIndex] || canvaImportedPreview?.dataUrls[0] || null,
       coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
       insertedPhotos: insertedJournalPhotos,
+      instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
     });
 
     setSaving(false);
@@ -2243,6 +2025,8 @@ export default function JournalPage() {
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
       setInsertedJournalPhotos([]);
+      setInstagramEmbedUrl('');
+      setInstagramError(null);
       setCanvaPreviewPageIndex(0);
       setCanvaPreviewTurnDirection('next');
       return;
@@ -2591,15 +2375,16 @@ export default function JournalPage() {
   const dateRangeErrors = getJournalDateRangeErrors(form.tripStartDate, form.tripEndDate);
   const editDateRangeErrors = getJournalDateRangeErrors(editForm.tripStartDate, editForm.tripEndDate);
   const hasValidDateRange = !dateRangeErrors.startDate && !dateRangeErrors.endDate;
-  const selectedInstagramMediaCount = instagramMedia.filter((item) => item.selected).length;
-  const highlightedInstagramMediaCount = instagramMedia.filter((item) => item.selected && item.highlighted).length;
+  const hasInstagramEmbedDraft = instagramEmbedUrl.trim().length > 0;
+  const hasValidInstagramEmbed = !hasInstagramEmbedDraft || Boolean(normalizeInstagramEmbedUrl(instagramEmbedUrl));
   const canSaveCurrentEntry =
     form.title.trim().length > 0 &&
     form.content.trim().length > 0 &&
     form.tripStartDate.length > 0 &&
     form.tripEndDate.length > 0 &&
     hasVisitedCountryLink &&
-    hasValidDateRange;
+    hasValidDateRange &&
+    hasValidInstagramEmbed;
   const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
 
   const renderCanvaPolaroidStrip = ({
@@ -2830,6 +2615,48 @@ export default function JournalPage() {
           Add memory photos
         </button>
       )}
+    </section>
+  );
+
+  const renderInstagramAttachment = () => (
+    <section className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Instagram post</h3>
+          <p className="mt-1 text-xs leading-5 text-ink/55">
+            Optional. Add one public Instagram post or Reel to this same journal entry.
+          </p>
+        </div>
+        {hasInstagramEmbedDraft && hasValidInstagramEmbed ? (
+          <a
+            href={normalizeInstagramEmbedUrl(instagramEmbedUrl) || instagramEmbedUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-gold-deep transition hover:text-ink"
+          >
+            Preview on Instagram
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
+      <Input
+        label="Instagram post URL"
+        value={instagramEmbedUrl}
+        onChange={(event) => {
+          setInstagramEmbedUrl(event.target.value);
+          setInstagramError(null);
+        }}
+        placeholder="https://www.instagram.com/p/..."
+        className="mt-3"
+      />
+      <div className="mt-3 rounded-lg border border-gold/18 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink/68">
+        Instagram embeds only work for public posts from public accounts. If the post is deleted, made private,
+        restricted, or Instagram blocks embedding for it, it may not appear in the journal.
+      </div>
+      {instagramError ? <p className="mt-2 text-sm text-red-600">{instagramError}</p> : null}
+      {hasInstagramEmbedDraft && !hasValidInstagramEmbed ? (
+        <p className="mt-2 text-sm text-red-600">Paste a public Instagram post or Reel URL.</p>
+      ) : null}
     </section>
   );
 
@@ -3100,6 +2927,7 @@ export default function JournalPage() {
             </div>
           </div>
           {renderMemoryPhotoTray()}
+          {renderInstagramAttachment()}
         </div>
         {preview.dataUrls.length > 1 ? (
           <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
@@ -3411,6 +3239,7 @@ export default function JournalPage() {
                 onChange={(event) => setForm({ ...form, tags: event.target.value })}
                 placeholder="market, sunset, train"
               />
+              {renderInstagramAttachment()}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               {!hasVisitedCountryLink ? (
                 <p className="text-sm font-semibold text-gold-deep">
@@ -3499,213 +3328,6 @@ export default function JournalPage() {
     );
   };
 
-  const renderInstagramModal = () => {
-    if (!instagramModalOpen) {
-      return null;
-    }
-
-    const isMissingConfig = instagramStatus ? !instagramStatus.configured : false;
-
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4 py-8">
-        <div className="max-h-[88vh] w-full max-w-6xl overflow-hidden rounded-lg border border-gold/30 bg-cream shadow-xl">
-          <div className="flex items-start justify-between gap-4 border-b border-gold/20 bg-[#fff8ea] px-5 py-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Instagram</p>
-              <h2 className="mt-1 text-2xl font-serif text-ink">Import posts to journal</h2>
-              <p className="mt-1 max-w-2xl text-sm text-ink/65">
-                Choose recent posts, star the moments to highlight, then save them as a journal entry.
-              </p>
-            </div>
-            <button
-              type="button"
-              aria-label="Close Instagram import"
-              className="rounded-full p-2 text-ink/65 transition hover:bg-white hover:text-ink"
-              onClick={() => setInstagramModalOpen(false)}
-            >
-              <X className="h-5 w-5" aria-hidden="true" />
-            </button>
-          </div>
-
-          <div className="grid max-h-[calc(88vh-112px)] overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="p-5">
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Button type="button" variant="secondary" className="gap-2" onClick={connectInstagram}>
-                  <Camera className="h-4 w-4" aria-hidden="true" />
-                  {instagramStatus?.connected ? 'Reconnect' : 'Connect'}
-                </Button>
-                <Button type="button" variant="outline" className="gap-2" isLoading={instagramLoading} onClick={() => void loadInstagramMedia()}>
-                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                  Refresh
-                </Button>
-                {instagramStatus?.connected ? (
-                  <span className="rounded-full bg-gold/12 px-3 py-1 text-xs font-semibold text-gold-deep">
-                    Connected
-                  </span>
-                ) : null}
-              </div>
-
-              {isMissingConfig ? (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  Missing Instagram setup: {instagramStatus?.missing.join(', ')}. Redirect URI: {instagramStatus?.redirectUri}
-                </div>
-              ) : null}
-
-              {instagramStatus ? (
-                <div className="mb-4 rounded-lg border border-gold/15 bg-white/72 px-4 py-3 text-xs leading-5 text-ink/60">
-                  <p>OAuth: {instagramStatus.authBaseUrl}</p>
-                  <p>App ID: {instagramStatus.clientId || 'missing'} via {instagramStatus.clientIdSource || 'unknown'}</p>
-                  <p>Scopes: {instagramStatus.scopes || 'missing'}</p>
-                  <p>Redirect: {instagramStatus.redirectUri}</p>
-                </div>
-              ) : null}
-
-              {instagramNotice ? (
-                <div className="mb-4 rounded-lg border border-gold/20 bg-white px-4 py-3 text-sm text-ink/70">
-                  {instagramNotice}
-                </div>
-              ) : null}
-
-              {instagramError ? (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                  {instagramError}
-                </div>
-              ) : null}
-
-              {instagramLoading ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {Array.from({ length: 6 }).map((_, index) => (
-                    <div key={index} className="h-72 animate-pulse rounded-lg border border-gold/15 bg-white/72" />
-                  ))}
-                </div>
-              ) : instagramMedia.length ? (
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {instagramMedia.map((item) => {
-                    const imageUrl = item.thumbnailUrl || item.mediaUrl;
-                    return (
-                      <article
-                        key={item.id}
-                        className={`overflow-hidden rounded-lg border bg-white shadow-soft transition ${
-                          item.selected ? 'border-gold ring-2 ring-gold/25' : 'border-gold/15'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          className="block w-full text-left"
-                          onClick={() => toggleInstagramMedia(item.id)}
-                        >
-                          <div className="aspect-square bg-cream">
-                            {imageUrl ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element -- Instagram CDN hosts vary, so this picker uses a plain preview image. */}
-                                <img src={imageUrl} alt={item.caption || 'Instagram post'} className="h-full w-full object-cover" />
-                              </>
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-sm text-ink/55">
-                                {item.mediaType}
-                              </div>
-                            )}
-                          </div>
-                          <div className="p-3">
-                            <p className="line-clamp-3 min-h-[3.75rem] text-sm leading-5 text-ink/72">
-                              {item.caption || 'No caption'}
-                            </p>
-                            <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-ink/45">{item.mediaType}</p>
-                          </div>
-                        </button>
-                        <div className="flex items-center justify-between gap-2 border-t border-gold/10 px-3 py-2">
-                          <Button type="button" size="sm" variant={item.highlighted ? 'secondary' : 'ghost'} className="gap-1" onClick={() => toggleInstagramHighlight(item.id)}>
-                            <Star className="h-4 w-4" aria-hidden="true" />
-                            Highlight
-                          </Button>
-                          <a
-                            href={item.permalink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-gold-deep transition hover:text-ink"
-                          >
-                            Open
-                            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                          </a>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-dashed border-gold/25 bg-white/70 px-5 py-10 text-center">
-                  <Camera className="mx-auto h-9 w-9 text-gold-deep" aria-hidden="true" />
-                  <p className="mt-3 font-semibold text-ink">No Instagram posts loaded.</p>
-                </div>
-              )}
-            </div>
-
-            <aside className="border-t border-gold/20 bg-white/76 p-5 lg:border-l lg:border-t-0">
-              <form
-                className="space-y-4"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void saveInstagramSelection();
-                }}
-              >
-                <Input
-                  label="Journal name"
-                  value={form.title}
-                  onChange={(event) => setForm({ ...form, title: event.target.value })}
-                  placeholder="Instagram memories"
-                />
-                {renderCountrySearch('instagram-entry-country')}
-                <Input
-                  label="Mood"
-                  value={form.mood}
-                  onChange={(event) => setForm({ ...form, mood: event.target.value })}
-                />
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                  <Input
-                    label="Trip start"
-                    type="date"
-                    value={form.tripStartDate}
-                    max={form.tripEndDate}
-                    error={dateRangeErrors.startDate}
-                    onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
-                  />
-                  <Input
-                    label="Trip end"
-                    type="date"
-                    value={form.tripEndDate}
-                    min={form.tripStartDate}
-                    error={dateRangeErrors.endDate}
-                    onChange={(event) => setForm({ ...form, tripEndDate: event.target.value })}
-                  />
-                </div>
-                <textarea
-                  value={form.content}
-                  onChange={(event) => setForm({ ...form, content: event.target.value })}
-                  rows={5}
-                  placeholder="Add a note before the Instagram captions"
-                  className="w-full rounded-lg border-2 border-gold/30 bg-cream/50 px-4 py-3 text-ink placeholder-ink/50 focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/30"
-                />
-                <Input
-                  label="Tags"
-                  value={form.tags}
-                  onChange={(event) => setForm({ ...form, tags: event.target.value })}
-                  placeholder="market, sunset, friends"
-                />
-                <div className="rounded-lg border border-gold/15 bg-cream/45 px-3 py-2 text-sm text-ink/68">
-                  {selectedInstagramMediaCount} selected, {highlightedInstagramMediaCount} highlighted
-                </div>
-                <Button type="submit" isLoading={instagramSaving} disabled={!selectedInstagramMediaCount || !hasVisitedCountryLink || !hasValidDateRange} className="w-full gap-2">
-                  <Camera className="h-4 w-4" aria-hidden="true" />
-                  Save Instagram Entry
-                </Button>
-              </form>
-            </aside>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
       <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
@@ -3735,10 +3357,6 @@ export default function JournalPage() {
             <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
               <Search className="h-4 w-4" aria-hidden="true" />
               Choose Existing
-            </Button>
-            <Button type="button" variant="secondary" className="gap-2" onClick={openInstagramModal}>
-              <Camera className="h-4 w-4" aria-hidden="true" />
-              Instagram
             </Button>
             <Button type="button" variant="ghost" className="gap-2" onClick={() => setLocalScrapbookBackupOpen(true)}>
               <BookOpen className="h-4 w-4" aria-hidden="true" />
@@ -4421,6 +4039,7 @@ export default function JournalPage() {
                   onChange={(event) => setForm({ ...form, tags: event.target.value })}
                   placeholder="market, sunset, train"
                 />
+                {renderInstagramAttachment()}
                 {dictationError ? <p className="text-sm text-red-600">{dictationError}</p> : null}
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
                 {!hasVisitedCountryLink ? (
@@ -4605,6 +4224,8 @@ export default function JournalPage() {
 
 	              {renderInsertedPhotoGrid(getEntryInsertedPhotos(openedEntry))}
 
+	              <InstagramEmbed embeds={getEntryInstagramEmbeds(openedEntry)} />
+
 	              {getEntryContent(openedEntry).trim() ? (
 	                <section className="mt-6 rounded-lg border border-gold/18 bg-cream/45 p-4">
 	                  <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
@@ -4760,7 +4381,6 @@ export default function JournalPage() {
 	        ) : null}
 
         {renderCanvaModal()}
-        {renderInstagramModal()}
         {renderEditEntryModal()}
         {renderSavedEntryNotice()}
       </PageShell>

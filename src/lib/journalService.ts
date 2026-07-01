@@ -78,6 +78,7 @@ export async function createJournalEntry(entry: {
     alt: string;
     caption?: string;
   }>;
+  instagramEmbeds?: string[];
 }) {
   const response = await fetch('/api/journal', {
     method: 'POST',
@@ -147,7 +148,6 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
     body: JSON.stringify({
       entryId,
       friendIds,
-      permission: 'view',
     }),
   });
 

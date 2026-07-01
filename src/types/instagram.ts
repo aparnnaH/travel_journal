@@ -19,5 +19,6 @@ export type InstagramStatus = {
   clientIdSource?: string;
   redirectUri?: string;
   scopes?: string;
+  paused?: boolean;
   missing: string[];
 };

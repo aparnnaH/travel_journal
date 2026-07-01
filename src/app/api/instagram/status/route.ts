@@ -1,18 +1,14 @@
-// Instagram connection diagnostics for the journal workspace.
-// This keeps Meta app setup problems visible without exposing client secrets.
-import { NextRequest, NextResponse } from 'next/server';
-import { getInstagramStatus } from '@/lib/server/instagram';
-import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
+// Instagram OAuth media import is paused while the journal uses public post embeds.
+import { NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
-  const context = await getAuthenticatedRouteContext(request, 'Instagram import');
-
-  if (isRouteError(context)) {
-    return context;
-  }
-
+export async function GET() {
   return NextResponse.json({
     success: true,
-    data: getInstagramStatus(request, context.user.id),
+    data: {
+      configured: false,
+      connected: false,
+      missing: [],
+      paused: true,
+    },
   });
 }

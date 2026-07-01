@@ -39,6 +39,10 @@ export interface JournalEntry {
     alt: string;
     caption?: string;
   }>;
+  instagramEmbeds?: Array<{
+    id: string;
+    url: string;
+  }>;
   canva_design_id?: string | null;
   canva_design_title?: string | null;
   canva_design_edit_url?: string | null;

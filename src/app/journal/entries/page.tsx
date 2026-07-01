@@ -3,14 +3,15 @@
 // and commenting on owned/shared entries outside the Canva-first workspace.
 'use client';
 
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton, { InlineLoadingSkeleton } from '@/components/loading/PageSkeletons';
 import { Button, Input } from '@/components/ui';
+import InstagramEmbed from '@/components/journal/InstagramEmbed';
 import { fetchFriends } from '@/lib/friendService';
 import {
   createJournalComment,
@@ -25,6 +26,7 @@ import {
   updateJournalEntry,
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import {
   formatJournalDateRange,
   getJournalDateRangeError,
@@ -66,6 +68,7 @@ type InsertedJournalPhoto = {
 };
 
 const ENTRY_BATCH_SIZE = 3;
+const journalEntryDeepLinkStorageKey = 'travel-journal:country-explorer-entry';
 const searchScopeOptions: { value: JournalSearchScope; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'title', label: 'Title' },
@@ -102,10 +105,21 @@ const getEntryCanvaPages = (entry: EntryCardData | null) => {
     ? pages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
     : [];
 };
+const getEntryCoverPageIndex = (entry: EntryCardData) => {
+  const decodedCoverIndex = decodeJournalContentWithCanva(String(entry.content || '')).canva?.coverPageIndex;
+
+  return typeof entry.coverPageIndex === 'number'
+    ? entry.coverPageIndex
+    : typeof decodedCoverIndex === 'number'
+      ? decodedCoverIndex
+      : 0;
+};
 const getEntryCoverPhoto = (entry: EntryCardData) => {
   const decodedCanva = decodeJournalContentWithCanva(String(entry.content || '')).canva;
   const pages = getEntryCanvaPages(entry);
-  return entry.coverPhoto || decodedCanva?.coverPhoto || pages[0] || null;
+  const coverPageIndex = Math.min(Math.max(getEntryCoverPageIndex(entry), 0), Math.max(0, pages.length - 1));
+
+  return entry.coverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || null;
 };
 const getEntryInsertedPhotos = (entry: EntryCardData) => {
   const decodedPhotos = decodeJournalContentWithCanva(String(entry.content || '')).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];
@@ -117,11 +131,27 @@ const getEntryInsertedPhotos = (entry: EntryCardData) => {
       )
     : [];
 };
+const getEntryInstagramEmbeds = (entry: EntryCardData) =>
+  sanitizeInstagramEmbedUrls(decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? []);
 // Summary list responses omit heavy image payloads, so entries may need a full
 // hydration fetch before showing a cover.
 const needsEntryCoverHydration = (entry: EntryCardData) =>
   !getEntryCoverPhoto(entry) &&
   (isSummaryEntry(entry) || typeof entry.content !== 'string' || entry.content.length === 0);
+
+const readCountryExplorerEntryHandoff = (entryId: string) => {
+  try {
+    const rawEntry = window.sessionStorage.getItem(journalEntryDeepLinkStorageKey);
+    if (!rawEntry) return null;
+
+    window.sessionStorage.removeItem(journalEntryDeepLinkStorageKey);
+    const parsedEntry = JSON.parse(rawEntry) as SavedEntry;
+
+    return parsedEntry?.id === entryId ? parsedEntry : null;
+  } catch {
+    return null;
+  }
+};
 
 // Protected entries page that coordinates owned entries, shared entries, search,
 // editing, sharing, comments, and deletion.
@@ -129,6 +159,8 @@ export default function JournalEntriesPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkedEntryId = searchParams.get('entryId')?.trim() ?? '';
   const [entries, setEntries] = useState<SavedEntry[]>([]);
   const [entryCount, setEntryCount] = useState(0);
   const [hasMoreEntries, setHasMoreEntries] = useState(false);
@@ -174,6 +206,7 @@ export default function JournalEntriesPage() {
   const [commentSavingEntryId, setCommentSavingEntryId] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const openedDeepLinkEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const activeSearchQuery = deferredSearchQuery.trim();
   const isSearching = activeSearchQuery.length > 0;
@@ -356,6 +389,56 @@ export default function JournalEntriesPage() {
     setOpenedSharedEntry(null);
     setOpenedEntry(fullEntry);
   };
+
+  useEffect(() => {
+    if (!user || !deepLinkedEntryId || openedDeepLinkEntryIdRef.current === deepLinkedEntryId) {
+      return;
+    }
+
+    let isCurrent = true;
+    openedDeepLinkEntryIdRef.current = deepLinkedEntryId;
+
+    const openDeepLinkedEntry = async () => {
+      const handoffEntry = readCountryExplorerEntryHandoff(deepLinkedEntryId);
+
+      if (handoffEntry && isCurrent) {
+        setOpenedSharedEntry(null);
+        setOpenedEntry(handoffEntry);
+      }
+
+      const response = await fetchJournalEntry(deepLinkedEntryId);
+
+      if (!isCurrent) {
+        return;
+      }
+
+      if (!response.success || !response.data) {
+        setLoadError(response.error || 'Could not load this journal entry.');
+        return;
+      }
+
+      const fullEntry = response.data as SavedEntry;
+      setEntries((current) => {
+        const hasEntry = current.some((entry) => entry.id === fullEntry.id);
+
+        return hasEntry
+          ? current.map((entry) =>
+              entry.id === fullEntry.id ? { ...entry, ...fullEntry, isSummary: false } : entry
+            )
+          : current;
+      });
+      setOpenedSharedEntry(null);
+      setOpenedEntry({ ...fullEntry, isSummary: false });
+    };
+
+    // Country Explorer links here with ?entryId=... so users land directly in
+    // the same journal-entry modal used by the archive cards.
+    void openDeepLinkedEntry();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [deepLinkedEntryId, user]);
 
   // Hydrates a shared entry before opening if summary mode omitted heavy data.
   const loadFullSharedEntry = async (entry: SharedJournalEntry) => {
@@ -717,7 +800,21 @@ export default function JournalEntriesPage() {
     const coverPhoto = getEntryCoverPhoto(entry);
 
     if (!coverPhoto) {
-      return null;
+      if (!needsEntryCoverHydration(entry)) {
+        return null;
+      }
+
+      return (
+        <div
+          aria-label={`${entry.title} album cover loading`}
+          className={[
+            className,
+            'overflow-hidden rounded-md border border-gold/20 bg-cream shadow-inner',
+          ].join(' ')}
+        >
+          <div className="h-full w-full animate-pulse bg-gradient-to-br from-gold/16 via-white/70 to-teal/12" />
+        </div>
+      );
     }
 
     return (
@@ -1038,6 +1135,8 @@ export default function JournalEntriesPage() {
             </section>
           ) : null}
 
+          <InstagramEmbed embeds={getEntryInstagramEmbeds(openedEntry)} />
+
           {getEntryContent(openedEntry).trim() ? (
             <section className="mt-6 rounded-lg border border-gold/18 bg-cream/45 p-4">
               <div className="whitespace-pre-wrap text-base leading-8 text-ink/78">{getEntryContent(openedEntry)}</div>
@@ -1171,6 +1270,8 @@ export default function JournalEntriesPage() {
               </div>
             </section>
           ) : null}
+
+          <InstagramEmbed embeds={getEntryInstagramEmbeds(openedSharedEntry)} />
 
           {getEntryContent(openedSharedEntry).trim() ? (
             <section className="mt-6 rounded-lg border border-gold/18 bg-cream/45 p-4">

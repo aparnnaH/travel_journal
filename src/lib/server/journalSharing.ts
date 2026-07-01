@@ -224,7 +224,7 @@ export async function canAccessJournalEntry(supabaseAdmin: SupabaseClient, entry
 
   const { data, error } = await supabaseAdmin
     .from('journal_shares')
-    .select('id')
+    .select('shared_by')
     .eq('journal_entry_id', entryId)
     .eq('shared_with', userId)
     .maybeSingle();
@@ -233,7 +233,12 @@ export async function canAccessJournalEntry(supabaseAdmin: SupabaseClient, entry
     throw new Error(error.message);
   }
 
-  return Boolean(data);
+  if (!data?.shared_by) {
+    return false;
+  }
+
+  const sharedOwnerEntry = await getOwnedJournalEntry(supabaseAdmin, entryId, String(data.shared_by));
+  return Boolean(sharedOwnerEntry);
 }
 
 export async function getAcceptedFriendIds(supabaseAdmin: SupabaseClient, userId: string) {
@@ -412,7 +417,7 @@ export async function loadSharedJournalEntries(
   const sharedEntries = shares.flatMap<SharedJournalEntry>((share) => {
     const entry = entryLookup.get(share.journal_entry_id);
 
-    if (!entry) {
+    if (!entry || entry.user_id !== share.shared_by) {
       return [];
     }
 
@@ -467,7 +472,7 @@ export async function loadSharedJournalEntry(
   }
 
   const [{ data: entryData, error: entryError }, { data: profileData, error: profileError }] = await Promise.all([
-    supabaseAdmin.from('journal_entries').select('*').eq('id', entryId).maybeSingle(),
+    supabaseAdmin.from('journal_entries').select('*').eq('id', entryId).eq('user_id', share.shared_by).maybeSingle(),
     supabaseAdmin.from('profiles').select('id,email,display_name,avatar_url').eq('id', share.shared_by).maybeSingle(),
   ]);
 

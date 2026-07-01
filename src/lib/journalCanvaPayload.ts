@@ -16,6 +16,10 @@ export type JournalCanvaPayload = {
     alt: string;
     caption?: string;
   }>;
+  instagramEmbeds?: Array<{
+    id: string;
+    url: string;
+  }>;
 };
 
 const CANVA_PAYLOAD_START = '\n\n<!--travel-journal-canva:';
