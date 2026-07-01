@@ -132,7 +132,9 @@ const getEntryInsertedPhotos = (entry: EntryCardData) => {
     : [];
 };
 const getEntryInstagramEmbeds = (entry: EntryCardData) =>
-  sanitizeInstagramEmbedUrls(decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? []);
+  sanitizeInstagramEmbedUrls(
+    decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? entry.instagramEmbeds ?? []
+  );
 // Summary list responses omit heavy image payloads, so entries may need a full
 // hydration fetch before showing a cover.
 const needsEntryCoverHydration = (entry: EntryCardData) =>

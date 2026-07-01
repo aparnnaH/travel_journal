@@ -314,7 +314,9 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
     : [];
 };
 const getEntryInstagramEmbeds = (entry: SavedEntry | SharedJournalEntry) =>
-  sanitizeInstagramEmbedUrls(decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? []);
+  sanitizeInstagramEmbedUrls(
+    decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? entry.instagramEmbeds ?? []
+  );
 
 // Extracts scrapbook photos into the compact input shape expected by Memory Keeper.
 const getMemoryKeeperPhotos = (pages: ScrapbookPageData[]) =>

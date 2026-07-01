@@ -4,12 +4,16 @@
 import type { JournalEntry } from '@/types';
 import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
+import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
+import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
   DEMO_USER_ID,
   isDemoMode,
   readDemoJournalEntries,
   writeDemoJournalEntries,
 } from '@/lib/demoMode';
+
+const MAX_DEMO_INSERTED_JOURNAL_PHOTOS = 8;
 
 // Fetches the current user's entries, optionally using pagination, summary mode,
 // and server-supported search parameters.
@@ -117,23 +121,67 @@ export async function createJournalEntry(entry: {
 }) {
   if (isDemoMode()) {
     const now = new Date().toISOString();
+    const cleanCanvaPages = entry.canvaPages?.filter((page) => page.startsWith('data:image/')) ?? [];
+    const cleanCoverPhoto = entry.coverPhoto?.startsWith('data:image/') ? entry.coverPhoto : null;
+    const cleanCoverPageIndex =
+      typeof entry.coverPageIndex === 'number' && Number.isFinite(entry.coverPageIndex) && cleanCanvaPages.length
+        ? Math.max(0, Math.min(cleanCanvaPages.length - 1, Math.floor(entry.coverPageIndex)))
+        : null;
+    const cleanInsertedPhotos =
+      entry.insertedPhotos
+        ?.filter((photo) => photo?.src?.startsWith('data:image/'))
+        .slice(0, MAX_DEMO_INSERTED_JOURNAL_PHOTOS)
+        .map((photo, index) => ({
+          id: photo.id || `demo-photo-${index + 1}`,
+          src: photo.src,
+          alt: photo.alt || `Inserted photo ${index + 1}`,
+          caption: photo.caption ?? '',
+        })) ?? [];
+    const cleanInstagramEmbeds = sanitizeInstagramEmbedUrls(entry.instagramEmbeds);
+    const shouldEncodeMediaPayload = Boolean(
+      cleanCanvaPages.length ||
+        cleanCoverPhoto ||
+        cleanCoverPageIndex !== null ||
+        cleanInsertedPhotos.length ||
+        cleanInstagramEmbeds.length
+    );
+    const content = shouldEncodeMediaPayload
+      ? encodeJournalContentWithCanva(entry.content, {
+          designId: entry.canvaDesignId ?? null,
+          designTitle: entry.canvaDesignTitle ?? null,
+          designEditUrl: entry.canvaDesignEditUrl ?? null,
+          pages: cleanCanvaPages,
+          coverPhoto: cleanCoverPhoto,
+          coverPageIndex: cleanCoverPageIndex,
+          insertedPhotos: cleanInsertedPhotos,
+          tripStartDate: entry.tripStartDate ?? null,
+          tripEndDate: entry.tripEndDate ?? null,
+          instagramEmbeds: cleanInstagramEmbeds,
+        })
+      : entry.content;
     const newEntry: JournalEntry = {
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `demo-entry-${Date.now()}`,
       userId: DEMO_USER_ID,
       countryId: entry.countryId,
       title: entry.title,
-      content: entry.content,
+      content,
       mood: entry.mood as JournalEntry['mood'],
       tags: entry.tags,
-      photos: [],
+      photos: cleanInsertedPhotos.map((photo) => ({
+        id: photo.id,
+        url: photo.src,
+        alt: photo.alt,
+        uploadedAt: now,
+      })),
       canvaDesignId: entry.canvaDesignId ?? null,
       canvaDesignTitle: entry.canvaDesignTitle ?? null,
       canvaDesignEditUrl: entry.canvaDesignEditUrl ?? null,
-      canvaPages: entry.canvaPages ?? [],
-      coverPhoto: entry.coverPhoto ?? null,
-      coverPageIndex: entry.coverPageIndex ?? null,
-      insertedPhotos: entry.insertedPhotos ?? [],
-      instagramEmbeds: entry.instagramEmbeds?.map((url, index) => ({ id: `demo-instagram-${index + 1}`, url })),
+      canvaPages: cleanCanvaPages,
+      canvaPageCount: cleanCanvaPages.length || null,
+      coverPhoto: cleanCoverPhoto,
+      coverPageIndex: cleanCoverPageIndex,
+      insertedPhotos: cleanInsertedPhotos,
+      instagramEmbeds: cleanInstagramEmbeds,
       tripStartDate: entry.tripStartDate ?? null,
       tripEndDate: entry.tripEndDate ?? null,
       createdAt: now,

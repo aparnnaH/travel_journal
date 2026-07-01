@@ -22,6 +22,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
+import { useMapStore } from '@/store/mapStore';
 import { disableDemoMode, isDemoUserId } from '@/lib/demoMode';
 import { signOut } from '@/lib/supabase';
 
@@ -74,6 +75,7 @@ export default function AppHeader() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
   const logout = useAuthStore((state) => state.logout);
+  const resetMapState = useMapStore((state) => state.reset);
   const router = useRouter();
   const [openMenu, setOpenMenu] = useState<HeaderMenu>(null);
   const [pinnedMenu, setPinnedMenu] = useState<HeaderMenu>(null);
@@ -113,7 +115,11 @@ export default function AppHeader() {
   // Signs out from Supabase, clears local auth state, and returns to login.
   const handleSignOut = async () => {
     if (isDemoUser) {
+      await fetch('/api/demo/session', { method: 'DELETE' }).catch((error) => {
+        console.warn('Unable to clear server demo session.', error);
+      });
       disableDemoMode();
+      resetMapState();
     } else {
       await signOut();
     }
