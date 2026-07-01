@@ -205,8 +205,11 @@ Instagram OAuth variables are not needed for the active embed flow. The paused `
 ### Demo checklist
 
 - Share `/demo` when you want someone to explore the signed-in product without creating an account.
-- Demo mode uses seeded local/session data and a 24-hour browser cookie. The `Reset demo` banner button restores the polished seed state.
-- Canva connections in demo mode are scoped to that browser only and are not stored in Supabase/cloud. This keeps visitor OAuth tokens out of the project database and prevents someone else's Canva account from being attached to the shared portfolio demo.
+- Demo mode uses seeded session data, not a real Supabase user. Closing the browser session clears the demo identity, temporary journal edits, and browser-scoped Canva connection.
+- The seed data includes map progress, passport stamps, Canva-backed journal examples, and an imported-trip journal entry with memory photos plus a public Instagram embed URL.
+- Temporary demo journal entries can be created, edited, deleted, and shown in the journal/archive UI during the session. They stay in that browser session only and do not write to Supabase/cloud.
+- Canva connections in demo mode are scoped to that browser session only and are not stored in Supabase/cloud. This keeps visitor OAuth tokens out of the project database and prevents someone else's Canva account from being attached to the shared portfolio demo.
+- Signing out of the demo clears browser demo storage, resets the local map state, and removes demo/Canva cookies. The `Reset demo` banner button also restores the polished seed state.
 - Demo-mode API requests are blocked before Supabase authentication, so journal edits, map changes, profile edits, friend actions, Canva, Instagram, and comments do not write to cloud services.
 - Set `NEXT_PUBLIC_SHOW_DEMO=false` in deployments where the homepage should not show the demo CTA.
 

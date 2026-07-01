@@ -3,11 +3,13 @@ import type { FriendsResponse } from '@/types/friends';
 import type { ScrapbookPageData } from '@/lib/canvas/scrapbook';
 import type { ImportedTripSnapshot } from '@/lib/ai/types';
 import { getImportedTripsStorageKey, getScrapbookStorageKey } from '@/lib/ai/storage';
+import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 
 export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
 export const DEMO_JOURNAL_STORAGE_KEY = 'travel-journal:demo-journal-entries';
 export const DEMO_USER_ID = 'demo-local-user';
+export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna2001@gmail.com';
 
 const demoNow = '2026-06-30T12:00:00.000Z';
 
@@ -30,6 +32,41 @@ const createDemoCanvaPage = (title: string, subtitle: string, color: string) =>
 const demoCanvaPages = [
   createDemoCanvaPage('Kyoto', 'Lantern walk and temple notes', '#9e1b32'),
   createDemoCanvaPage('Arashiyama', 'Bamboo paths, matcha, and quiet rain', '#2f6f6d'),
+];
+
+const createDemoMemoryPhoto = (title: string, caption: string, color: string) =>
+  `data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720">
+      <rect width="1000" height="720" fill="#f7efe2"/>
+      <rect x="56" y="56" width="888" height="608" rx="32" fill="${color}" opacity="0.2"/>
+      <circle cx="254" cy="232" r="92" fill="${color}" opacity="0.86"/>
+      <path d="M56 546 C224 408 348 602 508 464 C642 348 760 438 944 292 L944 664 L56 664 Z" fill="#2f6f6d" opacity="0.82"/>
+      <path d="M56 608 C234 490 394 626 548 536 C712 438 816 520 944 424 L944 664 L56 664 Z" fill="#9e1b32" opacity="0.42"/>
+      <text x="86" y="104" font-family="Georgia, serif" font-size="54" fill="#3d2b0e">${title}</text>
+      <text x="88" y="166" font-family="Arial, sans-serif" font-size="28" fill="#6f5a3b">${caption}</text>
+    </svg>`
+  )}`;
+
+const demoImportedTripPhotos = [
+  {
+    id: 'demo-import-photo-tokyo',
+    src: createDemoMemoryPhoto('Tokyo Food Notes', 'Imported from a spring itinerary', '#ff9f6b'),
+    alt: 'Stylized Tokyo food stop memory from an imported itinerary',
+    caption: 'Lunch stop from the imported Tokyo day.',
+  },
+  {
+    id: 'demo-import-photo-nara',
+    src: createDemoMemoryPhoto('Nara Day Trip', 'Saved with the trip import draft', '#59d98e'),
+    alt: 'Stylized Nara day trip memory from an imported itinerary',
+    caption: 'Quiet afternoon note from the imported route.',
+  },
+];
+
+const demoImportedTripInstagramEmbeds = [
+  {
+    id: 'instagram-1',
+    url: 'https://www.instagram.com/p/Cu3q0VZL7nq/',
+  },
 ];
 
 export const demoUser: AuthUser = {
@@ -89,6 +126,35 @@ export const demoMapState: ScratchMapState = {
 };
 
 export const demoJournalEntries: JournalEntry[] = [
+  {
+    id: 'demo-journal-import-instagram-japan',
+    userId: DEMO_USER_ID,
+    countryId: 'JP',
+    title: 'Imported Trip: Japan Spring Route',
+    content: encodeJournalContentWithCanva(
+      'This entry shows the trip import flow after a route has been parsed into a journal draft. Tokyo food notes, the Kyoto temple walk, and a quick Nara afternoon were pulled into one saved story, then paired with memory photos and a public Instagram post for context.',
+      {
+        insertedPhotos: demoImportedTripPhotos,
+        tripStartDate: '2026-05-03',
+        tripEndDate: '2026-05-10',
+        instagramEmbeds: demoImportedTripInstagramEmbeds,
+      }
+    ),
+    mood: 'excited',
+    tags: ['trip import', 'instagram', 'japan', 'spring'],
+    photos: demoImportedTripPhotos.map((photo) => ({
+      id: photo.id,
+      url: photo.src,
+      alt: photo.alt,
+      uploadedAt: '2026-05-10T22:20:00.000Z',
+    })),
+    insertedPhotos: demoImportedTripPhotos,
+    instagramEmbeds: demoImportedTripInstagramEmbeds,
+    tripStartDate: '2026-05-03',
+    tripEndDate: '2026-05-10',
+    createdAt: '2026-05-10T22:20:00.000Z',
+    updatedAt: '2026-05-10T22:20:00.000Z',
+  },
   {
     id: 'demo-journal-canva-kyoto',
     userId: DEMO_USER_ID,
