@@ -366,7 +366,13 @@ export async function POST(request: NextRequest) {
     tripEndDate: cleanTripEndDate,
     instagramEmbeds: cleanInstagramEmbeds,
   };
-  const shouldEncodeCanvaPayload = Boolean(cleanCoverPhoto || cleanInsertedPhotos.length || cleanInstagramEmbeds.length);
+  const shouldEncodeCanvaPayload = Boolean(
+    cleanCanvaPages.length ||
+    cleanCoverPhoto ||
+    cleanCoverPageIndex !== null ||
+    cleanInsertedPhotos.length ||
+    cleanInstagramEmbeds.length
+  );
 
   const insertPayload: Record<string, unknown> = {
     user_id: context.user.id,

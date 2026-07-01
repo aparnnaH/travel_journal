@@ -1712,7 +1712,7 @@ export default function JournalPage() {
         canvaPages: linkedCanvaPreview?.dataUrls,
         tripStartDate: importedEntryForm.tripStartDate,
         tripEndDate: importedEntryForm.tripEndDate,
-        coverPhoto: linkedCanvaPreview?.dataUrls[canvaCoverPageIndex] || linkedCanvaPreview?.dataUrls[0] || null,
+        coverPhoto: null,
         coverPageIndex: linkedCanvaPreview ? canvaCoverPageIndex : null,
         insertedPhotos: insertedJournalPhotos,
       });
@@ -1872,7 +1872,7 @@ export default function JournalPage() {
     setCanvaError(null);
 
     try {
-      const exportResponse = await createCanvaExport(design.id, 'png');
+      const exportResponse = await createCanvaExport(design.id, 'jpg');
 
       if (!exportResponse.success || !exportResponse.data) {
         setCanvaImportingDesignId(null);
@@ -1963,13 +1963,15 @@ export default function JournalPage() {
       return;
     }
 
-    const normalizedInstagramUrl = instagramEmbedUrl.trim()
-      ? normalizeInstagramEmbedUrl(instagramEmbedUrl)
+    const cleanInstagramUrl = instagramEmbedUrl.trim();
+    const normalizedInstagramUrl = cleanInstagramUrl
+      ? normalizeInstagramEmbedUrl(cleanInstagramUrl)
       : null;
     const tripDateError = getJournalDateRangeError(form.tripStartDate, form.tripEndDate);
 
-    if (instagramEmbedUrl.trim() && !normalizedInstagramUrl) {
+    if (cleanInstagramUrl && !normalizedInstagramUrl) {
       setInstagramError('Paste a public Instagram post or Reel URL.');
+      setError('Fix or clear the Instagram URL before saving this journal.');
       return;
     }
 
@@ -2004,7 +2006,7 @@ export default function JournalPage() {
       canvaPages: canvaImportedPreview?.dataUrls,
       tripStartDate: form.tripStartDate,
       tripEndDate: form.tripEndDate,
-      coverPhoto: canvaImportedPreview?.dataUrls[canvaCoverPageIndex] || canvaImportedPreview?.dataUrls[0] || null,
+      coverPhoto: null,
       coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
       insertedPhotos: insertedJournalPhotos,
       instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
@@ -2375,16 +2377,19 @@ export default function JournalPage() {
   const dateRangeErrors = getJournalDateRangeErrors(form.tripStartDate, form.tripEndDate);
   const editDateRangeErrors = getJournalDateRangeErrors(editForm.tripStartDate, editForm.tripEndDate);
   const hasValidDateRange = !dateRangeErrors.startDate && !dateRangeErrors.endDate;
-  const hasInstagramEmbedDraft = instagramEmbedUrl.trim().length > 0;
-  const hasValidInstagramEmbed = !hasInstagramEmbedDraft || Boolean(normalizeInstagramEmbedUrl(instagramEmbedUrl));
+  const cleanInstagramEmbedUrl = instagramEmbedUrl.trim();
+  const normalizedInstagramEmbedUrl = cleanInstagramEmbedUrl
+    ? normalizeInstagramEmbedUrl(cleanInstagramEmbedUrl)
+    : null;
+  const hasInstagramEmbedDraft = cleanInstagramEmbedUrl.length > 0;
+  const hasValidInstagramEmbed = !hasInstagramEmbedDraft || Boolean(normalizedInstagramEmbedUrl);
   const canSaveCurrentEntry =
     form.title.trim().length > 0 &&
     form.content.trim().length > 0 &&
     form.tripStartDate.length > 0 &&
     form.tripEndDate.length > 0 &&
     hasVisitedCountryLink &&
-    hasValidDateRange &&
-    hasValidInstagramEmbed;
+    hasValidDateRange;
   const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
 
   const renderCanvaPolaroidStrip = ({
@@ -2629,7 +2634,7 @@ export default function JournalPage() {
         </div>
         {hasInstagramEmbedDraft && hasValidInstagramEmbed ? (
           <a
-            href={normalizeInstagramEmbedUrl(instagramEmbedUrl) || instagramEmbedUrl}
+            href={normalizedInstagramEmbedUrl || cleanInstagramEmbedUrl}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-xs font-semibold text-gold-deep transition hover:text-ink"
@@ -2919,6 +2924,7 @@ export default function JournalPage() {
               <div className="mt-3">
                 {renderCountrySearch('canva-page-country')}
               </div>
+              {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
               {!canSaveCurrentEntry ? (
                 <p className="mt-3 text-xs font-semibold text-gold-deep">
                   Add a journal name, story, and visited country to save.
