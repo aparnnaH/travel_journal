@@ -8,7 +8,7 @@ import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
   createDefaultDemoJournalShares,
-  demoUser,
+  demoSharedJournalEntries,
   DEMO_SHARE_RECIPIENT_ID,
   DEMO_SHARE_RECIPIENT_EMAIL,
   DEMO_SHARE_RECIPIENT_NAME,
@@ -29,9 +29,6 @@ const createDemoShareRecipient = (sharedAt: string): JournalShareRecipient => ({
   permission: 'view',
   sharedAt,
 });
-
-const isSharedWithDemoRecipient = (entryId: string) =>
-  readDemoJournalShares()[entryId]?.includes(DEMO_SHARE_RECIPIENT_ID) ?? false;
 
 async function parseJournalApiResponse<T>(response: Response, fallbackError: string): Promise<T & { success: boolean; error?: string }> {
   try {
@@ -392,14 +389,13 @@ export async function fetchSharedJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    const sharedEntries = readDemoJournalEntries()
-      .filter((entry) => isSharedWithDemoRecipient(entry.id))
+    const sharedEntries = demoSharedJournalEntries
       .map<SharedJournalEntry>((entry) => ({
         ...entry,
         sharedBy: {
-          id: demoUser.id,
-          email: demoUser.email,
-          displayName: demoUser.displayName,
+          id: DEMO_SHARE_RECIPIENT_ID,
+          email: DEMO_SHARE_RECIPIENT_EMAIL,
+          displayName: DEMO_SHARE_RECIPIENT_NAME,
         },
         sharedAt: entry.updatedAt || entry.createdAt,
         permission: 'view',
@@ -463,9 +459,9 @@ export async function fetchSharedJournalEntries(options?: {
 // Fetches one shared journal entry the current user can access.
 export async function fetchSharedJournalEntry(entryId: string) {
   if (isDemoMode()) {
-    const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+    const entry = demoSharedJournalEntries.find((item) => item.id === entryId);
 
-    if (!entry || !isSharedWithDemoRecipient(entry.id)) {
+    if (!entry) {
       return { success: false, error: 'Shared entry not found.' };
     }
 
@@ -474,9 +470,9 @@ export async function fetchSharedJournalEntry(entryId: string) {
       data: {
         ...entry,
         sharedBy: {
-          id: demoUser.id,
-          email: demoUser.email,
-          displayName: demoUser.displayName,
+          id: DEMO_SHARE_RECIPIENT_ID,
+          email: DEMO_SHARE_RECIPIENT_EMAIL,
+          displayName: DEMO_SHARE_RECIPIENT_NAME,
         },
         sharedAt: entry.updatedAt || entry.createdAt,
         permission: 'view' as const,

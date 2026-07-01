@@ -228,6 +228,39 @@ export const demoJournalEntries: JournalEntry[] = [
   },
 ];
 
+export const demoSharedJournalEntries: JournalEntry[] = [
+  {
+    id: 'demo-shared-aparnna-montreal',
+    userId: DEMO_SHARE_RECIPIENT_ID,
+    countryId: 'CA',
+    title: 'Aparnna Shared: Montreal Weekend Notes',
+    content:
+      'A shared note from Aparnna with a quick Montreal weekend route: bagels before the market, a slow walk through Old Montreal, and a golden-hour lookout stop before dinner.',
+    mood: 'happy',
+    tags: ['shared', 'montreal', 'weekend'],
+    photos: [],
+    tripStartDate: '2026-06-14',
+    tripEndDate: '2026-06-16',
+    createdAt: '2026-06-16T20:30:00.000Z',
+    updatedAt: '2026-06-16T20:30:00.000Z',
+  },
+  {
+    id: 'demo-shared-aparnna-london',
+    userId: DEMO_SHARE_RECIPIENT_ID,
+    countryId: 'GB',
+    title: 'Aparnna Shared: London Cafe Map',
+    content:
+      'Aparnna shared this London cafe map as a view-only journal entry, with a few quiet reading spots, neighborhood notes, and one museum afternoon saved for later.',
+    mood: 'peaceful',
+    tags: ['shared', 'london', 'cafes'],
+    photos: [],
+    tripStartDate: '2026-02-08',
+    tripEndDate: '2026-02-12',
+    createdAt: '2026-02-12T18:45:00.000Z',
+    updatedAt: '2026-02-12T18:45:00.000Z',
+  },
+];
+
 export const demoFriends: FriendsResponse = {
   friends: [
     {
