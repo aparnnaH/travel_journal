@@ -84,13 +84,16 @@ function PassportRouteContent() {
   // Query targeting lets /map send users directly to the stamp they revealed.
   const requestedStampId = searchParams.get('stamp');
   const targetStampId = COUNTRY_STAMPS.some((stamp) => stamp.id === requestedStampId) ? requestedStampId : null;
+  const displayedUnlockedStampIds = targetStampId
+    ? Array.from(new Set([...unlockedStampIds, targetStampId]))
+    : unlockedStampIds;
 
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
       <PassportPageComponent
         key={targetStampId ?? 'passport'}
-        initialUnlockedStamps={unlockedStampIds}
+        initialUnlockedStamps={displayedUnlockedStampIds}
         initialTargetStampId={targetStampId}
       />
     </div>
