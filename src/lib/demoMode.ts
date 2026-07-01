@@ -8,8 +8,12 @@ import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
 export const DEMO_JOURNAL_STORAGE_KEY = 'travel-journal:demo-journal-entries';
+export const DEMO_JOURNAL_SHARE_STORAGE_KEY = 'travel-journal:demo-journal-shares';
 export const DEMO_USER_ID = 'demo-local-user';
-export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna2001@gmail.com';
+export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
+export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna.demo@traveljournal.app';
+export const DEMO_SHARE_RECIPIENT_NAME = 'Aparnna';
+const DEMO_PENDING_FRIEND_ID = 'demo-friend-mary-chen';
 
 const demoNow = '2026-06-30T12:00:00.000Z';
 
@@ -229,19 +233,34 @@ export const demoFriends: FriendsResponse = {
     {
       id: 'demo-friend-1',
       requesterId: DEMO_USER_ID,
-      addresseeId: 'demo-friend-maya',
+      addresseeId: DEMO_SHARE_RECIPIENT_ID,
       status: 'accepted',
       createdAt: '2026-03-01T12:00:00.000Z',
       respondedAt: '2026-03-01T12:30:00.000Z',
       profile: {
-        id: 'demo-friend-maya',
-        email: 'maya@example.com',
-        displayName: 'Maya Chen',
+        id: DEMO_SHARE_RECIPIENT_ID,
+        email: DEMO_SHARE_RECIPIENT_EMAIL,
+        displayName: DEMO_SHARE_RECIPIENT_NAME,
       },
       direction: 'friend',
     },
   ],
-  incoming: [],
+  incoming: [
+    {
+      id: 'demo-friend-request-mary-chen',
+      requesterId: DEMO_PENDING_FRIEND_ID,
+      addresseeId: DEMO_USER_ID,
+      status: 'pending',
+      createdAt: '2026-06-28T16:20:00.000Z',
+      respondedAt: null,
+      profile: {
+        id: DEMO_PENDING_FRIEND_ID,
+        email: 'mary.chen@example.com',
+        displayName: 'Mary Chen',
+      },
+      direction: 'incoming',
+    },
+  ],
   outgoing: [],
   blocked: [],
 };
@@ -369,6 +388,10 @@ export function seedDemoLocalContext(options?: { reset?: boolean }) {
     writeDemoJournalEntries(demoJournalEntries);
   }
 
+  if (shouldReset || !window.sessionStorage.getItem(DEMO_JOURNAL_SHARE_STORAGE_KEY)) {
+    writeDemoJournalShares(createDefaultDemoJournalShares(demoJournalEntries));
+  }
+
   const scrapbookStorageKey = getScrapbookStorageKey(DEMO_USER_ID);
   if (shouldReset || !window.localStorage.getItem(scrapbookStorageKey)) {
     window.localStorage.setItem(
@@ -393,6 +416,7 @@ export function disableDemoMode() {
   window.localStorage.removeItem(getScrapbookStorageKey(DEMO_USER_ID));
   window.localStorage.removeItem(getImportedTripsStorageKey(DEMO_USER_ID));
   window.sessionStorage.removeItem(DEMO_JOURNAL_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_JOURNAL_SHARE_STORAGE_KEY);
   document.cookie = `${DEMO_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }
 
@@ -413,6 +437,33 @@ export function readDemoJournalEntries() {
 export function writeDemoJournalEntries(entries: JournalEntry[]) {
   if (typeof window === 'undefined') return;
   window.sessionStorage.setItem(DEMO_JOURNAL_STORAGE_KEY, JSON.stringify(entries));
+}
+
+export type DemoJournalShares = Record<string, string[]>;
+
+export function createDefaultDemoJournalShares(entries: JournalEntry[]): DemoJournalShares {
+  return Object.fromEntries(entries.map((entry) => [entry.id, [DEMO_SHARE_RECIPIENT_ID]]));
+}
+
+export function readDemoJournalShares() {
+  if (typeof window === 'undefined') return createDefaultDemoJournalShares(demoJournalEntries);
+
+  const storedShares = window.sessionStorage.getItem(DEMO_JOURNAL_SHARE_STORAGE_KEY);
+  if (!storedShares) return createDefaultDemoJournalShares(readDemoJournalEntries());
+
+  try {
+    const parsedShares = JSON.parse(storedShares);
+    return parsedShares && typeof parsedShares === 'object' && !Array.isArray(parsedShares)
+      ? (parsedShares as DemoJournalShares)
+      : createDefaultDemoJournalShares(readDemoJournalEntries());
+  } catch {
+    return createDefaultDemoJournalShares(readDemoJournalEntries());
+  }
+}
+
+export function writeDemoJournalShares(shares: DemoJournalShares) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DEMO_JOURNAL_SHARE_STORAGE_KEY, JSON.stringify(shares));
 }
 
 export function isDemoRequestCookie(cookieValue?: string | null) {

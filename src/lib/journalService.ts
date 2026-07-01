@@ -7,15 +7,31 @@ import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalS
 import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
+  createDefaultDemoJournalShares,
   demoUser,
+  DEMO_SHARE_RECIPIENT_ID,
   DEMO_SHARE_RECIPIENT_EMAIL,
+  DEMO_SHARE_RECIPIENT_NAME,
   DEMO_USER_ID,
   isDemoMode,
   readDemoJournalEntries,
+  readDemoJournalShares,
   writeDemoJournalEntries,
+  writeDemoJournalShares,
 } from '@/lib/demoMode';
 
 const MAX_DEMO_INSERTED_JOURNAL_PHOTOS = 8;
+
+const createDemoShareRecipient = (sharedAt: string): JournalShareRecipient => ({
+  id: DEMO_SHARE_RECIPIENT_ID,
+  email: DEMO_SHARE_RECIPIENT_EMAIL,
+  displayName: DEMO_SHARE_RECIPIENT_NAME,
+  permission: 'view',
+  sharedAt,
+});
+
+const isSharedWithDemoRecipient = (entryId: string) =>
+  readDemoJournalShares()[entryId]?.includes(DEMO_SHARE_RECIPIENT_ID) ?? false;
 
 // Fetches the current user's entries, optionally using pagination, summary mode,
 // and server-supported search parameters.
@@ -191,6 +207,10 @@ export async function createJournalEntry(entry: {
     };
 
     writeDemoJournalEntries([newEntry, ...readDemoJournalEntries()]);
+    writeDemoJournalShares({
+      ...readDemoJournalShares(),
+      [newEntry.id]: [DEMO_SHARE_RECIPIENT_ID],
+    });
     return { success: true, data: newEntry };
   }
 
@@ -277,6 +297,10 @@ export async function updateJournalEntry(entry: {
 export async function deleteJournalEntry(entryId: string) {
   if (isDemoMode()) {
     writeDemoJournalEntries(readDemoJournalEntries().filter((entry) => entry.id !== entryId));
+    const shares = readDemoJournalShares();
+    const nextShares = { ...shares };
+    delete nextShares[entryId];
+    writeDemoJournalShares(nextShares);
     return { success: true };
   }
 
@@ -293,19 +317,13 @@ export async function deleteJournalEntry(entryId: string) {
 export async function fetchJournalEntryShares(entryId: string) {
   if (isDemoMode()) {
     const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+    const shares = readDemoJournalShares();
+    const friendIds = shares[entryId] ?? createDefaultDemoJournalShares(entry ? [entry] : [])[entryId] ?? [];
 
     return {
       success: true,
-      data: entry
-        ? [
-            {
-              id: 'demo-share-recipient-aparnna',
-              email: DEMO_SHARE_RECIPIENT_EMAIL,
-              displayName: 'Aparnna',
-              permission: 'view' as const,
-              sharedAt: entry.updatedAt || entry.createdAt,
-            },
-          ]
+      data: entry && friendIds.includes(DEMO_SHARE_RECIPIENT_ID)
+        ? [createDemoShareRecipient(entry.updatedAt || entry.createdAt)]
         : [],
     };
   }
@@ -318,21 +336,16 @@ export async function fetchJournalEntryShares(entryId: string) {
 export async function saveJournalEntryShares(entryId: string, friendIds: string[]) {
   if (isDemoMode()) {
     const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+    const selectedFriendIds = friendIds.includes(DEMO_SHARE_RECIPIENT_ID) ? [DEMO_SHARE_RECIPIENT_ID] : [];
+
+    writeDemoJournalShares({
+      ...readDemoJournalShares(),
+      [entryId]: selectedFriendIds,
+    });
 
     return {
       success: true,
-      data:
-        entry && friendIds.length > 0
-          ? [
-              {
-                id: 'demo-share-recipient-aparnna',
-                email: DEMO_SHARE_RECIPIENT_EMAIL,
-                displayName: 'Aparnna',
-                permission: 'view' as const,
-                sharedAt: new Date().toISOString(),
-              },
-            ]
-          : [],
+      data: entry && selectedFriendIds.length > 0 ? [createDemoShareRecipient(new Date().toISOString())] : [],
     };
   }
 
@@ -358,16 +371,18 @@ export async function fetchSharedJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    const sharedEntries = readDemoJournalEntries().map<SharedJournalEntry>((entry) => ({
-      ...entry,
-      sharedBy: {
-        id: demoUser.id,
-        email: demoUser.email,
-        displayName: demoUser.displayName,
-      },
-      sharedAt: entry.updatedAt || entry.createdAt,
-      permission: 'view',
-    }));
+    const sharedEntries = readDemoJournalEntries()
+      .filter((entry) => isSharedWithDemoRecipient(entry.id))
+      .map<SharedJournalEntry>((entry) => ({
+        ...entry,
+        sharedBy: {
+          id: demoUser.id,
+          email: demoUser.email,
+          displayName: demoUser.displayName,
+        },
+        sharedAt: entry.updatedAt || entry.createdAt,
+        permission: 'view',
+      }));
     const search = options?.search?.trim().toLowerCase();
     const filteredEntries = search
       ? sharedEntries.filter((entry) =>
@@ -429,7 +444,7 @@ export async function fetchSharedJournalEntry(entryId: string) {
   if (isDemoMode()) {
     const entry = readDemoJournalEntries().find((item) => item.id === entryId);
 
-    if (!entry) {
+    if (!entry || !isSharedWithDemoRecipient(entry.id)) {
       return { success: false, error: 'Shared entry not found.' };
     }
 

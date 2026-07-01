@@ -10,7 +10,7 @@ import {
   demoJournalEntries,
   demoMapState,
   demoUser,
-  DEMO_SHARE_RECIPIENT_EMAIL,
+  DEMO_SHARE_RECIPIENT_NAME,
   enableDemoMode,
   seedDemoLocalContext,
 } from '@/lib/demoMode';
@@ -71,7 +71,7 @@ export default function DemoFriendRequestPage() {
                     Add {demoUser.displayName} as the friend.
                   </h2>
                   <p className="mt-4 max-w-2xl text-lg leading-7 text-ink/72">
-                    From the account {DEMO_SHARE_RECIPIENT_EMAIL}, send the friend request to this demo traveler email.
+                    From the {DEMO_SHARE_RECIPIENT_NAME} demo account, send the friend request to this demo traveler email.
                     The demo preview treats every seeded journal entry as shared with that account.
                   </p>
                 </div>
@@ -84,7 +84,7 @@ export default function DemoFriendRequestPage() {
             </Card>
 
             <section className="grid gap-4 md:grid-cols-3">
-              <StatusTile icon={MailPlus} label="Request from" value={DEMO_SHARE_RECIPIENT_EMAIL} />
+              <StatusTile icon={MailPlus} label="Request from" value={DEMO_SHARE_RECIPIENT_NAME} />
               <StatusTile icon={UsersRound} label="Request to" value={demoTravelerEmail} />
               <StatusTile icon={Share2} label="Permission" value="View-only journals" />
             </section>
@@ -105,7 +105,7 @@ export default function DemoFriendRequestPage() {
                   <div key={title} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
                     <CheckCircle2 className="h-5 w-5 text-[#315F43]" aria-hidden="true" />
                     <p className="mt-3 font-semibold text-ink">{title}</p>
-                    <p className="mt-1 text-sm text-ink/62">Shared with {DEMO_SHARE_RECIPIENT_EMAIL}</p>
+                    <p className="mt-1 text-sm text-ink/62">Shared with {DEMO_SHARE_RECIPIENT_NAME}</p>
                   </div>
                 ))}
               </div>
@@ -117,7 +117,7 @@ export default function DemoFriendRequestPage() {
               <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Use this email</p>
               <h2 className="mt-1 break-words text-2xl font-serif font-semibold text-ink">{demoTravelerEmail}</h2>
               <p className="mt-3 text-sm leading-6 text-ink/65">
-                This is the demo traveler to add from {DEMO_SHARE_RECIPIENT_EMAIL}.
+                This is the demo traveler to add from the {DEMO_SHARE_RECIPIENT_NAME} demo account.
               </p>
               <Button type="button" variant="secondary" onClick={copyEmail} className="mt-5 w-full gap-2">
                 <Copy className="h-4 w-4" aria-hidden="true" />

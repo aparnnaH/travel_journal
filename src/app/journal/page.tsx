@@ -2192,7 +2192,6 @@ export default function JournalPage() {
   };
 
   const openSharePanel = async (entry: SavedEntry) => {
-    setOpenedEntry(null);
     setSharingEntryId(entry.id);
     setShareLoading(true);
     setShareError(null);
