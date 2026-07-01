@@ -33,6 +33,27 @@ const createDemoShareRecipient = (sharedAt: string): JournalShareRecipient => ({
 const isSharedWithDemoRecipient = (entryId: string) =>
   readDemoJournalShares()[entryId]?.includes(DEMO_SHARE_RECIPIENT_ID) ?? false;
 
+async function parseJournalApiResponse<T>(response: Response, fallbackError: string): Promise<T & { success: boolean; error?: string }> {
+  try {
+    const payload = (await response.json()) as T & { success: boolean; error?: string };
+
+    if (!response.ok) {
+      return {
+        ...payload,
+        success: false,
+        error: payload.error || fallbackError,
+      };
+    }
+
+    return payload;
+  } catch {
+    return {
+      success: false,
+      error: fallbackError,
+    } as T & { success: boolean; error?: string };
+  }
+}
+
 // Fetches the current user's entries, optionally using pagination, summary mode,
 // and server-supported search parameters.
 export async function fetchJournalEntries(options?: {
@@ -329,7 +350,7 @@ export async function fetchJournalEntryShares(entryId: string) {
   }
 
   const response = await fetch(`/api/journal/share?entryId=${encodeURIComponent(entryId)}`);
-  return response.json() as Promise<{ success: boolean; data?: JournalShareRecipient[]; error?: string }>;
+  return parseJournalApiResponse<{ data?: JournalShareRecipient[] }>(response, 'Unable to load share settings.');
 }
 
 // Replaces the share recipient list for an owned entry.
@@ -358,7 +379,7 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
     }),
   });
 
-  return response.json() as Promise<{ success: boolean; data?: JournalShareRecipient[]; error?: string }>;
+  return parseJournalApiResponse<{ data?: JournalShareRecipient[] }>(response, 'Unable to save sharing settings.');
 }
 
 // Loads entries shared with the current user, using the same list/search shape

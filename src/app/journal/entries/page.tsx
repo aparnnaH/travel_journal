@@ -704,21 +704,28 @@ export default function JournalEntriesPage() {
   // Loads current share recipients before opening the share panel.
   const openSharePanel = async (entry: SavedEntry) => {
     setSharingEntryId(entry.id);
+    setCommentEntryId(null);
     setShareLoading(true);
     setShareError(null);
     setShareNotice(null);
 
-    const response = await fetchJournalEntryShares(entry.id);
-    setShareLoading(false);
+    try {
+      const response = await fetchJournalEntryShares(entry.id);
+      setShareLoading(false);
 
-    if (!response.success) {
-      setShareError(response.error || 'Unable to load share settings.');
+      if (!response.success) {
+        setShareError(response.error || 'Unable to load share settings.');
+        setSelectedShareFriendIds([]);
+        return;
+      }
+
+      const recipients = response.data ?? [];
+      setSelectedShareFriendIds(recipients.map((recipient) => recipient.id));
+    } catch {
+      setShareLoading(false);
       setSelectedShareFriendIds([]);
-      return;
+      setShareError('Unable to load share settings. Please refresh and try again.');
     }
-
-    const recipients = response.data ?? [];
-    setSelectedShareFriendIds(recipients.map((recipient) => recipient.id));
   };
 
   const toggleShareFriend = (friendId: string) => {
@@ -735,20 +742,26 @@ export default function JournalEntriesPage() {
     setShareError(null);
     setShareNotice(null);
 
-    const response = await saveJournalEntryShares(entryId, selectedShareFriendIds);
-    setShareSaving(false);
+    try {
+      const response = await saveJournalEntryShares(entryId, selectedShareFriendIds);
+      setShareSaving(false);
 
-    if (!response.success) {
-      setShareError(response.error || 'Unable to save sharing settings.');
-      return;
+      if (!response.success) {
+        setShareError(response.error || 'Unable to save sharing settings.');
+        return;
+      }
+
+      setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
+    } catch {
+      setShareSaving(false);
+      setShareError('Unable to save sharing settings. Please refresh and try again.');
     }
-
-    setShareNotice(selectedShareFriendIds.length > 0 ? 'Sharing updated.' : 'Sharing removed.');
   };
 
   // Loads comments for the selected owned/shared entry.
   const openCommentPanel = async (entryId: string) => {
     setCommentEntryId(entryId);
+    setSharingEntryId(null);
     setCommentError(null);
     setCommentsLoading(true);
 
