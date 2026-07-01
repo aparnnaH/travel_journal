@@ -18,6 +18,18 @@ const API_RATE_LIMIT_POLICIES = {
     limit: 24,
     windowMs: 60_000,
   },
+  'canva-local-oauth': {
+    limit: 8,
+    windowMs: 10 * 60_000,
+  },
+  'canva-local-read': {
+    limit: 40,
+    windowMs: 60_000,
+  },
+  'canva-local-write': {
+    limit: 12,
+    windowMs: 60_000,
+  },
 } as const;
 
 type ApiRateLimitPolicy = keyof typeof API_RATE_LIMIT_POLICIES;
@@ -153,4 +165,15 @@ export function checkApiRateLimit(policy: ApiRateLimitPolicy, userId: string) {
     limit: rateLimitPolicy.limit,
     windowMs: rateLimitPolicy.windowMs,
   });
+}
+
+export function getRequestRateLimitIdentity(request: NextRequest) {
+  const forwardedFor = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  const userAgent = request.headers.get('user-agent')?.slice(0, 160) || 'unknown-agent';
+  return forwardedFor || realIp || `unknown-ip:${userAgent}`;
+}
+
+export function checkApiRateLimitForRequest(policy: ApiRateLimitPolicy, request: NextRequest) {
+  return checkApiRateLimit(policy, getRequestRateLimitIdentity(request));
 }

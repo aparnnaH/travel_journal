@@ -22,6 +22,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
+import { disableDemoMode, isDemoUserId } from '@/lib/demoMode';
 import { signOut } from '@/lib/supabase';
 
 type HeaderMenu = 'explore' | 'journal' | 'account' | null;
@@ -81,6 +82,7 @@ export default function AppHeader() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accountLabel = user?.displayName || user?.email || 'Signed in';
   const avatarUrl = user?.avatar?.trim();
+  const isDemoUser = isDemoUserId(user?.id);
 
   // Dropdowns use a small close delay so moving the pointer from trigger to menu
   // does not immediately dismiss the menu.
@@ -110,7 +112,11 @@ export default function AppHeader() {
 
   // Signs out from Supabase, clears local auth state, and returns to login.
   const handleSignOut = async () => {
-    await signOut();
+    if (isDemoUser) {
+      disableDemoMode();
+    } else {
+      await signOut();
+    }
     logout();
     setOpenMenu(null);
     setPinnedMenu(null);
@@ -349,7 +355,7 @@ export default function AppHeader() {
                 </span>
                 <span className="min-w-0 leading-tight">
                   <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-gold-deep">
-                    Signed in
+                    {isDemoUser ? 'Demo mode' : 'Signed in'}
                   </span>
                   <span className="hidden max-w-32 truncate text-xs font-semibold text-ink sm:block lg:max-w-40">
                     {accountLabel}

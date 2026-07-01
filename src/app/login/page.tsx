@@ -3,6 +3,7 @@
 // route once AuthProvider can hydrate global auth state.
 'use client';
 
+import Link from 'next/link';
 import React, { useEffect, useState } from 'react';
 import { Input, Button } from '@/components/ui';
 import AppHeader from '@/components/layout/AppHeader';
@@ -108,6 +109,15 @@ export default function LoginPage() {
             </Button>
           </div>
         </form>
+
+          <div className="mt-6 border-t border-gold/16 pt-5">
+            <p className="text-sm text-ink/65">No account needed for the portfolio version.</p>
+            <Link href="/demo" className="mt-3 inline-flex w-full">
+              <Button variant="secondary" className="w-full">
+                View Demo
+              </Button>
+            </Link>
+          </div>
       </div>
     </div>
     </div>

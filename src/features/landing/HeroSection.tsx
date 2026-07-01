@@ -14,6 +14,7 @@ export function HeroSection() {
   const user = useAuthStore((state) => state.user);
   const ctaHref = user ? '/dashboard' : '/map';
   const ctaLabel = user ? 'Continue Your Journey' : 'Start Your Journey';
+  const showDemo = process.env.NEXT_PUBLIC_SHOW_DEMO !== 'false';
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -73,6 +74,13 @@ export function HeroSection() {
               {ctaLabel}
             </Button>
           </Link>
+          {showDemo ? (
+            <Link href="/demo">
+              <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                View Demo
+              </Button>
+            </Link>
+          ) : null}
         </motion.div>
 
         <motion.div variants={itemVariants}>

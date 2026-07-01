@@ -3,12 +3,15 @@
 // calls, export downloads, and best-effort folder organization. It must stay
 // server-only because it handles client secrets and access tokens.
 import crypto from 'crypto';
+import type { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { DEMO_COOKIE_MAX_AGE_SECONDS } from '@/lib/demoMode';
 import type { CanvaDesign, CanvaExportJob } from '@/types/canva';
 
 const CANVA_API_BASE_URL = 'https://api.canva.com/rest/v1';
 const CANVA_AUTHORIZE_URL = 'https://www.canva.com/api/oauth/authorize';
 const CANVA_OAUTH_COOKIE = 'canva-oauth';
+const CANVA_LOCAL_CONNECTION_COOKIE = 'canva-local-connection';
 const CANVA_FOLDER_SCOPES = ['folder:read', 'folder:write'];
 const CANVA_SCOPES = [
   'profile:read',
@@ -38,6 +41,12 @@ type CanvaTokenResponse = {
   token_type: 'Bearer';
   expires_in: number;
   scope?: string;
+};
+
+type CanvaLocalConnectionCookie = {
+  refreshTokenEncrypted: string;
+  scopes?: string[];
+  updatedAt: string;
 };
 
 type CanvaConnectionRow = {
@@ -78,6 +87,12 @@ type Jwk = JsonWebKey & {
 // Exposes the temporary OAuth cookie name to the start/callback routes.
 export function getCanvaOAuthCookieName() {
   return CANVA_OAUTH_COOKIE;
+}
+
+// Local demo connections stay in an encrypted HTTP-only browser cookie instead
+// of Supabase, so the connection works only from that browser.
+export function getCanvaLocalConnectionCookieName() {
+  return CANVA_LOCAL_CONNECTION_COOKIE;
 }
 
 // Reads required Canva env vars in one place so misconfiguration fails with a
@@ -215,6 +230,57 @@ function decryptSecret(value: string) {
     decipher.update(Buffer.from(encryptedValue, 'base64url')),
     decipher.final(),
   ]).toString('utf8');
+}
+
+function encodeCanvaLocalConnectionCookie(value: CanvaLocalConnectionCookie) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function decodeCanvaLocalConnectionCookie(value?: string): CanvaLocalConnectionCookie | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as CanvaLocalConnectionCookie;
+  } catch {
+    return null;
+  }
+}
+
+export function createCanvaLocalConnectionCookie(token: CanvaTokenResponse) {
+  return encodeCanvaLocalConnectionCookie({
+    refreshTokenEncrypted: encryptSecret(token.refresh_token),
+    scopes: token.scope?.split(/\s+/).filter(Boolean) || CANVA_SCOPES,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export function setCanvaLocalConnectionCookie(response: NextResponse, request: NextRequest, cookieValue: string) {
+  response.cookies.set(getCanvaLocalConnectionCookieName(), cookieValue, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: request.nextUrl.protocol === 'https:',
+    maxAge: DEMO_COOKIE_MAX_AGE_SECONDS,
+    path: '/',
+  });
+}
+
+// Demo-mode Canva API calls refresh from the local browser cookie on every
+// request. This avoids storing an access token in cloud storage or client JS.
+export async function getLocalCanvaAccessToken(request: NextRequest) {
+  const connection = decodeCanvaLocalConnectionCookie(request.cookies.get(getCanvaLocalConnectionCookieName())?.value);
+
+  if (!connection) {
+    throw new Error('Canva is not connected on this browser yet.');
+  }
+
+  const refreshed = await refreshCanvaToken(decryptSecret(connection.refreshTokenEncrypted));
+
+  return {
+    accessToken: refreshed.access_token,
+    cookie: createCanvaLocalConnectionCookie(refreshed),
+  };
 }
 
 // Stores encrypted Canva tokens and account metadata for the signed-in user.

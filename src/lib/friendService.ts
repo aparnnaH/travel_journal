@@ -2,6 +2,7 @@
 // Pages use this service to avoid duplicating response parsing and error
 // handling around the friends route handlers.
 import type { FriendRequestAction, FriendsResponse, Friendship } from '@/types/friends';
+import { demoFriends, isDemoMode } from '@/lib/demoMode';
 
 type ApiResult<T> = {
   success: boolean;
@@ -26,6 +27,10 @@ async function parseApiResponse<T>(response: Response): Promise<ApiResult<T>> {
 
 // Loads accepted, incoming, outgoing, and blocked friendship groups.
 export async function fetchFriends() {
+  if (isDemoMode()) {
+    return { success: true, data: demoFriends };
+  }
+
   const response = await fetch('/api/friends');
   return parseApiResponse<FriendsResponse>(response);
 }
@@ -33,6 +38,10 @@ export async function fetchFriends() {
 // Sends a friend request by email. The server prevents self-requests and
 // duplicate relationships.
 export async function sendFriendRequest(email: string) {
+  if (isDemoMode()) {
+    return { success: false, error: 'Friend requests are preview-only in demo mode.' };
+  }
+
   const response = await fetch('/api/friends/request', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -44,6 +53,10 @@ export async function sendFriendRequest(email: string) {
 
 // Accepts or blocks an existing request.
 export async function updateFriendRequest(friendshipId: string, action: FriendRequestAction) {
+  if (isDemoMode()) {
+    return { success: false, error: 'Friend requests are preview-only in demo mode.' };
+  }
+
   const response = await fetch('/api/friends/request', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -55,6 +68,10 @@ export async function updateFriendRequest(friendshipId: string, action: FriendRe
 
 // Removes an existing friendship/request.
 export async function removeFriendship(friendshipId: string) {
+  if (isDemoMode()) {
+    return { success: false, error: 'Friend changes are preview-only in demo mode.' };
+  }
+
   const response = await fetch(`/api/friends/${encodeURIComponent(friendshipId)}`, {
     method: 'DELETE',
   });

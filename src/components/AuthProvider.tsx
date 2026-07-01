@@ -8,8 +8,11 @@ import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { getSupabaseClient, syncAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
+import { demoMapState, demoUser, isDemoMode, seedDemoLocalContext } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
+import { useMapStore } from '@/store/mapStore';
 import type { AuthUser } from '@/types';
+import DemoModeBanner from './demo/DemoModeBanner';
 import MapCloudSync from './MapCloudSync';
 
 interface AuthProviderProps {
@@ -81,10 +84,28 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const setUser = useAuthStore((state) => state.setUser);
   const setLoading = useAuthStore((state) => state.setLoading);
   const logout = useAuthStore((state) => state.logout);
+  const replaceMapState = useMapStore((state) => state.replaceMapState);
   const router = useRouter();
 
   useEffect(() => {
     let subscription: { unsubscribe?: () => void } | null = null;
+
+    if (isDemoMode()) {
+      const initializeDemo = async () => {
+        setLoading(true);
+        await syncAuthCookie(null);
+        seedDemoLocalContext();
+        setUser(demoUser);
+        replaceMapState(demoMapState);
+        setLoading(false);
+      };
+
+      void initializeDemo();
+
+      return () => {
+        subscription?.unsubscribe?.();
+      };
+    }
 
     // Initial hydration reads any existing Supabase browser session and mirrors
     // it into the app cookie so API routes can authenticate immediately.
@@ -148,11 +169,12 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       subscription?.unsubscribe?.();
     };
-  }, [setUser, setLoading, logout, router]);
+  }, [setUser, setLoading, logout, router, replaceMapState]);
 
   return (
     <>
       <MapCloudSync />
+      <DemoModeBanner />
       {children}
     </>
   );

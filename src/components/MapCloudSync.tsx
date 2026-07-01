@@ -5,6 +5,7 @@
 
 import { AlertTriangle, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { isDemoUserId } from '@/lib/demoMode';
 import { fetchCloudMapState, saveCloudMapState } from '@/lib/mapStateService';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -69,7 +70,7 @@ export default function MapCloudSync() {
   const [syncIssue, setSyncIssue] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isAuthLoading || !user) return;
+    if (isAuthLoading || !user || isDemoUserId(user.id)) return;
 
     let isCancelled = false;
     let unsubscribeFromMap: (() => void) | undefined;

@@ -202,6 +202,14 @@ INSTAGRAM_SCOPES=instagram_business_basic
 
 Instagram OAuth variables are not needed for the active embed flow. The paused `/api/instagram/*` media-import endpoints return a 410 response. The core map, journal, passport, friends, profile, dashboard, Canva, and companion flows can run without them.
 
+### Demo checklist
+
+- Share `/demo` when you want someone to explore the signed-in product without creating an account.
+- Demo mode uses seeded local/session data and a 24-hour browser cookie. The `Reset demo` banner button restores the polished seed state.
+- Canva connections in demo mode are scoped to that browser only and are not stored in Supabase/cloud. This keeps visitor OAuth tokens out of the project database and prevents someone else's Canva account from being attached to the shared portfolio demo.
+- Demo-mode API requests are blocked before Supabase authentication, so journal edits, map changes, profile edits, friend actions, Canva, Instagram, and comments do not write to cloud services.
+- Set `NEXT_PUBLIC_SHOW_DEMO=false` in deployments where the homepage should not show the demo CTA.
+
 ### Supabase setup
 
 The app expects Supabase auth plus base `profiles` and `journal_entries` tables used by the existing services.

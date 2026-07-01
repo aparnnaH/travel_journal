@@ -2,8 +2,9 @@
 // The route creates a verifier/challenge pair, stores temporary state in an
 // HTTP-only cookie, and redirects the browser to Canva.
 import { NextRequest, NextResponse } from 'next/server';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie } from '@/lib/demoMode';
 import { createCanvaAuthorizationUrl, getCanvaOAuthCookieName } from '@/lib/server/canva';
-import { resolveSameOriginPath } from '@/lib/server/apiSafety';
+import { checkApiRateLimitForRequest, resolveSameOriginPath } from '@/lib/server/apiSafety';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +12,14 @@ export const runtime = 'nodejs';
 // the app after OAuth completes.
 export async function GET(request: NextRequest) {
   try {
+    if (isDemoRequestCookie(request.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+      const rateLimitError = checkApiRateLimitForRequest('canva-local-oauth', request);
+
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+    }
+
     const returnTo = resolveSameOriginPath(request.nextUrl.searchParams.get('returnTo'), '/journal');
     const { url, cookie } = createCanvaAuthorizationUrl(returnTo);
     const response = NextResponse.redirect(url);

@@ -3,6 +3,7 @@
 // forwards the access token to our own session route so server APIs can validate
 // authenticated requests through an HTTP-only cookie.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { isDemoMode } from '@/lib/demoMode';
 
 /**
  * Initialize Supabase client
@@ -81,6 +82,10 @@ export async function signInWithEmail(email: string, password: string) {
 
 // Signs out from Supabase and clears the app's server-readable session cookie.
 export async function signOut() {
+  if (isDemoMode()) {
+    return { error: null };
+  }
+
   const supabase = getSupabaseClient();
   const result = await supabase.auth.signOut();
   await syncAuthCookie(null);
@@ -89,6 +94,10 @@ export async function signOut() {
 
 // Reads the current authenticated Supabase user from the browser session.
 export async function getCurrentUser() {
+  if (isDemoMode()) {
+    return null;
+  }
+
   const supabase = getSupabaseClient();
   const { data } = await supabase.auth.getUser();
   return data?.user ?? null;
@@ -99,6 +108,10 @@ export async function updateUserMetadata(metadata: {
   full_name?: string | null;
   avatar_url?: string | null;
 }) {
+  if (isDemoMode()) {
+    return { data: { user: null }, error: null };
+  }
+
   const supabase = getSupabaseClient();
   return supabase.auth.updateUser({ data: metadata });
 }

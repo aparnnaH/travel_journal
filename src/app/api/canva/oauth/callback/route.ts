@@ -2,13 +2,16 @@
 // This validates both the signed-in app user and the short-lived OAuth state
 // cookie before exchanging the code and storing encrypted Canva tokens.
 import { NextRequest, NextResponse } from 'next/server';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie } from '@/lib/demoMode';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
-import { resolveSameOriginPath } from '@/lib/server/apiSafety';
+import { checkApiRateLimitForRequest, resolveSameOriginPath } from '@/lib/server/apiSafety';
 import {
+  createCanvaLocalConnectionCookie,
   decodeCanvaOAuthCookie,
   exchangeCanvaAuthorizationCode,
   getCanvaOAuthCookieName,
   saveCanvaConnection,
+  setCanvaLocalConnectionCookie,
 } from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
@@ -31,12 +34,6 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    const context = await getAuthenticatedRouteContext(request, 'Canva');
-
-    if (isRouteError(context)) {
-      return redirectToJournal('auth-required', 'Please sign in before connecting Canva.');
-    }
-
     const code = request.nextUrl.searchParams.get('code');
     const state = request.nextUrl.searchParams.get('state');
     const oauthCookie = decodeCanvaOAuthCookie(request.cookies.get(getCanvaOAuthCookieName())?.value);
@@ -46,9 +43,30 @@ export async function GET(request: NextRequest) {
     }
 
     const token = await exchangeCanvaAuthorizationCode(code, oauthCookie.codeVerifier);
+    const returnUrl = new URL(resolveSameOriginPath(oauthCookie.returnTo, '/journal'), request.url);
+
+    if (isDemoRequestCookie(request.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+      const rateLimitError = checkApiRateLimitForRequest('canva-local-oauth', request);
+
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
+      returnUrl.searchParams.set('canva', 'connected-local');
+      const response = NextResponse.redirect(returnUrl);
+      response.cookies.delete(getCanvaOAuthCookieName());
+      setCanvaLocalConnectionCookie(response, request, createCanvaLocalConnectionCookie(token));
+      return response;
+    }
+
+    const context = await getAuthenticatedRouteContext(request, 'Canva');
+
+    if (isRouteError(context)) {
+      return redirectToJournal('auth-required', 'Please sign in before connecting Canva.');
+    }
+
     await saveCanvaConnection(context.supabaseAdmin, context.user.id, token);
 
-    const returnUrl = new URL(resolveSameOriginPath(oauthCookie.returnTo, '/journal'), request.url);
     returnUrl.searchParams.set('canva', 'connected');
     const response = NextResponse.redirect(returnUrl);
     response.cookies.delete(getCanvaOAuthCookieName());

@@ -2,13 +2,16 @@
 // Proxies design listing/creation through the server so Canva access tokens and
 // organization logic stay out of the browser.
 import { NextRequest, NextResponse } from 'next/server';
-import { clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie } from '@/lib/demoMode';
+import { checkApiRateLimitForRequest, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
 import {
   createCanvaDesign,
+  getLocalCanvaAccessToken,
   getValidCanvaAccessToken,
   listCanvaDesigns,
   organizeCanvaDesignInTravelJournalFolder,
+  setCanvaLocalConnectionCookie,
 } from '@/lib/server/canva';
 
 export const runtime = 'nodejs';
@@ -16,6 +19,20 @@ export const runtime = 'nodejs';
 // Lists recent Canva designs for the connected user.
 export async function GET(request: NextRequest) {
   try {
+    if (isDemoRequestCookie(request.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+      const rateLimitError = checkApiRateLimitForRequest('canva-local-read', request);
+
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
+      const localConnection = await getLocalCanvaAccessToken(request);
+      const data = await listCanvaDesigns(localConnection.accessToken, request.nextUrl.searchParams.get('query') || undefined);
+      const response = NextResponse.json({ success: true, data: data.items, continuation: data.continuation });
+      setCanvaLocalConnectionCookie(response, request, localConnection.cookie);
+      return response;
+    }
+
     const context = await getAuthenticatedRouteContext(request, 'Canva');
 
     if (isRouteError(context)) {
@@ -37,12 +54,6 @@ export async function GET(request: NextRequest) {
 // Travel Journal folder when folder scopes are available.
 export async function POST(request: NextRequest) {
   try {
-    const context = await getAuthenticatedRouteContext(request, 'Canva');
-
-    if (isRouteError(context)) {
-      return context;
-    }
-
     const body = await readJsonBody<{ title?: string }>(request, {
       maxBytes: 4 * 1024,
       errorMessage: 'Canva design request is too large.',
@@ -54,6 +65,31 @@ export async function POST(request: NextRequest) {
 
     const cleanTitle = clampText(body.title, 255);
     const title = cleanTitle || 'Travel Journal Page';
+
+    if (isDemoRequestCookie(request.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+      const rateLimitError = checkApiRateLimitForRequest('canva-local-write', request);
+
+      if (rateLimitError) {
+        return rateLimitError;
+      }
+
+      const localConnection = await getLocalCanvaAccessToken(request);
+      const data = await createCanvaDesign(localConnection.accessToken, title.slice(0, 255));
+      const response = NextResponse.json({
+        success: true,
+        data: data.design,
+        warning: 'This Canva connection is stored only on this browser for the portfolio demo.',
+      });
+      setCanvaLocalConnectionCookie(response, request, localConnection.cookie);
+      return response;
+    }
+
+    const context = await getAuthenticatedRouteContext(request, 'Canva');
+
+    if (isRouteError(context)) {
+      return context;
+    }
+
     const accessToken = await getValidCanvaAccessToken(context.supabaseAdmin, context.user.id);
     const data = await createCanvaDesign(accessToken, title.slice(0, 255));
     const organization: { folderId?: string; warning?: string } = await organizeCanvaDesignInTravelJournalFolder(

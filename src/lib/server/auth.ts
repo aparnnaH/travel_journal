@@ -3,6 +3,7 @@
 // verified Supabase user plus the privileged admin client.
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie } from '@/lib/demoMode';
 import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
@@ -22,6 +23,10 @@ export async function getAuthenticatedRouteContext(
   request: NextRequest,
   featureName = 'this feature'
 ): Promise<AuthenticatedRouteContext | NextResponse> {
+  if (isDemoRequestCookie(request.cookies.get(DEMO_COOKIE_NAME)?.value)) {
+    return jsonError('Demo mode does not write to cloud services.', 403);
+  }
+
   const token = request.cookies.get(authCookieName)?.value || request.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   if (!token) {
