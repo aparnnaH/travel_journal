@@ -8,7 +8,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -3348,25 +3348,23 @@ export default function JournalPage() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
               <Palette className="h-4 w-4" aria-hidden="true" />
-              New Canva Page
+              Create New Canva Design
             </Button>
             <Button
               type="button"
               variant="secondary"
+              className="gap-2"
               onClick={() => {
                 setImportModalOpen(true);
                 setLocalScrapbookBackupOpen(false);
               }}
             >
-              Import Trip
+              <FileUp className="h-4 w-4" aria-hidden="true" />
+              Import Trip Itinerary
             </Button>
             <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
               <Search className="h-4 w-4" aria-hidden="true" />
-              Choose Existing
-            </Button>
-            <Button type="button" variant="ghost" className="gap-2" onClick={() => setLocalScrapbookBackupOpen(true)}>
-              <BookOpen className="h-4 w-4" aria-hidden="true" />
-              Classic Scrapbook
+              Choose Existing Canva Design
             </Button>
           </div>
         </div>
