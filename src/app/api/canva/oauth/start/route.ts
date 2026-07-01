@@ -2,7 +2,7 @@
 // The route creates a verifier/challenge pair, stores temporary state in an
 // HTTP-only cookie, and redirects the browser to Canva.
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_COOKIE_MAX_AGE_SECONDS, DEMO_COOKIE_NAME, isDemoRequestCookie, isLocalHostName } from '@/lib/demoMode';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie, isLocalHostName } from '@/lib/demoMode';
 import { createCanvaAuthorizationUrl, getCanvaOAuthCookieName } from '@/lib/server/canva';
 import { checkApiRateLimitForRequest, resolveSameOriginPath } from '@/lib/server/apiSafety';
 
@@ -41,7 +41,6 @@ export async function GET(request: NextRequest) {
         httpOnly: false,
         sameSite: 'lax',
         secure: request.nextUrl.protocol === 'https:',
-        maxAge: DEMO_COOKIE_MAX_AGE_SECONDS,
         path: '/',
       });
     }

@@ -5,7 +5,6 @@
 import crypto from 'crypto';
 import type { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { DEMO_COOKIE_MAX_AGE_SECONDS } from '@/lib/demoMode';
 import type { CanvaDesign, CanvaExportJob } from '@/types/canva';
 
 const CANVA_API_BASE_URL = 'https://api.canva.com/rest/v1';
@@ -263,7 +262,6 @@ export function setCanvaLocalConnectionCookie(response: NextResponse, request: N
     httpOnly: true,
     sameSite: 'lax',
     secure: request.nextUrl.protocol === 'https:',
-    maxAge: DEMO_COOKIE_MAX_AGE_SECONDS,
     path: '/',
   });
 }

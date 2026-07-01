@@ -19,7 +19,7 @@ export default function DemoModeBanner() {
       return;
     }
 
-    seedDemoLocalContext();
+    seedDemoLocalContext({ reset: true });
     router.refresh();
   };
 

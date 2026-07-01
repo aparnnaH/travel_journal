@@ -2,7 +2,7 @@
 // This validates both the signed-in app user and the short-lived OAuth state
 // cookie before exchanging the code and storing encrypted Canva tokens.
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_COOKIE_MAX_AGE_SECONDS, DEMO_COOKIE_NAME, isDemoRequestCookie, isLocalHostName } from '@/lib/demoMode';
+import { DEMO_COOKIE_NAME, isDemoRequestCookie, isLocalHostName } from '@/lib/demoMode';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 import { checkApiRateLimitForRequest, resolveSameOriginPath } from '@/lib/server/apiSafety';
 import {
@@ -60,7 +60,6 @@ export async function GET(request: NextRequest) {
         httpOnly: false,
         sameSite: 'lax',
         secure: request.nextUrl.protocol === 'https:',
-        maxAge: DEMO_COOKIE_MAX_AGE_SECONDS,
         path: '/',
       });
       setCanvaLocalConnectionCookie(response, request, createCanvaLocalConnectionCookie(token));

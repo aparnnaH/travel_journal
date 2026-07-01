@@ -8,7 +8,6 @@ export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
 export const DEMO_JOURNAL_STORAGE_KEY = 'travel-journal:demo-journal-entries';
 export const DEMO_USER_ID = 'demo-local-user';
-export const DEMO_COOKIE_MAX_AGE_SECONDS = 24 * 60 * 60;
 
 const demoNow = '2026-06-30T12:00:00.000Z';
 
@@ -266,7 +265,7 @@ export function isDemoUserId(userId?: string | null) {
 
 export function isDemoMode() {
   if (typeof window === 'undefined') return false;
-  return window.localStorage.getItem(DEMO_STORAGE_KEY) === 'true' || document.cookie.includes(`${DEMO_COOKIE_NAME}=true`);
+  return window.sessionStorage.getItem(DEMO_STORAGE_KEY) === 'true' || document.cookie.includes(`${DEMO_COOKIE_NAME}=true`);
 }
 
 export function isLocalHostName(hostname: string) {
@@ -290,27 +289,41 @@ export function isLocalDemoHost() {
 
 export function enableDemoMode() {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(DEMO_STORAGE_KEY, 'true');
-  document.cookie = `${DEMO_COOKIE_NAME}=true; path=/; max-age=${DEMO_COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`;
+  window.localStorage.removeItem(DEMO_STORAGE_KEY);
+  window.sessionStorage.setItem(DEMO_STORAGE_KEY, 'true');
+  document.cookie = `${DEMO_COOKIE_NAME}=true; path=/; SameSite=Lax`;
 }
 
-export function seedDemoLocalContext() {
+export function seedDemoLocalContext(options?: { reset?: boolean }) {
   if (typeof window === 'undefined') return;
 
-  writeDemoJournalEntries(demoJournalEntries);
-  window.localStorage.setItem(
-    getScrapbookStorageKey(DEMO_USER_ID),
-    JSON.stringify({
-      activePageId: demoScrapbookPages[0]?.id,
-      pages: demoScrapbookPages,
-    })
-  );
-  window.localStorage.setItem(getImportedTripsStorageKey(DEMO_USER_ID), JSON.stringify(demoImportedTrips));
+  const shouldReset = options?.reset === true;
+
+  if (shouldReset || !window.sessionStorage.getItem(DEMO_JOURNAL_STORAGE_KEY)) {
+    writeDemoJournalEntries(demoJournalEntries);
+  }
+
+  const scrapbookStorageKey = getScrapbookStorageKey(DEMO_USER_ID);
+  if (shouldReset || !window.localStorage.getItem(scrapbookStorageKey)) {
+    window.localStorage.setItem(
+      scrapbookStorageKey,
+      JSON.stringify({
+        activePageId: demoScrapbookPages[0]?.id,
+        pages: demoScrapbookPages,
+      })
+    );
+  }
+
+  const importedTripsStorageKey = getImportedTripsStorageKey(DEMO_USER_ID);
+  if (shouldReset || !window.localStorage.getItem(importedTripsStorageKey)) {
+    window.localStorage.setItem(importedTripsStorageKey, JSON.stringify(demoImportedTrips));
+  }
 }
 
 export function disableDemoMode() {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(DEMO_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_STORAGE_KEY);
   window.localStorage.removeItem(getScrapbookStorageKey(DEMO_USER_ID));
   window.localStorage.removeItem(getImportedTripsStorageKey(DEMO_USER_ID));
   window.sessionStorage.removeItem(DEMO_JOURNAL_STORAGE_KEY);

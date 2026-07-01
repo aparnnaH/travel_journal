@@ -17,7 +17,7 @@ export default function DemoPage() {
 
   useEffect(() => {
     enableDemoMode();
-    seedDemoLocalContext();
+    seedDemoLocalContext({ reset: true });
     setLoading(false);
     setUser(demoUser);
     replaceMapState(demoMapState);
