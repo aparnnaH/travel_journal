@@ -9,6 +9,7 @@ import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } f
 import { placeholderCountries } from '@/lib/placeholderData';
 import { clampStringList, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 
 const CANVA_SCHEMA_ERROR_MESSAGE =
   'Canva journal fields are not installed yet. Run supabase/canva_journal_entries.sql in Supabase, then try saving again.';
@@ -269,6 +270,11 @@ export async function POST(request: NextRequest) {
     return context;
   }
 
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
+  }
+
   const body = await readJsonBody<JournalMutationBody>(request, {
     maxBytes: 18 * 1024 * 1024,
     errorMessage: 'Journal entry is too large to save.',
@@ -472,6 +478,11 @@ export async function PATCH(request: NextRequest) {
     return context;
   }
 
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
+  }
+
   const body = await readJsonBody<JournalMutationBody>(request, {
     maxBytes: 512 * 1024,
     errorMessage: 'Journal update is too large.',
@@ -629,6 +640,11 @@ export async function DELETE(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   const body = await readJsonBody<JournalMutationBody>(request, {

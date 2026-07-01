@@ -11,6 +11,7 @@ import {
   loadProfilesForFriendship,
   mapFriendship,
 } from '@/lib/server/friendships';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 import type { FriendRequestAction } from '@/types/friends';
 
 type RequestBody = {
@@ -26,6 +27,11 @@ export async function POST(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   try {
@@ -102,6 +108,11 @@ export async function PATCH(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   try {

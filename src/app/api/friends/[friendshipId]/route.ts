@@ -3,6 +3,7 @@
 // signed-in user is one of the participants.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, getFriendshipById, isRouteError, jsonError } from '@/lib/server/friendships';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 
 // Deletes the friendship/request identified by the dynamic route segment.
 export async function DELETE(_request: NextRequest, context: RouteContext<'/api/friends/[friendshipId]'>) {
@@ -10,6 +11,11 @@ export async function DELETE(_request: NextRequest, context: RouteContext<'/api/
 
   if (isRouteError(routeContext)) {
     return routeContext;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(routeContext.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   try {

@@ -7,6 +7,8 @@ import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalS
 import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
+  demoUser,
+  DEMO_SHARE_RECIPIENT_EMAIL,
   DEMO_USER_ID,
   isDemoMode,
   readDemoJournalEntries,
@@ -290,7 +292,22 @@ export async function deleteJournalEntry(entryId: string) {
 // Loads the accepted friends currently receiving access to an owned entry.
 export async function fetchJournalEntryShares(entryId: string) {
   if (isDemoMode()) {
-    return { success: true, data: [] };
+    const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+
+    return {
+      success: true,
+      data: entry
+        ? [
+            {
+              id: 'demo-share-recipient-aparnna',
+              email: DEMO_SHARE_RECIPIENT_EMAIL,
+              displayName: 'Aparnna',
+              permission: 'view' as const,
+              sharedAt: entry.updatedAt || entry.createdAt,
+            },
+          ]
+        : [],
+    };
   }
 
   const response = await fetch(`/api/journal/share?entryId=${encodeURIComponent(entryId)}`);
@@ -300,7 +317,23 @@ export async function fetchJournalEntryShares(entryId: string) {
 // Replaces the share recipient list for an owned entry.
 export async function saveJournalEntryShares(entryId: string, friendIds: string[]) {
   if (isDemoMode()) {
-    return { success: true, data: [] };
+    const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+
+    return {
+      success: true,
+      data:
+        entry && friendIds.length > 0
+          ? [
+              {
+                id: 'demo-share-recipient-aparnna',
+                email: DEMO_SHARE_RECIPIENT_EMAIL,
+                displayName: 'Aparnna',
+                permission: 'view' as const,
+                sharedAt: new Date().toISOString(),
+              },
+            ]
+          : [],
+    };
   }
 
   const response = await fetch('/api/journal/share', {
@@ -325,7 +358,39 @@ export async function fetchSharedJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    return { success: true, data: [], count: 0, hasMore: false };
+    const sharedEntries = readDemoJournalEntries().map<SharedJournalEntry>((entry) => ({
+      ...entry,
+      sharedBy: {
+        id: demoUser.id,
+        email: demoUser.email,
+        displayName: demoUser.displayName,
+      },
+      sharedAt: entry.updatedAt || entry.createdAt,
+      permission: 'view',
+    }));
+    const search = options?.search?.trim().toLowerCase();
+    const filteredEntries = search
+      ? sharedEntries.filter((entry) =>
+          [
+            entry.title,
+            entry.countryId,
+            entry.content,
+            entry.sharedBy.displayName ?? '',
+            entry.sharedBy.email,
+            ...(entry.tags ?? []),
+          ].some((value) => value.toLowerCase().includes(search))
+        )
+      : sharedEntries;
+    const offset = options?.offset ?? 0;
+    const pagedEntries =
+      typeof options?.limit === 'number' ? filteredEntries.slice(offset, offset + options.limit) : filteredEntries;
+
+    return {
+      success: true,
+      data: pagedEntries,
+      count: filteredEntries.length,
+      hasMore: typeof options?.limit === 'number' ? offset + pagedEntries.length < filteredEntries.length : false,
+    };
   }
 
   const params = new URLSearchParams();
@@ -362,7 +427,25 @@ export async function fetchSharedJournalEntries(options?: {
 // Fetches one shared journal entry the current user can access.
 export async function fetchSharedJournalEntry(entryId: string) {
   if (isDemoMode()) {
-    return { success: false, error: 'Shared entries are not available in demo mode.' };
+    const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+
+    if (!entry) {
+      return { success: false, error: 'Shared entry not found.' };
+    }
+
+    return {
+      success: true,
+      data: {
+        ...entry,
+        sharedBy: {
+          id: demoUser.id,
+          email: demoUser.email,
+          displayName: demoUser.displayName,
+        },
+        sharedAt: entry.updatedAt || entry.createdAt,
+        permission: 'view' as const,
+      },
+    };
   }
 
   const response = await fetch(`/api/journal/shared?entryId=${encodeURIComponent(entryId)}`);

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DEMO_COOKIE_NAME, isDemoRequestCookie } from '@/lib/demoMode';
 import { checkApiRateLimitForRequest, clampText, isApiError, readJsonBody } from '@/lib/server/apiSafety';
 import { getAuthenticatedRouteContext, isRouteError, jsonError } from '@/lib/server/auth';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 import {
   createCanvaDesign,
   getLocalCanvaAccessToken,
@@ -37,6 +38,11 @@ export async function GET(request: NextRequest) {
 
     if (isRouteError(context)) {
       return context;
+    }
+
+    const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+    if (demoWriteError) {
+      return demoWriteError;
     }
 
     const accessToken = await getValidCanvaAccessToken(context.supabaseAdmin, context.user.id);

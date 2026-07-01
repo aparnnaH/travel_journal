@@ -2,6 +2,7 @@
 // Owners can inspect and replace the friend recipient list for a journal entry.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 import { getOwnedJournalEntry, loadJournalShareRecipients, replaceJournalShares } from '@/lib/server/journalSharing';
 
 type ShareRequestBody = {
@@ -15,6 +16,11 @@ export async function GET(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   try {

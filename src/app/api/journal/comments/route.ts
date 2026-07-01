@@ -3,6 +3,7 @@
 // participate safely.
 import { NextRequest, NextResponse } from 'next/server';
 import { getFriendRouteContext, isRouteError, jsonError } from '@/lib/server/friendships';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 import { createJournalComment, loadJournalComments } from '@/lib/server/journalSharing';
 
 type CommentRequestBody = {
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   try {

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { DEMO_COOKIE_NAME, isDemoRequestCookie, isLocalHostName } from '@/lib/demoMode';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
 import { checkApiRateLimitForRequest, resolveSameOriginPath } from '@/lib/server/apiSafety';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 import {
   createCanvaLocalConnectionCookie,
   decodeCanvaOAuthCookie,
@@ -70,6 +71,11 @@ export async function GET(request: NextRequest) {
 
     if (isRouteError(context)) {
       return redirectToJournal('auth-required', 'Please sign in before connecting Canva.');
+    }
+
+    const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+    if (demoWriteError) {
+      return redirectToJournal('read-only-demo', 'The seeded demo traveler is read-only.');
     }
 
     await saveCanvaConnection(context.supabaseAdmin, context.user.id, token);

@@ -3,6 +3,7 @@
 // reading or writing Supabase profile data.
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
+import { rejectSeededDemoCloudWrite } from '@/lib/server/demoCloudGuard';
 
 // Loads the profile row for the signed-in user.
 export async function GET(request: NextRequest) {
@@ -31,6 +32,11 @@ export async function POST(request: NextRequest) {
 
   if (isRouteError(context)) {
     return context;
+  }
+
+  const demoWriteError = rejectSeededDemoCloudWrite(context.user);
+  if (demoWriteError) {
+    return demoWriteError;
   }
 
   const body = await request.json();
