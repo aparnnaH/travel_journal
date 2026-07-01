@@ -4,11 +4,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { getSupabaseClient, syncAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
-import { demoMapState, demoUser, isDemoMode, seedDemoLocalContext } from '@/lib/demoMode';
+import { demoMapState, demoUser, enableDemoMode, isDemoMode, isLocalDemoHost, seedDemoLocalContext } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 import type { AuthUser } from '@/types';
@@ -86,20 +86,23 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const logout = useAuthStore((state) => state.logout);
   const replaceMapState = useMapStore((state) => state.replaceMapState);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     let subscription: { unsubscribe?: () => void } | null = null;
+    const isAuthRoute = pathname === '/login' || pathname === '/signup';
+
+    const initializeDemo = async () => {
+      setLoading(true);
+      await syncAuthCookie(null);
+      enableDemoMode();
+      seedDemoLocalContext();
+      setUser(demoUser);
+      replaceMapState(demoMapState);
+      setLoading(false);
+    };
 
     if (isDemoMode()) {
-      const initializeDemo = async () => {
-        setLoading(true);
-        await syncAuthCookie(null);
-        seedDemoLocalContext();
-        setUser(demoUser);
-        replaceMapState(demoMapState);
-        setLoading(false);
-      };
-
       void initializeDemo();
 
       return () => {
@@ -123,14 +126,20 @@ export default function AuthProvider({ children }: AuthProviderProps) {
         const user = data?.user;
         if (user) {
           setUser(await buildAuthUser(user));
+        } else if (!isAuthRoute && isLocalDemoHost()) {
+          await initializeDemo();
         } else {
           await syncAuthCookie(null);
           logout();
         }
       } catch (error) {
         console.warn('Unable to initialize authentication.', error);
-        await syncAuthCookie(null);
-        logout();
+        if (!isAuthRoute && isLocalDemoHost()) {
+          await initializeDemo();
+        } else {
+          await syncAuthCookie(null);
+          logout();
+        }
       } finally {
         setLoading(false);
       }
@@ -169,7 +178,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       subscription?.unsubscribe?.();
     };
-  }, [setUser, setLoading, logout, router, replaceMapState]);
+  }, [setUser, setLoading, logout, router, replaceMapState, pathname]);
 
   return (
     <>

@@ -269,6 +269,25 @@ export function isDemoMode() {
   return window.localStorage.getItem(DEMO_STORAGE_KEY) === 'true' || document.cookie.includes(`${DEMO_COOKIE_NAME}=true`);
 }
 
+export function isLocalHostName(hostname: string) {
+  return (
+    hostname === 'localhost' ||
+    hostname === '::1' ||
+    hostname === '0.0.0.0' ||
+    hostname.endsWith('.local') ||
+    /^127\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
+  );
+}
+
+export function isLocalDemoHost() {
+  if (typeof window === 'undefined') return false;
+
+  return isLocalHostName(window.location.hostname);
+}
+
 export function enableDemoMode() {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(DEMO_STORAGE_KEY, 'true');

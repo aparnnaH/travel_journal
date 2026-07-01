@@ -33,6 +33,7 @@ type CanvaOAuthCookie = {
   state: string;
   codeVerifier: string;
   returnTo: string;
+  redirectUri?: string;
 };
 
 type CanvaTokenResponse = {
@@ -131,8 +132,9 @@ export function decodeCanvaOAuthCookie(value?: string): CanvaOAuthCookie | null 
 
 // Creates a Canva authorization URL using PKCE. The verifier stays in the
 // HTTP-only cookie while Canva receives only the challenge.
-export function createCanvaAuthorizationUrl(returnTo: string) {
+export function createCanvaAuthorizationUrl(returnTo: string, redirectUriOverride?: string) {
   const config = getCanvaConfig();
+  const redirectUri = redirectUriOverride || config.redirectUri;
   const codeVerifier = crypto.randomBytes(96).toString('base64url');
   const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
   const state = crypto.randomBytes(48).toString('base64url');
@@ -144,23 +146,23 @@ export function createCanvaAuthorizationUrl(returnTo: string) {
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('client_id', config.clientId);
   url.searchParams.set('state', state);
-  url.searchParams.set('redirect_uri', config.redirectUri);
+  url.searchParams.set('redirect_uri', redirectUri);
 
   return {
     url,
-    cookie: encodeCanvaOAuthCookie({ state, codeVerifier, returnTo }),
+    cookie: encodeCanvaOAuthCookie({ state, codeVerifier, returnTo, redirectUri }),
   };
 }
 
 // Exchanges the OAuth authorization code for Canva tokens.
-export async function exchangeCanvaAuthorizationCode(code: string, codeVerifier: string) {
+export async function exchangeCanvaAuthorizationCode(code: string, codeVerifier: string, redirectUriOverride?: string) {
   const config = getCanvaConfig();
   return requestCanvaToken(
     new URLSearchParams({
       grant_type: 'authorization_code',
       code,
       code_verifier: codeVerifier,
-      redirect_uri: config.redirectUri,
+      redirect_uri: redirectUriOverride || config.redirectUri,
     })
   );
 }
