@@ -484,7 +484,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await readJsonBody<JournalMutationBody>(request, {
-    maxBytes: 512 * 1024,
+    maxBytes: 18 * 1024 * 1024,
     errorMessage: 'Journal update is too large.',
   });
 
@@ -492,7 +492,24 @@ export async function PATCH(request: NextRequest) {
     return body;
   }
 
-  const { entryId, countryId, title, content, mood, tags, tripStartDate, tripEndDate } = body;
+  const {
+    entryId,
+    countryId,
+    title,
+    content,
+    mood,
+    tags,
+    canvaDesignId,
+    canvaDesignTitle,
+    canvaDesignEditUrl,
+    canvaPages,
+    coverPhoto,
+    coverPageIndex,
+    insertedPhotos,
+    instagramEmbeds,
+    tripStartDate,
+    tripEndDate,
+  } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
   // Rename flows only send entryId/title; edit flows include the rest of the
   // journal fields and therefore need stricter validation.
@@ -501,6 +518,14 @@ export async function PATCH(request: NextRequest) {
     'content' in body ||
     'mood' in body ||
     'tags' in body ||
+    'canvaDesignId' in body ||
+    'canvaDesignTitle' in body ||
+    'canvaDesignEditUrl' in body ||
+    'canvaPages' in body ||
+    'coverPhoto' in body ||
+    'coverPageIndex' in body ||
+    'insertedPhotos' in body ||
+    'instagramEmbeds' in body ||
     'tripStartDate' in body ||
     'tripEndDate' in body;
   const cleanCountryId = typeof countryId === 'string' ? countryId.trim() : '';
@@ -531,6 +556,39 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: false, error: tripDateError }, { status: 400 });
   }
 
+  const cleanCanvaDesignId = clampText(canvaDesignId, 200);
+  const cleanCanvaDesignTitle = clampText(canvaDesignTitle, 255);
+  const cleanCanvaDesignEditUrl = clampText(canvaDesignEditUrl, 600);
+  const cleanCanvaPages = Array.isArray(canvaPages)
+    ? canvaPages.filter((page): page is string => typeof page === 'string' && page.startsWith('data:image/'))
+    : [];
+  const cleanCoverPhoto = typeof coverPhoto === 'string' && coverPhoto.startsWith('data:image/') ? coverPhoto : null;
+  const cleanCoverPageIndex =
+    typeof coverPageIndex === 'number' && Number.isFinite(coverPageIndex) && cleanCanvaPages.length
+      ? Math.max(0, Math.min(cleanCanvaPages.length - 1, Math.floor(coverPageIndex)))
+      : null;
+  const cleanInsertedPhotos = Array.isArray(insertedPhotos)
+    ? insertedPhotos
+        .filter((photo) => photo && typeof photo.src === 'string' && photo.src.startsWith('data:image/'))
+        .slice(0, MAX_INSERTED_JOURNAL_PHOTOS)
+        .map((photo, index) => ({
+          id: typeof photo.id === 'string' && photo.id ? photo.id : `photo-${index + 1}`,
+          src: photo.src,
+          alt: typeof photo.alt === 'string' && photo.alt ? photo.alt : `Inserted photo ${index + 1}`,
+          caption: typeof photo.caption === 'string' ? photo.caption : '',
+        }))
+    : [];
+  const cleanInstagramEmbeds = sanitizeInstagramEmbedUrls(instagramEmbeds);
+  const hasRequestedInstagramEmbeds = Array.isArray(instagramEmbeds)
+    ? instagramEmbeds.length > 0
+    : typeof instagramEmbeds === 'string'
+      ? instagramEmbeds.trim().length > 0
+      : false;
+
+  if (hasFullEntryUpdate && hasRequestedInstagramEmbeds && cleanInstagramEmbeds.length === 0) {
+    return NextResponse.json({ success: false, error: 'Add a public Instagram post or Reel URL.' }, { status: 400 });
+  }
+
   const updatePayload: Record<string, unknown> = {
     title: cleanTitle,
     updated_at: new Date().toISOString(),
@@ -553,13 +611,38 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Preserve existing embedded Canva metadata while replacing the human story
-    // text and trip dates.
+    // text, media attachments, and trip dates.
     const decodedExistingContent = decodeJournalContentWithCanva(String(existingEntry.content || ''));
-    const nextCanvaPayload = decodedExistingContent.canva
+    const existingCanvaPayload = decodedExistingContent.canva;
+    const nextCanvaPages = 'canvaPages' in body ? cleanCanvaPages : existingCanvaPayload?.pages ?? [];
+    const nextCoverPhoto = 'coverPhoto' in body ? cleanCoverPhoto : existingCanvaPayload?.coverPhoto ?? null;
+    const nextCoverPageIndex =
+      'coverPageIndex' in body
+        ? cleanCoverPageIndex
+        : typeof existingCanvaPayload?.coverPageIndex === 'number'
+          ? existingCanvaPayload.coverPageIndex
+          : null;
+    const nextInsertedPhotos = 'insertedPhotos' in body ? cleanInsertedPhotos : existingCanvaPayload?.insertedPhotos ?? [];
+    const nextInstagramEmbeds = 'instagramEmbeds' in body ? cleanInstagramEmbeds : existingCanvaPayload?.instagramEmbeds ?? [];
+    const nextCanvaPayload =
+      existingCanvaPayload ||
+      nextCanvaPages.length ||
+      nextCoverPhoto ||
+      nextCoverPageIndex !== null ||
+      nextInsertedPhotos.length ||
+      nextInstagramEmbeds.length
       ? {
-          ...decodedExistingContent.canva,
+          ...existingCanvaPayload,
+          designId: cleanCanvaDesignId || existingCanvaPayload?.designId || null,
+          designTitle: cleanCanvaDesignTitle || existingCanvaPayload?.designTitle || null,
+          designEditUrl: cleanCanvaDesignEditUrl || existingCanvaPayload?.designEditUrl || null,
+          pages: nextCanvaPages,
+          coverPhoto: nextCoverPhoto,
+          coverPageIndex: nextCoverPageIndex,
+          insertedPhotos: nextInsertedPhotos,
           tripStartDate: cleanTripStartDate,
           tripEndDate: cleanTripEndDate,
+          instagramEmbeds: nextInstagramEmbeds,
         }
       : null;
 
@@ -571,6 +654,14 @@ export async function PATCH(request: NextRequest) {
     updatePayload.tags = cleanTags;
     updatePayload.trip_start_date = cleanTripStartDate;
     updatePayload.trip_end_date = cleanTripEndDate;
+
+    if (cleanCanvaDesignId || cleanCanvaPages.length > 0 || 'canvaPages' in body) {
+      updatePayload.canva_design_id = cleanCanvaDesignId || null;
+      updatePayload.canva_design_title = cleanCanvaDesignTitle || null;
+      updatePayload.canva_design_edit_url = cleanCanvaDesignEditUrl || null;
+      updatePayload.canva_pages = cleanCanvaPages;
+      updatePayload.canva_page_count = cleanCanvaPages.length || null;
+    }
   }
 
   const updateQuery = context.supabaseAdmin

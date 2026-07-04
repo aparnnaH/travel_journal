@@ -5,7 +5,7 @@
 // these workflows depend on browser files, local storage, and interactive UI.
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
 import { CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
@@ -98,9 +98,10 @@ type SavedEntry = JournalEntry & {
 };
 
 type CanvaImportedPreview = {
-  design: CanvaDesign;
+  design?: CanvaDesign;
   title: string;
   dataUrls: string[];
+  editUrl?: string | null;
 };
 
 type InsertedJournalPhoto = {
@@ -475,10 +476,12 @@ export default function JournalPage() {
   const insertedPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const scrapbookLoadedRef = useRef(false);
+  const hydratedWorkspaceEditEntryIdRef = useRef<string | null>(null);
   const [openedEntry, setOpenedEntry] = useState<SavedEntry | null>(null);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [savedEntryNotice, setSavedEntryNotice] = useState<SavedEntryNotice | null>(null);
   const [importedTripWorkspaceNotice, setImportedTripWorkspaceNotice] = useState<SavedEntryNotice | null>(null);
+  const [workspaceEditingEntry, setWorkspaceEditingEntry] = useState<SavedEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<SavedEntry | null>(null);
   const [editForm, setEditForm] = useState<EditEntryForm>({
     title: '',
@@ -648,7 +651,7 @@ export default function JournalPage() {
     [user]
   );
 
-  const loadFullEntry = async (entry: SavedEntry) => {
+  const loadFullEntry = useCallback(async (entry: SavedEntry) => {
     if (typeof entry.content === 'string' && entry.content.length > 0) {
       return entry;
     }
@@ -663,7 +666,7 @@ export default function JournalPage() {
     const fullEntry = response.data as SavedEntry;
 
     return fullEntry;
-  };
+  }, []);
 
   const openSavedEntry = async (entry: SavedEntry) => {
     const fullEntry = await loadFullEntry(entry);
@@ -695,6 +698,52 @@ export default function JournalPage() {
     setCommentEntryId(null);
   };
 
+  const openEntryInWorkspace = useCallback(async (entryId: string) => {
+    const fullEntry = await loadFullEntry({ id: entryId } as SavedEntry);
+    const countryId = getEntryCountry(fullEntry);
+    const countryName =
+      visitedJournalCountries.find((country) => country.id === countryId)?.name ||
+      formatEntryCountry(countryId);
+    const instagramEmbeds = getEntryInstagramEmbeds(fullEntry);
+    const canvaPages = getEntryCanvaPages(fullEntry);
+    const canvaEditUrl = getEntryCanvaEditUrl(fullEntry);
+
+    setWorkspaceEditingEntry(fullEntry);
+    setForm({
+      title: fullEntry.title,
+      content: getEntryContent(fullEntry),
+      countryId,
+      mood: fullEntry.mood || 'nostalgic',
+      tags: fullEntry.tags?.join(', ') || '',
+      tripStartDate: normalizeJournalDate(getEntryTripStartDate(fullEntry)),
+      tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
+    });
+    setCountrySearch(countryName || '');
+    setInsertedJournalPhotos(getEntryInsertedPhotos(fullEntry));
+    setInstagramEmbedUrl(instagramEmbeds[0]?.url || '');
+    setInstagramError(null);
+    setCanvaImportedPreview(
+      canvaPages.length
+        ? {
+            title: getEntryCanvaTitle(fullEntry),
+            dataUrls: canvaPages,
+            editUrl: canvaEditUrl,
+          }
+        : null
+    );
+    setCanvaCoverPageIndex(getEntryCoverPageIndex(fullEntry));
+    setCanvaPreviewPageIndex(0);
+    setCanvaPreviewTurnDirection('next');
+    setOpenedEntry(null);
+    setEditingEntry(null);
+    setSharingEntryId(null);
+    setCommentEntryId(null);
+    setSavedEntryNotice(null);
+    setImportedTripWorkspaceNotice(null);
+    setError(null);
+    setActiveTool('select');
+  }, [loadFullEntry, setActiveTool, visitedJournalCountries]);
+
   const closeEditEntry = () => {
     if (editSaving) {
       return;
@@ -723,6 +772,21 @@ export default function JournalPage() {
 
     loadFriends();
   }, [router, user, isLoading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) {
+      return;
+    }
+
+    const entryId = new URLSearchParams(window.location.search).get('editEntryId');
+
+    if (!entryId || hydratedWorkspaceEditEntryIdRef.current === entryId) {
+      return;
+    }
+
+    hydratedWorkspaceEditEntryIdRef.current = entryId;
+    void openEntryInWorkspace(entryId);
+  }, [openEntryInWorkspace, user, visitedJournalCountries]);
 
   useEffect(() => {
     if (!scrapbookStorageKey) {
@@ -1708,9 +1772,9 @@ export default function JournalPage() {
         content: importedEntryForm.content,
         mood: importedEntryForm.mood,
         tags: result.journalDraft.tags,
-        canvaDesignId: linkedCanvaPreview?.design.id,
+        canvaDesignId: linkedCanvaPreview?.design?.id,
         canvaDesignTitle: linkedCanvaPreview?.title,
-        canvaDesignEditUrl: linkedCanvaPreview ? getCanvaEditUrl(linkedCanvaPreview.design) : undefined,
+        canvaDesignEditUrl: linkedCanvaPreview?.editUrl ?? (linkedCanvaPreview?.design ? getCanvaEditUrl(linkedCanvaPreview.design) : undefined),
         canvaPages: linkedCanvaPreview?.dataUrls,
         tripStartDate: importedEntryForm.tripStartDate,
         tripEndDate: importedEntryForm.tripEndDate,
@@ -1948,6 +2012,7 @@ export default function JournalPage() {
         design,
         title: result.title,
         dataUrls,
+        editUrl: getCanvaEditUrl(design),
       });
       setCanvaPreviewPageIndex(0);
       setCanvaCoverPageIndex(0);
@@ -1991,28 +2056,53 @@ export default function JournalPage() {
     setInstagramError(null);
     setSaving(true);
 
-    const response = await createJournalEntry({
-      countryId: form.countryId,
-      title: form.title,
-      content: form.content,
-      mood: form.mood,
-      tags: Array.from(
-        new Set([
-          ...form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-          ...(normalizedInstagramUrl ? ['instagram'] : []),
-        ])
-      ),
-      canvaDesignId: canvaImportedPreview?.design.id,
-      canvaDesignTitle: canvaImportedPreview?.title,
-      canvaDesignEditUrl: canvaImportedPreview ? getCanvaEditUrl(canvaImportedPreview.design) : undefined,
-      canvaPages: canvaImportedPreview?.dataUrls,
-      tripStartDate: form.tripStartDate,
-      tripEndDate: form.tripEndDate,
-      coverPhoto: null,
-      coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
-      insertedPhotos: insertedJournalPhotos,
-      instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
-    });
+    const tags = Array.from(
+      new Set([
+        ...form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        ...(normalizedInstagramUrl ? ['instagram'] : []),
+      ])
+    );
+    const response = workspaceEditingEntry
+      ? await updateJournalEntry({
+          entryId: workspaceEditingEntry.id,
+          countryId: form.countryId,
+          title: form.title,
+          content: form.content,
+          mood: form.mood,
+          tags,
+          canvaDesignId: canvaImportedPreview?.design?.id ?? workspaceEditingEntry.canvaDesignId ?? workspaceEditingEntry.canva_design_id ?? undefined,
+          canvaDesignTitle: canvaImportedPreview?.title ?? workspaceEditingEntry.canvaDesignTitle ?? workspaceEditingEntry.canva_design_title ?? undefined,
+          canvaDesignEditUrl:
+            canvaImportedPreview?.editUrl ??
+            (canvaImportedPreview?.design ? getCanvaEditUrl(canvaImportedPreview.design) : null) ??
+            workspaceEditingEntry.canvaDesignEditUrl ??
+            workspaceEditingEntry.canva_design_edit_url ??
+            undefined,
+          canvaPages: canvaImportedPreview?.dataUrls ?? [],
+          tripStartDate: form.tripStartDate,
+          tripEndDate: form.tripEndDate,
+          coverPhoto: null,
+          coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
+          insertedPhotos: insertedJournalPhotos,
+          instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
+        })
+      : await createJournalEntry({
+          countryId: form.countryId,
+          title: form.title,
+          content: form.content,
+          mood: form.mood,
+          tags,
+          canvaDesignId: canvaImportedPreview?.design?.id,
+          canvaDesignTitle: canvaImportedPreview?.title,
+          canvaDesignEditUrl: canvaImportedPreview?.editUrl ?? (canvaImportedPreview?.design ? getCanvaEditUrl(canvaImportedPreview.design) : undefined),
+          canvaPages: canvaImportedPreview?.dataUrls,
+          tripStartDate: form.tripStartDate,
+          tripEndDate: form.tripEndDate,
+          coverPhoto: null,
+          coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
+          insertedPhotos: insertedJournalPhotos,
+          instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
+        });
 
     setSaving(false);
 
@@ -2021,11 +2111,12 @@ export default function JournalPage() {
 
       setSavedEntryNotice({
         entry: savedEntry,
-        message: 'Saved',
+        message: workspaceEditingEntry ? 'Updated' : 'Saved',
       });
       const today = getTodayJournalDate();
       setForm({ ...form, title: '', content: '', countryId: '', tags: '', tripStartDate: today, tripEndDate: today });
       setCountrySearch('');
+      setWorkspaceEditingEntry(null);
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
       setInsertedJournalPhotos([]);
@@ -2391,6 +2482,7 @@ export default function JournalPage() {
     form.tripEndDate.length > 0 &&
     hasVisitedCountryLink &&
     hasValidDateRange;
+  const currentEntrySaveLabel = workspaceEditingEntry ? 'Update Entry' : 'Save Entry';
   const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
 
   const renderCanvaPolaroidStrip = ({
@@ -2504,7 +2596,7 @@ export default function JournalPage() {
     }
 
     return (
-      <div className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+      <div className="mt-4 w-full rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
           <ImagePlus className="h-4 w-4 text-gold-deep" aria-hidden="true" />
           <span>Memory photos</span>
@@ -2548,7 +2640,7 @@ export default function JournalPage() {
   };
 
   const renderMemoryPhotoTray = () => (
-    <section className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+    <section className="mt-4 w-full rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
       <input
         ref={insertedPhotoInputRef}
         type="file"
@@ -2625,7 +2717,7 @@ export default function JournalPage() {
   );
 
   const renderInstagramAttachment = () => (
-    <section className="mx-auto mt-4 max-w-4xl rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+    <section className="mt-4 w-full rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-ink">Instagram post</h3>
@@ -2665,6 +2757,40 @@ export default function JournalPage() {
       ) : null}
     </section>
   );
+
+  const renderCanvaAttachment = () => {
+    if (canvaImportedPreview) {
+      return null;
+    }
+
+    return (
+      <section className="mt-4 w-full rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-gold/15 text-gold-deep">
+              <Palette className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div>
+              <h3 className="text-sm font-semibold text-ink">Canva pages</h3>
+              <p className="text-xs leading-5 text-ink/55">
+                Attach a finished Canva design to this same journal entry.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={openCanvaModal}>
+              <Search className="h-4 w-4" aria-hidden="true" />
+              Choose Design
+            </Button>
+            <Button type="button" size="sm" variant="outline" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
+              <Palette className="h-4 w-4" aria-hidden="true" />
+              Create New
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  };
 
   const renderCountrySearch = (inputId: string) => (
     <div>
@@ -2810,12 +2936,35 @@ export default function JournalPage() {
                 setCanvaCoverPageIndex(0);
               }}
             >
-              Edit Again
+              Replace Pages
             </Button>
-            <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => openCanvaPopup(preview.design)}>
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              Pop-up
-            </Button>
+            {preview.design ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => {
+                  if (preview.design) {
+                    openCanvaPopup(preview.design);
+                  }
+                }}
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Pop-up
+              </Button>
+            ) : preview.editUrl ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                onClick={() => window.open(preview.editUrl || '', '_blank', 'noopener,noreferrer')}
+              >
+                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                Open Canva
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -2823,13 +2972,13 @@ export default function JournalPage() {
               disabled={!canSaveCurrentEntry}
               onClick={() => void saveCurrentJournalEntry()}
             >
-              Save Entry
+              {currentEntrySaveLabel}
             </Button>
           </div>
         </div>
         <div className="bg-[#e8dcc2] p-4 [perspective:1800px] [background-image:linear-gradient(90deg,rgba(61,43,14,0.05)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.38),rgba(255,255,255,0))] sm:p-6">
           <motion.figure
-            key={`${preview.design.id}-${activePageIndex}`}
+            key={`${preview.design?.id || preview.title}-${activePageIndex}`}
             initial={{
               opacity: 0.82,
               rotateY: canvaPreviewTurnDirection === 'next' ? -14 : 14,
@@ -2856,7 +3005,7 @@ export default function JournalPage() {
             pages: preview.dataUrls,
             activePageIndex,
             title: preview.title,
-            idBase: preview.design.id,
+            idBase: preview.design?.id || `saved-canva-${preview.title}`,
             onSelect: turnCanvaPreviewToPage,
             coverPageIndex: canvaCoverPageIndex,
             onSetCover: setCanvaCoverPageIndex,
@@ -2933,6 +3082,7 @@ export default function JournalPage() {
               ) : null}
             </div>
           </div>
+          {renderCanvaAttachment()}
           {renderMemoryPhotoTray()}
           {renderInstagramAttachment()}
         </div>
@@ -2940,7 +3090,7 @@ export default function JournalPage() {
           <div className="flex justify-center gap-2 border-t border-gold/15 bg-white px-4 py-3">
             {preview.dataUrls.map((_, index) => (
               <button
-                key={`${preview.design.id}-dot-${index}`}
+                key={`${preview.design?.id || preview.title}-dot-${index}`}
                 type="button"
                 aria-label={`Go to Canva page ${index + 1}`}
                 className={[
@@ -3211,6 +3361,7 @@ export default function JournalPage() {
                   required
                 />
               </div>
+              {renderCanvaAttachment()}
               <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="imported-trip-story">
@@ -3246,6 +3397,7 @@ export default function JournalPage() {
                 onChange={(event) => setForm({ ...form, tags: event.target.value })}
                 placeholder="market, sunset, train"
               />
+              {renderMemoryPhotoTray()}
               {renderInstagramAttachment()}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               {!hasVisitedCountryLink ? (
@@ -3254,7 +3406,7 @@ export default function JournalPage() {
                 </p>
               ) : null}
               <Button type="submit" isLoading={saving} disabled={!canSaveCurrentEntry}>
-                Save Entry
+                {currentEntrySaveLabel}
               </Button>
             </form>
           )}
@@ -4017,6 +4169,7 @@ export default function JournalPage() {
                     required
                   />
                 </div>
+                {renderCanvaAttachment()}
                 <div>
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <label className="block text-sm font-medium text-ink">Story</label>
@@ -4044,6 +4197,7 @@ export default function JournalPage() {
                   onChange={(event) => setForm({ ...form, tags: event.target.value })}
                   placeholder="market, sunset, train"
                 />
+                {renderMemoryPhotoTray()}
                 {renderInstagramAttachment()}
                 {dictationError ? <p className="text-sm text-red-600">{dictationError}</p> : null}
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -4053,7 +4207,7 @@ export default function JournalPage() {
                   </p>
                 ) : null}
                 <Button type="submit" isLoading={saving} disabled={!canSaveCurrentEntry} className="w-full">
-                  Save Entry
+                  {currentEntrySaveLabel}
                 </Button>
               </form>
             </section>

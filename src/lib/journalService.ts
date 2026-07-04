@@ -278,25 +278,95 @@ export async function updateJournalEntry(entry: {
   content: string;
   mood: string;
   tags: string[];
+  canvaDesignId?: string;
+  canvaDesignTitle?: string;
+  canvaDesignEditUrl?: string;
+  canvaPages?: string[];
   tripStartDate?: string;
   tripEndDate?: string;
+  coverPhoto?: string | null;
+  coverPageIndex?: number | null;
+  insertedPhotos?: Array<{
+    id: string;
+    src: string;
+    alt: string;
+    caption?: string;
+  }>;
+  instagramEmbeds?: string[];
 }) {
   if (isDemoMode()) {
     const entries = readDemoJournalEntries();
     const updatedEntries = entries.map((item) =>
-      item.id === entry.entryId
-        ? {
-            ...item,
-            countryId: entry.countryId,
-            title: entry.title,
-            content: entry.content,
-            mood: entry.mood as JournalEntry['mood'],
-            tags: entry.tags,
-            tripStartDate: entry.tripStartDate ?? item.tripStartDate,
-            tripEndDate: entry.tripEndDate ?? item.tripEndDate,
-            updatedAt: new Date().toISOString(),
-          }
-        : item
+      {
+        if (item.id !== entry.entryId) {
+          return item;
+        }
+
+        const cleanCanvaPages = entry.canvaPages?.filter((page) => page.startsWith('data:image/')) ?? item.canvaPages ?? [];
+        const cleanCoverPhoto = entry.coverPhoto?.startsWith('data:image/') ? entry.coverPhoto : item.coverPhoto ?? null;
+        const cleanCoverPageIndex =
+          typeof entry.coverPageIndex === 'number' && Number.isFinite(entry.coverPageIndex) && cleanCanvaPages.length
+            ? Math.max(0, Math.min(cleanCanvaPages.length - 1, Math.floor(entry.coverPageIndex)))
+            : item.coverPageIndex ?? null;
+        const cleanInsertedPhotos =
+          entry.insertedPhotos
+            ?.filter((photo) => photo?.src?.startsWith('data:image/'))
+            .slice(0, MAX_DEMO_INSERTED_JOURNAL_PHOTOS)
+            .map((photo, index) => ({
+              id: photo.id || `demo-photo-${index + 1}`,
+              src: photo.src,
+              alt: photo.alt || `Inserted photo ${index + 1}`,
+              caption: photo.caption ?? '',
+            })) ?? item.insertedPhotos ?? [];
+        const cleanInstagramEmbeds = sanitizeInstagramEmbedUrls(entry.instagramEmbeds ?? item.instagramEmbeds);
+        const shouldEncodeMediaPayload = Boolean(
+          cleanCanvaPages.length ||
+            cleanCoverPhoto ||
+            cleanCoverPageIndex !== null ||
+            cleanInsertedPhotos.length ||
+            cleanInstagramEmbeds.length
+        );
+
+        return {
+          ...item,
+          countryId: entry.countryId,
+          title: entry.title,
+          content: shouldEncodeMediaPayload
+            ? encodeJournalContentWithCanva(entry.content, {
+                designId: entry.canvaDesignId ?? item.canvaDesignId ?? null,
+                designTitle: entry.canvaDesignTitle ?? item.canvaDesignTitle ?? null,
+                designEditUrl: entry.canvaDesignEditUrl ?? item.canvaDesignEditUrl ?? null,
+                pages: cleanCanvaPages,
+                coverPhoto: cleanCoverPhoto,
+                coverPageIndex: cleanCoverPageIndex,
+                insertedPhotos: cleanInsertedPhotos,
+                tripStartDate: entry.tripStartDate ?? item.tripStartDate ?? null,
+                tripEndDate: entry.tripEndDate ?? item.tripEndDate ?? null,
+                instagramEmbeds: cleanInstagramEmbeds,
+              })
+            : entry.content,
+          mood: entry.mood as JournalEntry['mood'],
+          tags: entry.tags,
+          photos: cleanInsertedPhotos.map((photo) => ({
+            id: photo.id,
+            url: photo.src,
+            alt: photo.alt,
+            uploadedAt: item.updatedAt,
+          })),
+          canvaDesignId: entry.canvaDesignId ?? item.canvaDesignId ?? null,
+          canvaDesignTitle: entry.canvaDesignTitle ?? item.canvaDesignTitle ?? null,
+          canvaDesignEditUrl: entry.canvaDesignEditUrl ?? item.canvaDesignEditUrl ?? null,
+          canvaPages: cleanCanvaPages,
+          canvaPageCount: cleanCanvaPages.length || null,
+          coverPhoto: cleanCoverPhoto,
+          coverPageIndex: cleanCoverPageIndex,
+          insertedPhotos: cleanInsertedPhotos,
+          instagramEmbeds: cleanInstagramEmbeds,
+          tripStartDate: entry.tripStartDate ?? item.tripStartDate,
+          tripEndDate: entry.tripEndDate ?? item.tripEndDate,
+          updatedAt: new Date().toISOString(),
+        };
+      }
     );
     writeDemoJournalEntries(updatedEntries);
     const updatedEntry = updatedEntries.find((item) => item.id === entry.entryId);

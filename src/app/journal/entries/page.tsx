@@ -591,25 +591,9 @@ export default function JournalEntriesPage() {
     setOpenedSharedEntry(fullEntry);
   };
 
-  // Seeds the edit form from a full owned entry.
-  const openEditEntry = async (entry: SavedEntry) => {
-    const fullEntry = await loadFullEntry(entry);
-
-    setEditingEntry(fullEntry);
-    setEditForm({
-      title: fullEntry.title,
-      content: getEntryContent(fullEntry),
-      countryId: getEntryCountry(fullEntry),
-      mood: fullEntry.mood || '',
-      tags: fullEntry.tags?.join(', ') || '',
-      tripStartDate: normalizeJournalDate(getEntryTripStartDate(fullEntry)),
-      tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
-    });
-    setEditError(null);
-    setOpenedEntry(null);
-    setOpenedSharedEntry(null);
-    setSharingEntryId(null);
-    setCommentEntryId(null);
+  // Sends owned entries back to the full journal workspace for editing.
+  const openEditEntry = (entry: SavedEntry) => {
+    router.push(`/journal?editEntryId=${encodeURIComponent(entry.id)}`);
   };
 
   const closeEditEntry = () => {
@@ -1201,7 +1185,12 @@ export default function JournalEntriesPage() {
           ) : null}
 
 	          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
-            <Button type="button" size="sm" variant="secondary" onClick={() => void openEditEntry(openedEntry)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => openEditEntry(openedEntry)}
+            >
               <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
               Edit
             </Button>

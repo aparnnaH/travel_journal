@@ -3,7 +3,6 @@ import type { FriendsResponse } from '@/types/friends';
 import type { ScrapbookPageData } from '@/lib/canvas/scrapbook';
 import type { ImportedTripSnapshot } from '@/lib/ai/types';
 import { getImportedTripsStorageKey, getScrapbookStorageKey } from '@/lib/ai/storage';
-import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 
 export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
@@ -41,41 +40,6 @@ const createDemoCanvaPage = (title: string, subtitle: string, color: string) =>
 const demoCanvaPages = [
   createDemoCanvaPage('Kyoto', 'Lantern walk and temple notes', '#9e1b32'),
   createDemoCanvaPage('Arashiyama', 'Bamboo paths, matcha, and quiet rain', '#2f6f6d'),
-];
-
-const createDemoMemoryPhoto = (title: string, caption: string, color: string) =>
-  `data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="720" viewBox="0 0 1000 720">
-      <rect width="1000" height="720" fill="#f7efe2"/>
-      <rect x="56" y="56" width="888" height="608" rx="32" fill="${color}" opacity="0.2"/>
-      <circle cx="254" cy="232" r="92" fill="${color}" opacity="0.86"/>
-      <path d="M56 546 C224 408 348 602 508 464 C642 348 760 438 944 292 L944 664 L56 664 Z" fill="#2f6f6d" opacity="0.82"/>
-      <path d="M56 608 C234 490 394 626 548 536 C712 438 816 520 944 424 L944 664 L56 664 Z" fill="#9e1b32" opacity="0.42"/>
-      <text x="86" y="104" font-family="Georgia, serif" font-size="54" fill="#3d2b0e">${title}</text>
-      <text x="88" y="166" font-family="Arial, sans-serif" font-size="28" fill="#6f5a3b">${caption}</text>
-    </svg>`
-  )}`;
-
-const demoImportedTripPhotos = [
-  {
-    id: 'demo-import-photo-tokyo',
-    src: createDemoMemoryPhoto('Tokyo Food Notes', 'Imported from a spring itinerary', '#ff9f6b'),
-    alt: 'Stylized Tokyo food stop memory from an imported itinerary',
-    caption: 'Lunch stop from the imported Tokyo day.',
-  },
-  {
-    id: 'demo-import-photo-nara',
-    src: createDemoMemoryPhoto('Nara Day Trip', 'Saved with the trip import draft', '#59d98e'),
-    alt: 'Stylized Nara day trip memory from an imported itinerary',
-    caption: 'Quiet afternoon note from the imported route.',
-  },
-];
-
-const demoImportedTripInstagramEmbeds = [
-  {
-    id: 'instagram-1',
-    url: 'https://www.instagram.com/p/Cu3q0VZL7nq/',
-  },
 ];
 
 export const demoUser: AuthUser = {
@@ -136,100 +100,19 @@ export const demoMapState: ScratchMapState = {
 
 export const demoJournalEntries: JournalEntry[] = [
   {
-    id: 'demo-journal-import-instagram-japan',
-    userId: DEMO_USER_ID,
-    countryId: 'JP',
-    title: 'Imported Trip: Japan Spring Route',
-    content: encodeJournalContentWithCanva(
-      'This entry shows the trip import flow after a route has been parsed into a journal draft. Tokyo food notes, the Kyoto temple walk, and a quick Nara afternoon were pulled into one saved story, then paired with memory photos and a public Instagram post for context.',
-      {
-        insertedPhotos: demoImportedTripPhotos,
-        tripStartDate: '2026-05-03',
-        tripEndDate: '2026-05-10',
-        instagramEmbeds: demoImportedTripInstagramEmbeds,
-      }
-    ),
-    mood: 'excited',
-    tags: ['trip import', 'instagram', 'japan', 'spring'],
-    photos: demoImportedTripPhotos.map((photo) => ({
-      id: photo.id,
-      url: photo.src,
-      alt: photo.alt,
-      uploadedAt: '2026-05-10T22:20:00.000Z',
-    })),
-    insertedPhotos: demoImportedTripPhotos,
-    instagramEmbeds: demoImportedTripInstagramEmbeds,
-    tripStartDate: '2026-05-03',
-    tripEndDate: '2026-05-10',
-    createdAt: '2026-05-10T22:20:00.000Z',
-    updatedAt: '2026-05-10T22:20:00.000Z',
-  },
-  {
-    id: 'demo-journal-canva-kyoto',
-    userId: DEMO_USER_ID,
-    countryId: 'JP',
-    title: 'Canva Pages: Kyoto Lantern Walk',
-    content:
-      'This entry shows how a finished Canva journal page can stay attached to the story. The cover page holds the lantern walk, and the second page keeps the quieter bamboo-path notes for the scrapbook archive.',
-    mood: 'reflective',
-    tags: ['canva', 'kyoto', 'scrapbook'],
-    photos: [],
-    canvaDesignId: 'demo-canva-kyoto',
-    canvaDesignTitle: 'Kyoto Lantern Walk',
-    canvaDesignEditUrl: 'https://www.canva.com/design/demo-kyoto-lantern-walk',
-    canvaPages: demoCanvaPages,
-    canvaPageCount: demoCanvaPages.length,
-    coverPhoto: demoCanvaPages[0],
-    coverPageIndex: 0,
-    tripStartDate: '2026-05-03',
-    tripEndDate: '2026-05-10',
-    createdAt: '2026-05-11T15:10:00.000Z',
-    updatedAt: '2026-05-11T15:10:00.000Z',
-  },
-  {
-    id: 'demo-journal-paris',
+    id: 'demo-journal-explore-paris-with-me',
     userId: DEMO_USER_ID,
     countryId: 'FR',
-    title: 'Paris in Soft Rain',
+    title: 'Explore Paris with me',
     content:
-      'Morning started with a slow walk along the Seine, a paper cup of coffee, and museum plans that happily turned into wandering. The best memory was finding a tiny bookshop near the river and writing postcards before dinner.',
-    mood: 'nostalgic',
-    tags: ['paris', 'museum', 'postcards'],
+      'A soft Paris day built around slow wandering, little cafe stops, and finding pretty corners without rushing. The best part was saving the small moments: a view of the Seine, warm pastries, quiet museum rooms, and an evening walk that made the whole trip feel golden.',
+    mood: 'happy',
+    tags: ['paris', 'france', 'city walk'],
     photos: [],
     tripStartDate: '2026-04-08',
     tripEndDate: '2026-04-12',
     createdAt: '2026-04-12T18:20:00.000Z',
     updatedAt: '2026-04-12T18:20:00.000Z',
-  },
-  {
-    id: 'demo-journal-kyoto',
-    userId: DEMO_USER_ID,
-    countryId: 'JP',
-    title: 'Lanterns After Dinner',
-    content:
-      'Kyoto felt quiet and bright at the same time. We followed lantern-lit streets after dinner, saved a few temple notes for the scrapbook, and marked Kyoto and Tokyo on the map before calling it a night.',
-    mood: 'peaceful',
-    tags: ['kyoto', 'temples', 'night walk'],
-    photos: [],
-    tripStartDate: '2026-05-03',
-    tripEndDate: '2026-05-10',
-    createdAt: '2026-05-10T21:15:00.000Z',
-    updatedAt: '2026-05-10T21:15:00.000Z',
-  },
-  {
-    id: 'demo-journal-rome',
-    userId: DEMO_USER_ID,
-    countryId: 'IT',
-    title: 'Rome, One Long Golden Hour',
-    content:
-      'The whole afternoon felt like golden hour: espresso, old stone streets, and a last-minute pasta reservation that became the highlight of the trip. I saved this as the trip cover memory.',
-    mood: 'happy',
-    tags: ['rome', 'food', 'golden hour'],
-    photos: [],
-    tripStartDate: '2026-03-16',
-    tripEndDate: '2026-03-20',
-    createdAt: '2026-03-20T19:45:00.000Z',
-    updatedAt: '2026-03-20T19:45:00.000Z',
   },
 ];
 
