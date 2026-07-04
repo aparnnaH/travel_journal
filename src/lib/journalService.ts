@@ -8,16 +8,19 @@ import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
   createDefaultDemoJournalShares,
-  demoSharedJournalEntries,
   DEMO_SHARE_RECIPIENT_ID,
   DEMO_SHARE_RECIPIENT_EMAIL,
   DEMO_SHARE_RECIPIENT_NAME,
   DEMO_USER_ID,
   isDemoMode,
+  readDemoJournalComments,
   readDemoJournalEntries,
   readDemoJournalShares,
+  readDemoSharedJournalEntriesLarge,
+  writeDemoJournalComments,
   writeDemoJournalEntries,
   writeDemoJournalShares,
+  writeDemoSharedJournalEntriesLarge,
 } from '@/lib/demoMode';
 
 const MAX_DEMO_INSERTED_JOURNAL_PHOTOS = 8;
@@ -379,6 +382,53 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
   return parseJournalApiResponse<{ data?: JournalShareRecipient[] }>(response, 'Unable to save sharing settings.');
 }
 
+// Copies one owned entry into the local demo "Shared With Me" library. This is
+// intentionally browser-local so demo mode never reads the owner's cloud data.
+export async function publishJournalEntryToDemoShared(entry: JournalEntry, comments: JournalComment[] = []) {
+  const now = new Date().toISOString();
+  const demoSharedEntry: JournalEntry = {
+    ...entry,
+    id: `demo-shared-copy-${entry.id}`,
+    userId: DEMO_SHARE_RECIPIENT_ID,
+    canvaDesignEditUrl: null,
+    canva_design_edit_url: null,
+    updatedAt: now,
+  };
+  const entries = await readDemoSharedJournalEntriesLarge();
+  const existingIndex = entries.findIndex((item) => item.id === demoSharedEntry.id);
+  const nextEntries =
+    existingIndex >= 0
+      ? entries.map((item, index) => (index === existingIndex ? demoSharedEntry : item))
+      : [demoSharedEntry, ...entries];
+  const demoComments = comments.map<JournalComment>((comment, index) => ({
+    ...comment,
+    id: `demo-copied-comment-${entry.id}-${index}`,
+    journalEntryId: demoSharedEntry.id,
+    authorId: comment.authorId || `demo-comment-author-${index}`,
+    author: {
+      id: comment.author.id || `demo-comment-author-${index}`,
+      email: `demo-commenter-${index + 1}@traveljournal.app`,
+      displayName: comment.author.displayName || 'Travel friend',
+      avatar: comment.author.avatar,
+    },
+  }));
+
+  try {
+    await writeDemoSharedJournalEntriesLarge(nextEntries);
+    const currentComments = readDemoJournalComments();
+    writeDemoJournalComments({
+      ...currentComments,
+      [demoSharedEntry.id]: demoComments,
+    });
+    return { success: true, data: demoSharedEntry };
+  } catch {
+    return {
+      success: false,
+      error: 'This entry is too large for the local demo. Try copying a smaller text-focused entry.',
+    };
+  }
+}
+
 // Loads entries shared with the current user, using the same list/search shape
 // as owned journal entries.
 export async function fetchSharedJournalEntries(options?: {
@@ -389,7 +439,7 @@ export async function fetchSharedJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    const sharedEntries = demoSharedJournalEntries
+    const sharedEntries = (await readDemoSharedJournalEntriesLarge())
       .map<SharedJournalEntry>((entry) => ({
         ...entry,
         sharedBy: {
@@ -459,7 +509,7 @@ export async function fetchSharedJournalEntries(options?: {
 // Fetches one shared journal entry the current user can access.
 export async function fetchSharedJournalEntry(entryId: string) {
   if (isDemoMode()) {
-    const entry = demoSharedJournalEntries.find((item) => item.id === entryId);
+    const entry = (await readDemoSharedJournalEntriesLarge()).find((item) => item.id === entryId);
 
     if (!entry) {
       return { success: false, error: 'Shared entry not found.' };
@@ -492,7 +542,7 @@ export async function fetchSharedJournalEntry(entryId: string) {
 // Loads the comment thread for an accessible entry.
 export async function fetchJournalComments(entryId: string) {
   if (isDemoMode()) {
-    return { success: true, data: [] };
+    return { success: true, data: readDemoJournalComments()[entryId] ?? [] };
   }
 
   const response = await fetch(`/api/journal/comments?entryId=${encodeURIComponent(entryId)}`);
@@ -502,9 +552,28 @@ export async function fetchJournalComments(entryId: string) {
 // Adds a comment to an accessible entry.
 export async function createJournalComment(entryId: string, body: string) {
   if (isDemoMode()) {
+    const now = new Date().toISOString();
+    const comment: JournalComment = {
+      id: `demo-comment-${entryId}-${Date.now()}`,
+      journalEntryId: entryId,
+      authorId: DEMO_USER_ID,
+      body,
+      createdAt: now,
+      author: {
+        id: DEMO_USER_ID,
+        email: 'demo@traveljournal.app',
+        displayName: 'Demo Traveler',
+      },
+    };
+    const comments = readDemoJournalComments();
+    writeDemoJournalComments({
+      ...comments,
+      [entryId]: [...(comments[entryId] ?? []), comment],
+    });
+
     return {
-      success: false,
-      error: 'Comments are preview-only in demo mode.',
+      success: true,
+      data: comment,
     };
   }
 

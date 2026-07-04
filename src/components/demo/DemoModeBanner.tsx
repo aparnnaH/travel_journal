@@ -1,14 +1,20 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { RotateCcw, ShieldCheck, Stamp } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { isDemoMode, seedDemoLocalContext } from '@/lib/demoMode';
 
+const subscribeToDemoMode = () => () => {};
+const getDemoModeSnapshot = () => isDemoMode();
+const getServerDemoModeSnapshot = () => false;
+
 export default function DemoModeBanner() {
   const router = useRouter();
+  const showBanner = useSyncExternalStore(subscribeToDemoMode, getDemoModeSnapshot, getServerDemoModeSnapshot);
 
-  if (!isDemoMode()) {
+  if (!showBanner) {
     return null;
   }
 

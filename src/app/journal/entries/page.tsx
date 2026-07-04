@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, UserRoundCheck, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
@@ -22,6 +22,7 @@ import {
   fetchJournalEntryShares,
   fetchSharedJournalEntry,
   fetchSharedJournalEntries,
+  publishJournalEntryToDemoShared,
   saveJournalEntryShares,
   updateJournalEntry,
 } from '@/lib/journalService';
@@ -68,6 +69,12 @@ type InsertedJournalPhoto = {
 };
 
 const ENTRY_BATCH_SIZE = 3;
+const DEMO_PUBLISHER_EMAILS = new Set(
+  (process.env.NEXT_PUBLIC_DEMO_PUBLISHER_EMAILS ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
 const journalEntryDeepLinkStorageKey = 'travel-journal:country-explorer-entry';
 const searchScopeOptions: { value: JournalSearchScope; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -208,6 +215,8 @@ export default function JournalEntriesPage() {
   const [commentSavingEntryId, setCommentSavingEntryId] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [demoCopyNotice, setDemoCopyNotice] = useState<{ title: string } | null>(null);
+  const [demoCopySaving, setDemoCopySaving] = useState(false);
   const openedDeepLinkEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const activeSearchQuery = deferredSearchQuery.trim();
@@ -216,6 +225,7 @@ export default function JournalEntriesPage() {
   const entryPageEnd = Math.min(entryPage * ENTRY_BATCH_SIZE + entries.length, entryCount);
   const sharedEntryPageStart = sharedEntryCount === 0 ? 0 : sharedEntryPage * ENTRY_BATCH_SIZE + 1;
   const sharedEntryPageEnd = Math.min(sharedEntryPage * ENTRY_BATCH_SIZE + sharedEntries.length, sharedEntryCount);
+  const canPublishEntriesToDemo = user ? DEMO_PUBLISHER_EMAILS.has(user.email.toLowerCase()) : false;
 
   const editCountryOptions = useMemo(() => {
     const countryOptions = new Map(
@@ -758,6 +768,38 @@ export default function JournalEntriesPage() {
     }
   };
 
+  const publishOpenedEntryToDemo = async (entry: SavedEntry) => {
+    setDemoCopySaving(true);
+    const loadedComments = commentsByEntry[entry.id];
+    const commentsResponse = loadedComments
+      ? { success: true, data: loadedComments }
+      : await fetchJournalComments(entry.id);
+
+    if (!commentsResponse.success) {
+      setDemoCopySaving(false);
+      setNotice(commentsResponse.error || 'Could not load comments before copying this entry to the demo.');
+      setDemoCopyNotice(null);
+      return;
+    }
+
+    const commentsToCopy = commentsResponse.data ?? [];
+    const response = await publishJournalEntryToDemoShared(entry, commentsToCopy);
+    setDemoCopySaving(false);
+
+    if (!response.success) {
+      setNotice(response.error || 'Could not copy this entry to the demo.');
+      setDemoCopyNotice(null);
+      return;
+    }
+
+    setNotice(`Copied "${entry.title}" to the demo shared library.`);
+    setDemoCopyNotice({ title: entry.title });
+    setCommentsByEntry((current) => ({
+      ...current,
+      [entry.id]: commentsToCopy,
+    }));
+  };
+
   // Loads comments for the selected owned/shared entry.
   const openCommentPanel = async (entryId: string) => {
     setCommentEntryId(entryId);
@@ -1171,6 +1213,18 @@ export default function JournalEntriesPage() {
               <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
               Comments
             </Button>
+            {canPublishEntriesToDemo ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                isLoading={demoCopySaving}
+                onClick={() => void publishOpenedEntryToDemo(openedEntry)}
+              >
+                <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+                Copy to demo
+              </Button>
+            ) : null}
             <Button
               type="button"
               size="sm"
@@ -1181,6 +1235,34 @@ export default function JournalEntriesPage() {
 	              Delete
 	            </Button>
 	          </div>
+            {demoCopyNotice ? (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 gap-3">
+                    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold">Copied to demo</p>
+                      <p className="mt-1 text-sm leading-6 text-emerald-800">
+                        <span className="font-semibold">{demoCopyNotice.title}</span> was saved as a local demo copy.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    href="/demo?next=/journal/entries"
+                    className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                  >
+                    Open demo
+                  </Link>
+                </div>
+              </div>
+            ) : null}
+            {notice && notice.startsWith('Could not copy') ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {notice}
+              </div>
+            ) : null}
 	          {renderSharePanel(openedEntry)}
 	          {renderCommentPanel(openedEntry.id)}
 	        </article>
@@ -1454,6 +1536,39 @@ export default function JournalEntriesPage() {
             </div>
           ) : null}
         </div>
+
+        {demoCopyNotice ? (
+          <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900 shadow-soft">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex min-w-0 gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="font-semibold">Copied to demo</p>
+                  <p className="mt-1 text-sm leading-6 text-emerald-800">
+                    <span className="font-semibold">{demoCopyNotice.title}</span> was saved as a local demo copy. Open the demo, then check the Shared With Me section.
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <Link
+                  href="/demo?next=/journal/entries"
+                  className="inline-flex h-9 items-center justify-center rounded-md bg-emerald-700 px-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                >
+                  Open demo
+                </Link>
+                <button
+                  type="button"
+                  className="inline-flex h-9 items-center justify-center rounded-md border border-emerald-200 bg-white px-3 text-sm font-semibold text-emerald-800 transition hover:border-emerald-300"
+                  onClick={() => setDemoCopyNotice(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <section className="mb-5 rounded-lg border border-gold/20 bg-white p-4 shadow-soft">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto]">

@@ -9,11 +9,16 @@ export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
 export const DEMO_JOURNAL_STORAGE_KEY = 'travel-journal:demo-journal-entries';
 export const DEMO_JOURNAL_SHARE_STORAGE_KEY = 'travel-journal:demo-journal-shares';
+export const DEMO_JOURNAL_COMMENT_STORAGE_KEY = 'travel-journal:demo-journal-comments';
+export const DEMO_SHARED_JOURNAL_STORAGE_KEY = 'travel-journal:demo-shared-journal-entries';
 export const DEMO_USER_ID = 'demo-local-user';
 export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
 export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna.demo@traveljournal.app';
 export const DEMO_SHARE_RECIPIENT_NAME = 'Aparnna';
 const DEMO_PENDING_FRIEND_ID = 'demo-friend-mary-chen';
+const DEMO_INDEXED_DB_NAME = 'travel-journal-demo';
+const DEMO_INDEXED_DB_STORE = 'demo-shared-journal';
+const DEMO_SHARED_JOURNAL_INDEXED_DB_KEY = 'entries';
 
 const demoNow = '2026-06-30T12:00:00.000Z';
 
@@ -228,38 +233,7 @@ export const demoJournalEntries: JournalEntry[] = [
   },
 ];
 
-export const demoSharedJournalEntries: JournalEntry[] = [
-  {
-    id: 'demo-shared-aparnna-montreal',
-    userId: DEMO_SHARE_RECIPIENT_ID,
-    countryId: 'CA',
-    title: 'Aparnna Shared: Montreal Weekend Notes',
-    content:
-      'A shared note from Aparnna with a quick Montreal weekend route: bagels before the market, a slow walk through Old Montreal, and a golden-hour lookout stop before dinner.',
-    mood: 'happy',
-    tags: ['shared', 'montreal', 'weekend'],
-    photos: [],
-    tripStartDate: '2026-06-14',
-    tripEndDate: '2026-06-16',
-    createdAt: '2026-06-16T20:30:00.000Z',
-    updatedAt: '2026-06-16T20:30:00.000Z',
-  },
-  {
-    id: 'demo-shared-aparnna-london',
-    userId: DEMO_SHARE_RECIPIENT_ID,
-    countryId: 'GB',
-    title: 'Aparnna Shared: London Cafe Map',
-    content:
-      'Aparnna shared this London cafe map as a view-only journal entry, with a few quiet reading spots, neighborhood notes, and one museum afternoon saved for later.',
-    mood: 'peaceful',
-    tags: ['shared', 'london', 'cafes'],
-    photos: [],
-    tripStartDate: '2026-02-08',
-    tripEndDate: '2026-02-12',
-    createdAt: '2026-02-12T18:45:00.000Z',
-    updatedAt: '2026-02-12T18:45:00.000Z',
-  },
-];
+export const demoSharedJournalEntries: JournalEntry[] = [];
 
 export const demoFriends: FriendsResponse = {
   friends: [
@@ -425,6 +399,10 @@ export function seedDemoLocalContext(options?: { reset?: boolean }) {
     writeDemoJournalShares(createDefaultDemoJournalShares(demoJournalEntries));
   }
 
+  if (!window.localStorage.getItem(DEMO_SHARED_JOURNAL_STORAGE_KEY)) {
+    writeDemoSharedJournalEntries(demoSharedJournalEntries);
+  }
+
   const scrapbookStorageKey = getScrapbookStorageKey(DEMO_USER_ID);
   if (shouldReset || !window.localStorage.getItem(scrapbookStorageKey)) {
     window.localStorage.setItem(
@@ -448,8 +426,10 @@ export function disableDemoMode() {
   window.sessionStorage.removeItem(DEMO_STORAGE_KEY);
   window.localStorage.removeItem(getScrapbookStorageKey(DEMO_USER_ID));
   window.localStorage.removeItem(getImportedTripsStorageKey(DEMO_USER_ID));
+  window.localStorage.removeItem(DEMO_SHARED_JOURNAL_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_JOURNAL_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_JOURNAL_SHARE_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY);
   document.cookie = `${DEMO_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }
 
@@ -497,6 +477,112 @@ export function readDemoJournalShares() {
 export function writeDemoJournalShares(shares: DemoJournalShares) {
   if (typeof window === 'undefined') return;
   window.sessionStorage.setItem(DEMO_JOURNAL_SHARE_STORAGE_KEY, JSON.stringify(shares));
+}
+
+export function readDemoJournalComments() {
+  if (typeof window === 'undefined') return {};
+
+  const storedComments = window.sessionStorage.getItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY);
+  if (!storedComments) return {};
+
+  try {
+    const parsedComments = JSON.parse(storedComments);
+    return parsedComments && typeof parsedComments === 'object' && !Array.isArray(parsedComments)
+      ? (parsedComments as Record<string, import('@/types/journalComments').JournalComment[]>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function writeDemoJournalComments(comments: Record<string, import('@/types/journalComments').JournalComment[]>) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY, JSON.stringify(comments));
+}
+
+export function readDemoSharedJournalEntries() {
+  if (typeof window === 'undefined') return demoSharedJournalEntries;
+
+  const storedEntries = window.localStorage.getItem(DEMO_SHARED_JOURNAL_STORAGE_KEY);
+  if (!storedEntries) return demoSharedJournalEntries;
+
+  try {
+    const parsedEntries = JSON.parse(storedEntries);
+    return Array.isArray(parsedEntries) ? (parsedEntries as JournalEntry[]) : demoSharedJournalEntries;
+  } catch {
+    return demoSharedJournalEntries;
+  }
+}
+
+export function writeDemoSharedJournalEntries(entries: JournalEntry[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(DEMO_SHARED_JOURNAL_STORAGE_KEY, JSON.stringify(entries));
+}
+
+function openDemoIndexedDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB is not available.'));
+      return;
+    }
+
+    const request = window.indexedDB.open(DEMO_INDEXED_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(DEMO_INDEXED_DB_STORE)) {
+        database.createObjectStore(DEMO_INDEXED_DB_STORE);
+      }
+    };
+    request.onerror = () => reject(request.error ?? new Error('Could not open demo storage.'));
+    request.onsuccess = () => resolve(request.result);
+  });
+}
+
+export async function readDemoSharedJournalEntriesLarge() {
+  if (typeof window === 'undefined') return demoSharedJournalEntries;
+
+  try {
+    const database = await openDemoIndexedDb();
+    return await new Promise<JournalEntry[]>((resolve, reject) => {
+      const transaction = database.transaction(DEMO_INDEXED_DB_STORE, 'readonly');
+      const store = transaction.objectStore(DEMO_INDEXED_DB_STORE);
+      const request = store.get(DEMO_SHARED_JOURNAL_INDEXED_DB_KEY);
+
+      request.onerror = () => reject(request.error ?? new Error('Could not read demo shared entries.'));
+      request.onsuccess = () => {
+        const entries = request.result;
+        resolve(Array.isArray(entries) ? (entries as JournalEntry[]) : readDemoSharedJournalEntries());
+      };
+      transaction.oncomplete = () => database.close();
+      transaction.onerror = () => {
+        database.close();
+        reject(transaction.error ?? new Error('Could not read demo shared entries.'));
+      };
+    });
+  } catch {
+    return readDemoSharedJournalEntries();
+  }
+}
+
+export async function writeDemoSharedJournalEntriesLarge(entries: JournalEntry[]) {
+  const database = await openDemoIndexedDb();
+
+  return new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(DEMO_INDEXED_DB_STORE, 'readwrite');
+    const store = transaction.objectStore(DEMO_INDEXED_DB_STORE);
+    const request = store.put(entries, DEMO_SHARED_JOURNAL_INDEXED_DB_KEY);
+
+    request.onerror = () => reject(request.error ?? new Error('Could not save demo shared entries.'));
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error ?? new Error('Could not save demo shared entries.'));
+    };
+  });
 }
 
 export function isDemoRequestCookie(cookieValue?: string | null) {
