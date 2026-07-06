@@ -157,7 +157,9 @@ export async function updateJournalEntryFavorite(entry: {
   favoriteForCountry: boolean;
 }) {
   if (isDemoMode()) {
-    const entries = readDemoJournalEntries();
+    const permanentEntries = await fetchPermanentDemoJournalEntries();
+    const sessionEntries = readDemoJournalEntries();
+    const entries = mergeDemoOwnedEntries(permanentEntries);
     const targetEntry = entries.find((item) => item.id === entry.entryId);
 
     if (!targetEntry) {
@@ -165,7 +167,7 @@ export async function updateJournalEntryFavorite(entry: {
     }
 
     const updatedAt = new Date().toISOString();
-    const updatedEntries = entries.map((item) =>
+    const updatedCountryEntries = entries.map((item) =>
       item.countryId === targetEntry.countryId
         ? {
             ...item,
@@ -177,12 +179,17 @@ export async function updateJournalEntryFavorite(entry: {
           }
         : item
     );
-    const updatedEntry = updatedEntries.find((item) => item.id === entry.entryId);
+    const updatedEntry = updatedCountryEntries.find((item) => item.id === entry.entryId);
+    const updatedById = new Map(updatedCountryEntries.map((item) => [item.id, item]));
+    const nextSessionEntries = [
+      ...sessionEntries.filter((item) => !updatedById.has(item.id)),
+      ...updatedCountryEntries.filter((item) => item.countryId === targetEntry.countryId),
+    ];
 
-    writeDemoJournalEntries(updatedEntries);
+    writeDemoJournalEntries(nextSessionEntries);
 
     return updatedEntry
-      ? { success: true, data: updatedEntry, updatedEntries: updatedEntries.filter((item) => item.countryId === targetEntry.countryId) }
+      ? { success: true, data: updatedEntry, updatedEntries: updatedCountryEntries.filter((item) => item.countryId === targetEntry.countryId) }
       : { success: false, error: 'Journal entry not found.' };
   }
 
