@@ -454,6 +454,28 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
 
 // Copies one owned entry into the local demo "Shared With Me" library. This is
 // intentionally browser-local so demo mode never reads the owner's cloud data.
+async function fetchPermanentDemoSharedEntries() {
+  try {
+    const response = await fetch('/api/demo/publish');
+    const result = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      data?: JournalEntry[];
+      commentsByEntry?: Record<string, JournalComment[]>;
+    } | null;
+
+    if (!response.ok || !result?.success) {
+      return { entries: [], commentsByEntry: {} as Record<string, JournalComment[]> };
+    }
+
+    return {
+      entries: Array.isArray(result.data) ? result.data : [],
+      commentsByEntry: result.commentsByEntry ?? {},
+    };
+  } catch {
+    return { entries: [], commentsByEntry: {} as Record<string, JournalComment[]> };
+  }
+}
+
 export async function publishJournalEntryToDemoShared(entry: JournalEntry, comments: JournalComment[] = []) {
   if (!isDemoMode()) {
     const publishResponse = await fetch('/api/demo/publish', {
@@ -461,13 +483,34 @@ export async function publishJournalEntryToDemoShared(entry: JournalEntry, comme
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ entryId: entry.id }),
     });
-    const publishResult = (await publishResponse.json().catch(() => null)) as { success?: boolean; error?: string } | null;
+    const publishResult = (await publishResponse.json().catch(() => null)) as {
+      success?: boolean;
+      data?: JournalEntry;
+      comments?: JournalComment[];
+      error?: string;
+    } | null;
 
     if (!publishResponse.ok || !publishResult?.success) {
       return {
         success: false,
         error: publishResult?.error || 'This account cannot publish entries to the demo.',
       };
+    }
+
+    if (publishResult.data) {
+      const entries = await readDemoSharedJournalEntriesLarge();
+      const existingIndex = entries.findIndex((item) => item.id === publishResult.data?.id);
+      const nextEntries =
+        existingIndex >= 0
+          ? entries.map((item, index) => (index === existingIndex ? publishResult.data as JournalEntry : item))
+          : [publishResult.data, ...entries];
+
+      await writeDemoSharedJournalEntriesLarge(nextEntries);
+      writeDemoJournalComments({
+        ...readDemoJournalComments(),
+        [publishResult.data.id]: publishResult.comments ?? [],
+      });
+      return { success: true, data: publishResult.data };
     }
   }
 
@@ -525,7 +568,24 @@ export async function fetchSharedJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    const sharedEntries = (await readDemoSharedJournalEntriesLarge())
+    const [permanentShared, localEntries] = await Promise.all([
+      fetchPermanentDemoSharedEntries(),
+      readDemoSharedJournalEntriesLarge(),
+    ]);
+    const entryLookup = new Map<string, JournalEntry>();
+
+    [...permanentShared.entries, ...localEntries].forEach((entry) => {
+      entryLookup.set(entry.id, entry);
+    });
+
+    if (Object.keys(permanentShared.commentsByEntry).length > 0) {
+      writeDemoJournalComments({
+        ...permanentShared.commentsByEntry,
+        ...readDemoJournalComments(),
+      });
+    }
+
+    const sharedEntries = Array.from(entryLookup.values())
       .map<SharedJournalEntry>((entry) => ({
         ...entry,
         sharedBy: {
@@ -595,7 +655,11 @@ export async function fetchSharedJournalEntries(options?: {
 // Fetches one shared journal entry the current user can access.
 export async function fetchSharedJournalEntry(entryId: string) {
   if (isDemoMode()) {
-    const entry = (await readDemoSharedJournalEntriesLarge()).find((item) => item.id === entryId);
+    const [permanentShared, localEntries] = await Promise.all([
+      fetchPermanentDemoSharedEntries(),
+      readDemoSharedJournalEntriesLarge(),
+    ]);
+    const entry = [...permanentShared.entries, ...localEntries].find((item) => item.id === entryId);
 
     if (!entry) {
       return { success: false, error: 'Shared entry not found.' };
@@ -628,7 +692,14 @@ export async function fetchSharedJournalEntry(entryId: string) {
 // Loads the comment thread for an accessible entry.
 export async function fetchJournalComments(entryId: string) {
   if (isDemoMode()) {
-    return { success: true, data: readDemoJournalComments()[entryId] ?? [] };
+    const localComments = readDemoJournalComments();
+
+    if (localComments[entryId]) {
+      return { success: true, data: localComments[entryId] };
+    }
+
+    const permanentShared = await fetchPermanentDemoSharedEntries();
+    return { success: true, data: permanentShared.commentsByEntry[entryId] ?? [] };
   }
 
   const response = await fetch(`/api/journal/comments?entryId=${encodeURIComponent(entryId)}`);
