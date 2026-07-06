@@ -22,6 +22,7 @@ import {
   fetchJournalEntryShares,
   fetchSharedJournalEntry,
   fetchSharedJournalEntries,
+  publishJournalEntryToDemoEntries,
   publishJournalEntryToDemoShared,
   saveJournalEntryShares,
   updateJournalEntry,
@@ -211,6 +212,7 @@ export default function JournalEntriesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [demoCopyNotice, setDemoCopyNotice] = useState<{ title: string } | null>(null);
   const [demoCopySaving, setDemoCopySaving] = useState(false);
+  const [demoSharedCopySaving, setDemoSharedCopySaving] = useState(false);
   const [demoPublishAccess, setDemoPublishAccess] = useState<{ userId: string; canPublish: boolean } | null>(null);
   const openedDeepLinkEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -776,29 +778,44 @@ export default function JournalEntriesPage() {
 
   const publishOpenedEntryToDemo = async (entry: SavedEntry) => {
     setDemoCopySaving(true);
+    const response = await publishJournalEntryToDemoEntries(entry);
+    setDemoCopySaving(false);
+
+    if (!response.success) {
+      setNotice(response.error || 'Could not copy this entry to the demo entries.');
+      setDemoCopyNotice(null);
+      return;
+    }
+
+    setNotice(`Copied "${entry.title}" to the demo entries.`);
+    setDemoCopyNotice({ title: entry.title });
+  };
+
+  const publishOpenedEntryToDemoShared = async (entry: SavedEntry) => {
+    setDemoSharedCopySaving(true);
     const loadedComments = commentsByEntry[entry.id];
     const commentsResponse = loadedComments
       ? { success: true, data: loadedComments }
       : await fetchJournalComments(entry.id);
 
     if (!commentsResponse.success) {
-      setDemoCopySaving(false);
-      setNotice(commentsResponse.error || 'Could not load comments before copying this entry to the demo.');
+      setDemoSharedCopySaving(false);
+      setNotice(commentsResponse.error || 'Could not load comments before copying this entry to demo shared entries.');
       setDemoCopyNotice(null);
       return;
     }
 
     const commentsToCopy = commentsResponse.data ?? [];
     const response = await publishJournalEntryToDemoShared(entry, commentsToCopy);
-    setDemoCopySaving(false);
+    setDemoSharedCopySaving(false);
 
     if (!response.success) {
-      setNotice(response.error || 'Could not copy this entry to the demo.');
+      setNotice(response.error || 'Could not copy this entry to demo shared entries.');
       setDemoCopyNotice(null);
       return;
     }
 
-    setNotice(`Copied "${entry.title}" to the demo shared library.`);
+    setNotice(`Copied "${entry.title}" to demo shared entries.`);
     setDemoCopyNotice({ title: entry.title });
     setCommentsByEntry((current) => ({
       ...current,
@@ -1225,16 +1242,28 @@ export default function JournalEntriesPage() {
               Comments
             </Button>
             {canPublishEntriesToDemo ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                isLoading={demoCopySaving}
-                onClick={() => void publishOpenedEntryToDemo(openedEntry)}
-              >
-                <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
-                Copy to demo
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  isLoading={demoCopySaving}
+                  onClick={() => void publishOpenedEntryToDemo(openedEntry)}
+                >
+                  <UserRoundCheck className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Copy to demo entries
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  isLoading={demoSharedCopySaving}
+                  onClick={() => void publishOpenedEntryToDemoShared(openedEntry)}
+                >
+                  <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                  Copy to demo shared
+                </Button>
+              </>
             ) : null}
             <Button
               type="button"
@@ -1256,7 +1285,7 @@ export default function JournalEntriesPage() {
                     <div className="min-w-0">
                       <p className="font-semibold">Copied to demo</p>
                       <p className="mt-1 text-sm leading-6 text-emerald-800">
-                        <span className="font-semibold">{demoCopyNotice.title}</span> was saved as a local demo copy.
+                        <span className="font-semibold">{demoCopyNotice.title}</span> was saved to the demo.
                       </p>
                     </div>
                   </div>
@@ -1558,7 +1587,7 @@ export default function JournalEntriesPage() {
                 <div className="min-w-0">
                   <p className="font-semibold">Copied to demo</p>
                   <p className="mt-1 text-sm leading-6 text-emerald-800">
-                    <span className="font-semibold">{demoCopyNotice.title}</span> was saved as a local demo copy. Open the demo, then check the Shared With Me section.
+                    <span className="font-semibold">{demoCopyNotice.title}</span> was saved to the demo.
                   </p>
                 </div>
               </div>

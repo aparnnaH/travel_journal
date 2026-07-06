@@ -64,7 +64,8 @@ export async function fetchJournalEntries(options?: {
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
 }) {
   if (isDemoMode()) {
-    const entries = readDemoJournalEntries();
+    const permanentEntries = await fetchPermanentDemoJournalEntries();
+    const entries = permanentEntries.length ? permanentEntries : readDemoJournalEntries();
     const search = options?.search?.trim().toLowerCase();
     const filteredEntries = search
       ? entries.filter((entry) =>
@@ -119,7 +120,8 @@ export async function fetchJournalEntries(options?: {
 // Fetches one owned journal entry by id.
 export async function fetchJournalEntry(entryId: string) {
   if (isDemoMode()) {
-    const entry = readDemoJournalEntries().find((item) => item.id === entryId);
+    const permanentEntries = await fetchPermanentDemoJournalEntries();
+    const entry = [...permanentEntries, ...readDemoJournalEntries()].find((item) => item.id === entryId);
     return entry
       ? { success: true, data: entry }
       : { success: false, error: 'Journal entry not found.' };
@@ -474,6 +476,62 @@ async function fetchPermanentDemoSharedEntries() {
   } catch {
     return { entries: [], commentsByEntry: {} as Record<string, JournalComment[]> };
   }
+}
+
+async function fetchPermanentDemoJournalEntries() {
+  try {
+    const response = await fetch('/api/demo/publish?target=entries');
+    const result = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      data?: JournalEntry[];
+    } | null;
+
+    if (!response.ok || !result?.success) {
+      return [];
+    }
+
+    return Array.isArray(result.data) ? result.data : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function publishJournalEntryToDemoEntries(entry: JournalEntry) {
+  const publishResponse = await fetch('/api/demo/publish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entryId: entry.id, target: 'entries' }),
+  });
+  const publishResult = (await publishResponse.json().catch(() => null)) as {
+    success?: boolean;
+    data?: JournalEntry;
+    error?: string;
+  } | null;
+
+  if (!publishResponse.ok || !publishResult?.success) {
+    return {
+      success: false,
+      error: publishResult?.error || 'This account cannot publish entries to the demo.',
+    };
+  }
+
+  if (publishResult.data) {
+    const entries = readDemoJournalEntries();
+    const existingIndex = entries.findIndex((item) => item.id === publishResult.data?.id);
+    const nextEntries =
+      existingIndex >= 0
+        ? entries.map((item, index) => (index === existingIndex ? publishResult.data as JournalEntry : item))
+        : [publishResult.data, ...entries];
+
+    writeDemoJournalEntries(nextEntries);
+    writeDemoJournalShares({
+      ...readDemoJournalShares(),
+      [publishResult.data.id]: [DEMO_SHARE_RECIPIENT_ID],
+    });
+    return { success: true, data: publishResult.data };
+  }
+
+  return { success: true };
 }
 
 export async function publishJournalEntryToDemoShared(entry: JournalEntry, comments: JournalComment[] = []) {

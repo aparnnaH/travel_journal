@@ -1,7 +1,7 @@
 // Server-gated demo publishing controls. The owner allowlist stays in a
 // server-only env var so real account emails are not bundled into client JS.
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_SHARE_RECIPIENT_ID } from '@/lib/demoMode';
+import { DEMO_SHARE_RECIPIENT_ID, DEMO_USER_ID } from '@/lib/demoMode';
 import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
@@ -20,6 +20,49 @@ const getDemoPublisherEmails = () =>
   );
 
 const canPublishToDemo = (email?: string | null) => Boolean(email && getDemoPublisherEmails().has(email.toLowerCase()));
+
+const buildDemoEntryPayload = ({
+  entry,
+  id,
+  userId,
+  now,
+}: {
+  entry: NonNullable<Awaited<ReturnType<typeof getOwnedJournalEntry>>>;
+  id: string;
+  userId: string;
+  now: string;
+}) =>
+  ({
+    id,
+    userId,
+    countryId: entry.country_id,
+    country_id: entry.country_id,
+    title: entry.title,
+    content: entry.content ?? '',
+    mood: entry.mood,
+    tags: entry.tags ?? [],
+    photos: [],
+    canvaDesignId: entry.canva_design_id ?? null,
+    canvaDesignTitle: entry.canva_design_title ?? null,
+    canvaDesignEditUrl: null,
+    canvaPages: entry.canva_pages ?? [],
+    canvaPageCount: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
+    coverPhoto: entry.canva_pages?.[0] ?? null,
+    coverPageIndex: null,
+    tripStartDate: entry.trip_start_date ?? null,
+    tripEndDate: entry.trip_end_date ?? null,
+    insertedPhotos: [],
+    canva_design_id: entry.canva_design_id ?? null,
+    canva_design_title: entry.canva_design_title ?? null,
+    canva_design_edit_url: null,
+    canva_pages: entry.canva_pages ?? [],
+    canva_page_count: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
+    trip_start_date: entry.trip_start_date ?? null,
+    trip_end_date: entry.trip_end_date ?? null,
+    createdAt: entry.created_at,
+    created_at: entry.created_at,
+    updatedAt: now,
+  }) satisfies JournalEntry & { country_id: string; created_at: string };
 
 const mapPublishedRows = (rows: Array<{ entry_payload: unknown; comments_payload: unknown }>) => {
   const commentsByEntry: Record<string, JournalComment[]> = {};
@@ -55,6 +98,39 @@ async function getOptionalUserEmail(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
+  const target = request.nextUrl.searchParams.get('target') === 'entries' ? 'entries' : 'shared';
+
+  if (target === 'entries') {
+    const { data, error } = await supabaseAdmin
+      .from('demo_journal_entries')
+      .select('entry_payload')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      return NextResponse.json({
+        success: false,
+        canPublish: canPublishToDemo(await getOptionalUserEmail(request)),
+        data: [],
+        commentsByEntry: {},
+        error: 'Run supabase/demo_journal_entries.sql to enable permanent demo entries.',
+      });
+    }
+
+    const published = mapPublishedRows(
+      (data ?? []).map((row) => ({
+        entry_payload: row.entry_payload,
+        comments_payload: [],
+      }))
+    );
+
+    return NextResponse.json({
+      success: true,
+      canPublish: canPublishToDemo(await getOptionalUserEmail(request)),
+      data: published.entries,
+      commentsByEntry: published.commentsByEntry,
+    });
+  }
+
   const { data, error } = await supabaseAdmin
     .from('demo_shared_journal_entries')
     .select('entry_payload,comments_payload')
@@ -91,8 +167,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'This account cannot publish entries to the demo.' }, { status: 403 });
   }
 
-  const body = (await request.json().catch(() => null)) as { entryId?: string } | null;
+  const body = (await request.json().catch(() => null)) as { entryId?: string; target?: string } | null;
   const entryId = typeof body?.entryId === 'string' ? body.entryId : '';
+  const target = body?.target === 'entries' ? 'entries' : 'shared';
 
   if (!entryId) {
     return NextResponse.json({ success: false, error: 'Missing journal entry.' }, { status: 400 });
@@ -105,38 +182,42 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const demoEntryId = `demo-shared-copy-${entry.id}`;
-  const demoSharedEntry = {
+  const demoEntryId = target === 'entries' ? `demo-entry-copy-${entry.id}` : `demo-shared-copy-${entry.id}`;
+  const demoEntry = buildDemoEntryPayload({
+    entry,
     id: demoEntryId,
-    userId: DEMO_SHARE_RECIPIENT_ID,
-    countryId: entry.country_id,
-    country_id: entry.country_id,
-    title: entry.title,
-    content: entry.content ?? '',
-    mood: entry.mood,
-    tags: entry.tags ?? [],
-    photos: [],
-    canvaDesignId: entry.canva_design_id ?? null,
-    canvaDesignTitle: entry.canva_design_title ?? null,
-    canvaDesignEditUrl: null,
-    canvaPages: entry.canva_pages ?? [],
-    canvaPageCount: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
-    coverPhoto: entry.canva_pages?.[0] ?? null,
-    coverPageIndex: null,
-    tripStartDate: entry.trip_start_date ?? null,
-    tripEndDate: entry.trip_end_date ?? null,
-    insertedPhotos: [],
-    canva_design_id: entry.canva_design_id ?? null,
-    canva_design_title: entry.canva_design_title ?? null,
-    canva_design_edit_url: null,
-    canva_pages: entry.canva_pages ?? [],
-    canva_page_count: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
-    trip_start_date: entry.trip_start_date ?? null,
-    trip_end_date: entry.trip_end_date ?? null,
-    createdAt: entry.created_at,
-    created_at: entry.created_at,
-    updatedAt: now,
-  } satisfies JournalEntry & { country_id: string; created_at: string };
+    userId: target === 'entries' ? DEMO_USER_ID : DEMO_SHARE_RECIPIENT_ID,
+    now,
+  });
+
+  if (target === 'entries') {
+    const { error } = await context.supabaseAdmin
+      .from('demo_journal_entries')
+      .upsert(
+        {
+          id: demoEntryId,
+          source_entry_id: entry.id,
+          published_by: context.user.id,
+          title: entry.title,
+          entry_payload: demoEntry,
+          updated_at: now,
+        },
+        { onConflict: 'id' }
+      );
+
+    if (error) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Run supabase/demo_journal_entries.sql to enable permanent demo entries.',
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: demoEntry });
+  }
+
   const comments = await loadJournalComments(context.supabaseAdmin, entryId, context.user.id);
   const demoComments = comments.map<JournalComment>((comment, index) => ({
     ...comment,
@@ -158,7 +239,7 @@ export async function POST(request: NextRequest) {
         source_entry_id: entry.id,
         published_by: context.user.id,
         title: entry.title,
-        entry_payload: demoSharedEntry,
+        entry_payload: demoEntry,
         comments_payload: demoComments,
         updated_at: now,
       },
@@ -175,5 +256,5 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true, data: demoSharedEntry, comments: demoComments });
+  return NextResponse.json({ success: true, data: demoEntry, comments: demoComments });
 }

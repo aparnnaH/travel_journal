@@ -1,0 +1,16 @@
+-- Curated entries that become the demo traveler's default "My Entries".
+-- Writes should go through the server-only /api/demo/publish route.
+create table if not exists public.demo_journal_entries (
+  id text primary key,
+  source_entry_id uuid not null,
+  published_by uuid not null,
+  title text not null,
+  entry_payload jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists demo_journal_entries_updated_idx
+  on public.demo_journal_entries (updated_at desc);
+
+alter table public.demo_journal_entries enable row level security;
