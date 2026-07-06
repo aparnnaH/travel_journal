@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, UserRoundCheck, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, Star, UserRoundCheck, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
@@ -26,6 +26,7 @@ import {
   publishJournalEntryToDemoShared,
   saveJournalEntryShares,
   updateJournalEntry,
+  updateJournalEntryFavorite,
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
@@ -37,6 +38,7 @@ import {
   normalizeJournalDate,
 } from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
+import { hasJournalFavoriteTag, removeJournalFavoriteTags } from '@/lib/journalFavorites';
 import { useAuthStore } from '@/store/authStore';
 import type { JournalEntry } from '@/types';
 import type { Friendship } from '@/types/friends';
@@ -99,6 +101,8 @@ const getEntryTripEndDate = (entry: EntryCardData) =>
   decodeJournalContentWithCanva(String(entry.content || '')).canva?.tripEndDate ||
   getEntryTripStartDate(entry);
 const isSummaryEntry = (entry: EntryCardData) => Boolean((entry as { isSummary?: boolean }).isSummary);
+const isFavoriteEntry = (entry: EntryCardData) => hasJournalFavoriteTag(entry.tags);
+const getVisibleEntryTags = (entry: EntryCardData) => removeJournalFavoriteTags(entry.tags);
 // Reads Canva images from structured fields first, then legacy embedded payloads.
 const getEntryCanvaPages = (entry: EntryCardData | null) => {
   const fallbackPages = entry ? decodeJournalContentWithCanva(String(entry.content || '')).canva?.pages : [];
@@ -179,6 +183,7 @@ export default function JournalEntriesPage() {
   const [sharedLoadError, setSharedLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchScope, setSearchScope] = useState<JournalSearchScope>('all');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [acceptedFriends, setAcceptedFriends] = useState<Friendship[]>([]);
   const [openedEntry, setOpenedEntry] = useState<SavedEntry | null>(null);
   const [openedSharedEntry, setOpenedSharedEntry] = useState<SharedJournalEntry | null>(null);
@@ -218,6 +223,7 @@ export default function JournalEntriesPage() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const activeSearchQuery = deferredSearchQuery.trim();
   const isSearching = activeSearchQuery.length > 0;
+  const hasEntryFilters = isSearching || showFavoritesOnly;
   const entryPageStart = entryCount === 0 ? 0 : entryPage * ENTRY_BATCH_SIZE + 1;
   const entryPageEnd = Math.min(entryPage * ENTRY_BATCH_SIZE + entries.length, entryCount);
   const sharedEntryPageStart = sharedEntryCount === 0 ? 0 : sharedEntryPage * ENTRY_BATCH_SIZE + 1;
@@ -275,6 +281,7 @@ export default function JournalEntriesPage() {
         summary: true,
         search: activeSearchQuery,
         searchScope,
+        favoriteOnly: showFavoritesOnly,
       });
 
       if (!isCurrent) {
@@ -298,7 +305,7 @@ export default function JournalEntriesPage() {
     return () => {
       isCurrent = false;
     };
-  }, [activeSearchQuery, entryPage, router, searchScope, user, isLoading]);
+  }, [activeSearchQuery, entryPage, router, searchScope, showFavoritesOnly, user, isLoading]);
 
   useEffect(() => {
     if (!user) {
@@ -746,6 +753,62 @@ export default function JournalEntriesPage() {
     }
   };
 
+  const mergeUpdatedFavoriteEntries = (updatedEntries: SavedEntry[]) => {
+    if (updatedEntries.length === 0) {
+      return;
+    }
+
+    const updatedById = new Map(updatedEntries.map((entry) => [entry.id, entry]));
+
+    let removedVisibleFavorites = 0;
+
+    setEntries((current) => {
+      const nextEntries = current
+        .map((entry) => {
+          const updatedEntry = updatedById.get(entry.id);
+          return updatedEntry ? { ...entry, ...updatedEntry } : entry;
+        })
+        .filter((entry) => (showFavoritesOnly ? isFavoriteEntry(entry) : true));
+
+      removedVisibleFavorites = showFavoritesOnly ? current.length - nextEntries.length : 0;
+
+      return nextEntries;
+    });
+    if (removedVisibleFavorites > 0) {
+      setEntryCount((count) => Math.max(0, count - removedVisibleFavorites));
+    }
+    setOpenedEntry((current) => {
+      if (!current) return current;
+
+      const updatedEntry = updatedById.get(current.id);
+      return updatedEntry ? { ...current, ...updatedEntry } : current;
+    });
+  };
+
+  const toggleFavoriteEntry = async (entry: SavedEntry) => {
+    const countryLabel = getEntryCountryLabel(entry) || 'this country';
+    const nextFavoriteState = !isFavoriteEntry(entry);
+
+    setNotice(null);
+
+    const response = await updateJournalEntryFavorite({
+      entryId: entry.id,
+      favoriteForCountry: nextFavoriteState,
+    });
+
+    if (!response.success || !response.data) {
+      setNotice(response.error || 'Could not update this favorite.');
+      return;
+    }
+
+    mergeUpdatedFavoriteEntries((response.updatedEntries ?? [response.data]) as SavedEntry[]);
+    setNotice(
+      nextFavoriteState
+        ? `Added to favorites for ${countryLabel}.`
+        : `Removed from favorites for ${countryLabel}.`
+    );
+  };
+
   const toggleShareFriend = (friendId: string) => {
     setSelectedShareFriendIds((current) =>
       current.includes(friendId)
@@ -1048,6 +1111,32 @@ export default function JournalEntriesPage() {
     );
   };
 
+  const renderFavoriteButton = (entry: SavedEntry, className = '') => {
+    const favorite = isFavoriteEntry(entry);
+    const countryLabel = getEntryCountryLabel(entry) || 'this country';
+
+    return (
+      <button
+        type="button"
+        className={[
+          'inline-flex h-9 w-9 items-center justify-center rounded-md border transition',
+          favorite
+            ? 'border-gold/55 bg-gold/20 text-gold-deep hover:bg-gold/30'
+            : 'border-gold/20 bg-white/85 text-ink/45 hover:border-gold/45 hover:text-gold-deep',
+          className,
+        ].join(' ')}
+        onClick={(event) => {
+          event.stopPropagation();
+          void toggleFavoriteEntry(entry);
+        }}
+        aria-label={favorite ? `Remove favorite for ${countryLabel}` : `Add to favorites for ${countryLabel}`}
+        title={favorite ? `Favorite for ${countryLabel}` : `Add to favorites for ${countryLabel}`}
+      >
+        <Star className={favorite ? 'h-4 w-4 fill-current' : 'h-4 w-4'} aria-hidden="true" />
+      </button>
+    );
+  };
+
   const renderEntryCard = (entry: SavedEntry) => (
     <article
       key={entry.id}
@@ -1063,9 +1152,17 @@ export default function JournalEntriesPage() {
       tabIndex={0}
       aria-label={`Open journal entry ${entry.title}`}
     >
-      {renderEntryAlbumCover(entry)}
-      <div>
+      <div className="relative">
+        {renderEntryAlbumCover(entry)}
+        {renderFavoriteButton(entry, 'absolute right-2 top-2 shadow-sm')}
+      </div>
+      <div className="flex items-start justify-between gap-3">
         <h3 className="font-semibold text-ink">{entry.title}</h3>
+        {isFavoriteEntry(entry) ? (
+          <span className="shrink-0 rounded-full border border-gold/30 bg-gold/12 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gold-deep">
+            Favorite
+          </span>
+        ) : null}
       </div>
       <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-gold/18 bg-cream/55 px-2.5 py-1 text-xs font-semibold text-ink/60">
         <CalendarDays className="h-3.5 w-3.5 text-gold-deep" aria-hidden="true" />
@@ -1074,7 +1171,7 @@ export default function JournalEntriesPage() {
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
         {getEntryCountryLabel(entry) ? <span>{getEntryCountryLabel(entry)}</span> : null}
         {entry.mood ? <span>{entry.mood}</span> : null}
-        {entry.tags?.slice(0, 5).map((tag) => (
+        {getVisibleEntryTags(entry).slice(0, 5).map((tag) => (
           <span key={tag} className="rounded-full border border-gold/20 bg-cream px-2 py-1">
             {tag}
           </span>
@@ -1112,7 +1209,7 @@ export default function JournalEntriesPage() {
       <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink/70">
         {getEntryCountryLabel(entry) ? <span>{getEntryCountryLabel(entry)}</span> : null}
         {entry.mood ? <span>{entry.mood}</span> : null}
-        {entry.tags?.slice(0, 5).map((tag) => (
+        {getVisibleEntryTags(entry).slice(0, 5).map((tag) => (
           <span key={tag} className="rounded-full border border-gold/20 bg-cream px-2 py-1">
             {tag}
           </span>
@@ -1236,6 +1333,10 @@ export default function JournalEntriesPage() {
             <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(openedEntry)}>
               <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
               Share
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFavoriteEntry(openedEntry)}>
+              <Star className={isFavoriteEntry(openedEntry) ? 'mr-2 h-4 w-4 fill-current' : 'mr-2 h-4 w-4'} aria-hidden="true" />
+              {isFavoriteEntry(openedEntry) ? 'Favorited' : 'Favorite'}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => openCommentPanel(openedEntry.id)}>
               <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -1564,7 +1665,7 @@ export default function JournalEntriesPage() {
       >
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm font-semibold text-ink/62">
-            Showing {entryPageStart}-{entryPageEnd} of {entryCount} {isSearching ? 'matching ' : ''}entries
+            Showing {entryPageStart}-{entryPageEnd} of {entryCount} {hasEntryFilters ? 'matching ' : ''}entries
           </p>
           {notice ? (
             <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
@@ -1648,13 +1749,27 @@ export default function JournalEntriesPage() {
                 ))}
               </select>
             </label>
-            {searchQuery || searchScope !== 'all' ? (
+            <Button
+              type="button"
+              variant={showFavoritesOnly ? 'primary' : 'secondary'}
+              className="gap-2"
+              onClick={() => {
+                setShowFavoritesOnly((current) => !current);
+                setEntryPage(0);
+                setEntriesLoading(true);
+              }}
+            >
+              <Star className={showFavoritesOnly ? 'h-4 w-4 fill-current' : 'h-4 w-4'} aria-hidden="true" />
+              Favorites
+            </Button>
+            {searchQuery || searchScope !== 'all' || showFavoritesOnly ? (
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => {
                   setSearchQuery('');
                   setSearchScope('all');
+                  setShowFavoritesOnly(false);
                   setEntryPage(0);
                   setSharedEntryPage(0);
                   setEntriesLoading(true);
@@ -1673,7 +1788,7 @@ export default function JournalEntriesPage() {
           <InlineLoadingSkeleton variant="journalEntryCards" />
         ) : entries.length === 0 ? (
           <div className="rounded-lg border border-gold/20 bg-white p-8 text-center text-ink/60 shadow-soft">
-            {isSearching ? 'No matching journal entries.' : 'No journal entries yet.'}
+            {showFavoritesOnly ? 'No favorite journal entries yet.' : isSearching ? 'No matching journal entries.' : 'No journal entries yet.'}
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

@@ -6,6 +6,7 @@ import type { JournalComment } from '@/types/journalComments';
 import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { addJournalFavoriteTag, hasJournalFavoriteTag, removeJournalFavoriteTags } from '@/lib/journalFavorites';
 import {
   createDefaultDemoJournalShares,
   DEMO_REMOVABLE_FRIEND_EMAIL,
@@ -88,18 +89,22 @@ export async function fetchJournalEntries(options?: {
   summary?: boolean;
   search?: string;
   searchScope?: 'all' | 'title' | 'country' | 'tag' | 'text';
+  favoriteOnly?: boolean;
 }) {
   if (isDemoMode()) {
     const permanentEntries = await fetchPermanentDemoJournalEntries();
     const entries = mergeDemoOwnedEntries(permanentEntries);
     const search = options?.search?.trim().toLowerCase();
-    const filteredEntries = search
+    const searchedEntries = search
       ? entries.filter((entry) =>
           [entry.title, entry.countryId, entry.content, ...(entry.tags ?? [])].some((value) =>
             value.toLowerCase().includes(search)
           )
         )
       : entries;
+    const filteredEntries = options?.favoriteOnly
+      ? searchedEntries.filter((entry) => hasJournalFavoriteTag(entry.tags))
+      : searchedEntries;
     const offset = options?.offset ?? 0;
     const pagedEntries =
       typeof options?.limit === 'number' ? filteredEntries.slice(offset, offset + options.limit) : filteredEntries;
@@ -131,6 +136,10 @@ export async function fetchJournalEntries(options?: {
     params.set('searchScope', options.searchScope ?? 'all');
   }
 
+  if (options?.favoriteOnly) {
+    params.set('favoriteOnly', 'true');
+  }
+
   const query = params.toString();
   const response = await fetch(`/api/journal${query ? `?${query}` : ''}`);
 
@@ -139,6 +148,54 @@ export async function fetchJournalEntries(options?: {
     data?: JournalEntry[];
     count?: number;
     hasMore?: boolean;
+    error?: string;
+  }>;
+}
+
+export async function updateJournalEntryFavorite(entry: {
+  entryId: string;
+  favoriteForCountry: boolean;
+}) {
+  if (isDemoMode()) {
+    const entries = readDemoJournalEntries();
+    const targetEntry = entries.find((item) => item.id === entry.entryId);
+
+    if (!targetEntry) {
+      return { success: false, error: 'Journal entry not found.' };
+    }
+
+    const updatedAt = new Date().toISOString();
+    const updatedEntries = entries.map((item) =>
+      item.countryId === targetEntry.countryId
+        ? {
+            ...item,
+            tags:
+              item.id === entry.entryId && entry.favoriteForCountry
+                ? addJournalFavoriteTag(item.tags)
+                : removeJournalFavoriteTags(item.tags),
+            updatedAt,
+          }
+        : item
+    );
+    const updatedEntry = updatedEntries.find((item) => item.id === entry.entryId);
+
+    writeDemoJournalEntries(updatedEntries);
+
+    return updatedEntry
+      ? { success: true, data: updatedEntry, updatedEntries: updatedEntries.filter((item) => item.countryId === targetEntry.countryId) }
+      : { success: false, error: 'Journal entry not found.' };
+  }
+
+  const response = await fetch('/api/journal', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+  });
+
+  return response.json() as Promise<{
+    success: boolean;
+    data?: JournalEntry;
+    updatedEntries?: JournalEntry[];
     error?: string;
   }>;
 }

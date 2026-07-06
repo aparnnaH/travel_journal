@@ -41,7 +41,7 @@ const demoEntries = [
     content:
       'Morning started with a slow walk along the Seine, a paper cup of coffee, and museum plans that happily turned into wandering. The best memory was finding a tiny bookshop near the river and writing postcards before dinner.',
     mood: 'nostalgic',
-    tags: ['paris', 'museum', 'postcards'],
+    tags: ['favorite', 'paris', 'museum', 'postcards'],
     trip_start_date: '2026-04-08',
     trip_end_date: '2026-04-12',
     created_at: '2026-04-12T18:20:00.000Z',

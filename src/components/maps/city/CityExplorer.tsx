@@ -7,6 +7,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Country, CountryCity } from '@/types';
 import { Button } from '@/components/ui';
+import { hasJournalFavoriteTag } from '@/lib/journalFavorites';
 import { findCountryStamp } from '@/lib/stamps/matching';
 import { useMapStore } from '@/store/mapStore';
 
@@ -65,10 +66,8 @@ type ExplorerJournalEntry = Country['journalEntries'][number] & {
 };
 
 const journalEntryDeepLinkStorageKey = 'travel-journal:country-explorer-entry';
-const favoriteJournalTags = new Set(['favorite', 'favourite', 'highlight', 'highlights']);
-
 function isFavoriteJournalEntry(entry: ExplorerJournalEntry) {
-  return (entry.tags ?? []).some((tag) => favoriteJournalTags.has(tag.trim().toLowerCase()));
+  return hasJournalFavoriteTag(entry.tags);
 }
 
 function getJournalEntryDateLabel(entry: ExplorerJournalEntry) {

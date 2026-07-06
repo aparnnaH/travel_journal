@@ -104,23 +104,7 @@ export const demoMapState: ScratchMapState = {
   lastUpdated: demoNow,
 };
 
-export const demoJournalEntries: JournalEntry[] = [
-  {
-    id: 'demo-journal-explore-paris-with-me',
-    userId: DEMO_USER_ID,
-    countryId: 'FR',
-    title: 'Explore Paris with me',
-    content:
-      'A soft Paris day built around slow wandering, little cafe stops, and finding pretty corners without rushing. The best part was saving the small moments: a view of the Seine, warm pastries, quiet museum rooms, and an evening walk that made the whole trip feel golden.',
-    mood: 'happy',
-    tags: ['paris', 'france', 'city walk'],
-    photos: [],
-    tripStartDate: '2026-04-08',
-    tripEndDate: '2026-04-12',
-    createdAt: '2026-04-12T18:20:00.000Z',
-    updatedAt: '2026-04-12T18:20:00.000Z',
-  },
-];
+export const demoJournalEntries: JournalEntry[] = [];
 
 export const demoSharedJournalEntries: JournalEntry[] = [
   {

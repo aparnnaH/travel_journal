@@ -16,6 +16,7 @@ import CityExplorer from '@/components/maps/city/CityExplorer';
 import type { AtlasCountryReference } from '@/components/maps/world/WorldAtlas';
 import { findCountryStamp } from '@/lib/stamps/matching';
 import { fetchJournalEntries } from '@/lib/journalService';
+import { hasJournalFavoriteTag } from '@/lib/journalFavorites';
 import { useMapStore } from '@/store/mapStore';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { useAuthStore } from '@/store/authStore';
@@ -200,14 +201,11 @@ type ExplorerJournalEntry = JournalEntry & {
   updated_at?: string | null;
 };
 
-const favoriteJournalTags = new Set(['favorite', 'favourite', 'highlight', 'highlights']);
-
 const getJournalEntryCountryId = (entry: ExplorerJournalEntry) => entry.countryId || entry.country_id || '';
 
 const getJournalEntryCreatedAt = (entry: ExplorerJournalEntry) => entry.createdAt || entry.created_at || '';
 
-const isFavoriteJournalEntry = (entry: ExplorerJournalEntry) =>
-  (entry.tags ?? []).some((tag) => favoriteJournalTags.has(tag.trim().toLowerCase()));
+const isFavoriteJournalEntry = (entry: ExplorerJournalEntry) => hasJournalFavoriteTag(entry.tags);
 
 const normalizeCountryMatchToken = (value: string) => normalizeCountryName(value).replace(/\s+/g, '');
 

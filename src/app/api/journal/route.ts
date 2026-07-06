@@ -4,6 +4,7 @@
 // database writes constrained to the current user.
 import { NextRequest, NextResponse } from 'next/server';
 import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
+import { addJournalFavoriteTag, hasJournalFavoriteTag, removeJournalFavoriteTags } from '@/lib/journalFavorites';
 import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { getJournalDateRangeError, getTodayJournalDate, normalizeJournalDate } from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -64,6 +65,7 @@ type JournalMutationBody = {
   instagramEmbeds?: unknown;
   tripStartDate?: string;
   tripEndDate?: string;
+  favoriteForCountry?: boolean;
 };
 
 // Search happens after decoding content because some entries store Canva
@@ -115,6 +117,8 @@ const entryMatchesSearch = (entry: JournalEntryRow, rawSearch: string, scope: Jo
   return matches(searchableValues[scope]);
 };
 
+const entryMatchesFavoriteFilter = (entry: JournalEntryRow) => hasJournalFavoriteTag(entry.tags);
+
 // Summary responses intentionally trim content and omit heavy Canva pages so
 // list views do not download large image payloads.
 const summarizeJournalEntry = <T extends Record<string, unknown>>(entry: T) => {
@@ -163,13 +167,14 @@ export async function GET(request: NextRequest) {
   const limit = limitParam ? Math.min(Math.max(Number.parseInt(limitParam, 10) || 0, 1), 50) : null;
   const offset = offsetParam ? Math.max(Number.parseInt(offsetParam, 10) || 0, 0) : 0;
   const search = request.nextUrl.searchParams.get('search')?.trim().slice(0, 120) ?? '';
+  const favoriteOnly = request.nextUrl.searchParams.get('favoriteOnly') === 'true';
   const searchScopeParam = request.nextUrl.searchParams.get('searchScope') ?? 'all';
   const searchScope = (JOURNAL_SEARCH_SCOPES.has(searchScopeParam) ? searchScopeParam : 'all') as JournalSearchScope;
   const selectFields = summary ? JOURNAL_SUMMARY_FIELDS : '*';
 
   // Search is currently in-memory after loading the user's entries so decoded
   // fallback content can be searched consistently with structured columns.
-  if (search) {
+  if (search || favoriteOnly) {
     const searchResult = await context.supabaseAdmin
       .from('journal_entries')
       .select(JOURNAL_SEARCH_FIELDS)
@@ -197,7 +202,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const filteredData = (data ?? []).filter((entry) => entryMatchesSearch(entry, search, searchScope));
+    const filteredData = (data ?? [])
+      .filter((entry) => (search ? entryMatchesSearch(entry, search, searchScope) : true))
+      .filter((entry) => (favoriteOnly ? entryMatchesFavoriteFilter(entry) : true));
     const pagedData = limit ? filteredData.slice(offset, offset + limit) : filteredData;
 
     return NextResponse.json({
@@ -509,8 +516,10 @@ export async function PATCH(request: NextRequest) {
     instagramEmbeds,
     tripStartDate,
     tripEndDate,
+    favoriteForCountry,
   } = body;
   const cleanTitle = typeof title === 'string' ? title.trim() : '';
+  const hasFavoriteUpdate = typeof favoriteForCountry === 'boolean';
   // Rename flows only send entryId/title; edit flows include the rest of the
   // journal fields and therefore need stricter validation.
   const hasFullEntryUpdate =
@@ -535,8 +544,78 @@ export async function PATCH(request: NextRequest) {
     ? tags.filter((tag): tag is string => typeof tag === 'string').map((tag) => tag.trim()).filter(Boolean)
     : [];
 
-  if (!entryId || !cleanTitle) {
+  if (!entryId || (!hasFavoriteUpdate && !cleanTitle)) {
     return NextResponse.json({ success: false, error: 'Missing required journal title fields.' }, { status: 400 });
+  }
+
+  if (hasFavoriteUpdate) {
+    const { data: targetEntry, error: targetError } = await context.supabaseAdmin
+      .from('journal_entries')
+      .select('id,country_id,tags')
+      .eq('id', entryId)
+      .eq('user_id', context.user.id)
+      .maybeSingle();
+
+    if (targetError) {
+      return NextResponse.json({ success: false, error: targetError.message }, { status: 500 });
+    }
+
+    if (!targetEntry?.country_id) {
+      return NextResponse.json({ success: false, error: 'Journal entry not found.' }, { status: 404 });
+    }
+
+    const { data: countryEntries, error: countryEntriesError } = await context.supabaseAdmin
+      .from('journal_entries')
+      .select('id,tags')
+      .eq('user_id', context.user.id)
+      .eq('country_id', targetEntry.country_id);
+
+    if (countryEntriesError) {
+      return NextResponse.json({ success: false, error: countryEntriesError.message }, { status: 500 });
+    }
+
+    const updatedAt = new Date().toISOString();
+    const updates = (countryEntries ?? [])
+      .map((entry) => {
+        const isTargetEntry = entry.id === entryId;
+        const nextTags = favoriteForCountry && isTargetEntry
+          ? addJournalFavoriteTag(entry.tags)
+          : removeJournalFavoriteTags(entry.tags);
+        const changed = JSON.stringify(nextTags) !== JSON.stringify(entry.tags ?? []);
+
+        return changed
+          ? context.supabaseAdmin
+              .from('journal_entries')
+              .update({ tags: nextTags, updated_at: updatedAt })
+              .eq('id', entry.id)
+              .eq('user_id', context.user.id)
+              .select('*')
+              .maybeSingle()
+          : null;
+      })
+      .filter((update): update is NonNullable<typeof update> => Boolean(update));
+
+    const results = await Promise.all(updates);
+    const failedUpdate = results.find((result) => result.error);
+
+    if (failedUpdate?.error) {
+      return NextResponse.json({ success: false, error: failedUpdate.error.message }, { status: 500 });
+    }
+
+    const updatedEntries = results
+      .map((result) => result.data)
+      .filter((entry): entry is Record<string, unknown> => Boolean(entry));
+    const targetUpdatedEntry = updatedEntries.find((entry) => entry.id === entryId) || {
+      ...targetEntry,
+      tags: favoriteForCountry ? addJournalFavoriteTag(targetEntry.tags) : removeJournalFavoriteTags(targetEntry.tags),
+      updated_at: updatedAt,
+    };
+
+    return NextResponse.json({
+      success: true,
+      data: targetUpdatedEntry,
+      updatedEntries,
+    });
   }
 
   if (hasFullEntryUpdate && (!cleanCountryId || !cleanContent || !cleanMood)) {
