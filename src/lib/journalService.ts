@@ -8,6 +8,9 @@ import { sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import {
   createDefaultDemoJournalShares,
+  DEMO_REMOVABLE_FRIEND_EMAIL,
+  DEMO_REMOVABLE_FRIEND_ID,
+  DEMO_REMOVABLE_FRIEND_NAME,
   DEMO_SHARE_RECIPIENT_ID,
   DEMO_SHARE_RECIPIENT_EMAIL,
   DEMO_SHARE_RECIPIENT_NAME,
@@ -32,6 +35,19 @@ const createDemoShareRecipient = (sharedAt: string): JournalShareRecipient => ({
   permission: 'view',
   sharedAt,
 });
+
+const getDemoSharedByProfile = (entry: JournalEntry) =>
+  entry.userId === DEMO_REMOVABLE_FRIEND_ID
+    ? {
+        id: DEMO_REMOVABLE_FRIEND_ID,
+        email: DEMO_REMOVABLE_FRIEND_EMAIL,
+        displayName: DEMO_REMOVABLE_FRIEND_NAME,
+      }
+    : {
+        id: DEMO_SHARE_RECIPIENT_ID,
+        email: DEMO_SHARE_RECIPIENT_EMAIL,
+        displayName: DEMO_SHARE_RECIPIENT_NAME,
+      };
 
 async function parseJournalApiResponse<T>(response: Response, fallbackError: string): Promise<T & { success: boolean; error?: string }> {
   try {
@@ -646,11 +662,7 @@ export async function fetchSharedJournalEntries(options?: {
     const sharedEntries = Array.from(entryLookup.values())
       .map<SharedJournalEntry>((entry) => ({
         ...entry,
-        sharedBy: {
-          id: DEMO_SHARE_RECIPIENT_ID,
-          email: DEMO_SHARE_RECIPIENT_EMAIL,
-          displayName: DEMO_SHARE_RECIPIENT_NAME,
-        },
+        sharedBy: getDemoSharedByProfile(entry),
         sharedAt: entry.updatedAt || entry.createdAt,
         permission: 'view',
       }));
@@ -711,7 +723,11 @@ export async function fetchSharedJournalEntries(options?: {
 }
 
 // Fetches one shared journal entry the current user can access.
-export async function fetchSharedJournalEntry(entryId: string) {
+export async function fetchSharedJournalEntry(entryId: string): Promise<{
+  success: boolean;
+  data?: SharedJournalEntry;
+  error?: string;
+}> {
   if (isDemoMode()) {
     const [permanentShared, localEntries] = await Promise.all([
       fetchPermanentDemoSharedEntries(),
@@ -727,11 +743,7 @@ export async function fetchSharedJournalEntry(entryId: string) {
       success: true,
       data: {
         ...entry,
-        sharedBy: {
-          id: DEMO_SHARE_RECIPIENT_ID,
-          email: DEMO_SHARE_RECIPIENT_EMAIL,
-          displayName: DEMO_SHARE_RECIPIENT_NAME,
-        },
+        sharedBy: getDemoSharedByProfile(entry),
         sharedAt: entry.updatedAt || entry.createdAt,
         permission: 'view' as const,
       },

@@ -3,8 +3,9 @@
 import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { RotateCcw, ShieldCheck, Stamp } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { isDemoMode, seedDemoLocalContext } from '@/lib/demoMode';
+import { usePathname, useRouter } from 'next/navigation';
+import { demoMapState, isDemoMode, resetDemoBrowserState } from '@/lib/demoMode';
+import { useMapStore } from '@/store/mapStore';
 
 const subscribeToDemoMode = () => () => {};
 const getDemoModeSnapshot = () => isDemoMode();
@@ -12,21 +13,25 @@ const getServerDemoModeSnapshot = () => false;
 
 export default function DemoModeBanner() {
   const router = useRouter();
+  const pathname = usePathname();
+  const replaceMapState = useMapStore((state) => state.replaceMapState);
   const showBanner = useSyncExternalStore(subscribeToDemoMode, getDemoModeSnapshot, getServerDemoModeSnapshot);
 
   if (!showBanner) {
     return null;
   }
 
-  const resetDemo = () => {
+  const resetDemo = async () => {
     const shouldReset = window.confirm('Reset the demo back to its original seed data? Temporary edits on this browser will be cleared.');
 
     if (!shouldReset) {
       return;
     }
 
-    seedDemoLocalContext({ reset: true });
-    router.refresh();
+    await resetDemoBrowserState();
+    replaceMapState(demoMapState);
+    router.replace(pathname);
+    window.location.assign(pathname);
   };
 
   return (

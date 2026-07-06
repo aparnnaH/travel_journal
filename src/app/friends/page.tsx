@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   Clock3,
   Compass,
@@ -22,6 +23,7 @@ import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card, Input } from '@/components/ui';
+import { DEMO_SHARE_RECIPIENT_ID } from '@/lib/demoMode';
 import { fetchFriends, removeFriendship, sendFriendRequest, updateFriendRequest } from '@/lib/friendService';
 import { useAuthStore } from '@/store/authStore';
 import type { FriendsResponse, Friendship } from '@/types/friends';
@@ -79,6 +81,7 @@ export default function FriendsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<Friendship | null>(null);
 
   useEffect(() => {
     // Redirect anonymous users and fetch Travel Circle data for signed-in users.
@@ -192,7 +195,14 @@ export default function FriendsPage() {
     }
 
     setMessage(successCopy);
+    setPendingRemoval(null);
     await refreshFriends();
+  };
+
+  const requestFriendRemoval = (friendship: Friendship) => {
+    setError(null);
+    setMessage(null);
+    setPendingRemoval(friendship);
   };
 
   return (
@@ -302,15 +312,48 @@ export default function FriendsPage() {
                 </Button>
               </div>
 
+              {pendingRemoval ? (
+                <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-ink">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 gap-3">
+                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+                      <div className="min-w-0">
+                        <p className="font-semibold">Remove {getFriendLabel(pendingRemoval)} from your Travel Circle?</p>
+                        <p className="mt-1 leading-6 text-ink/72">
+                          You would need to send a new friend request and have them accept it again. Shared entries from
+                          this friend will also be removed.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setPendingRemoval(null)}>
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="gap-2"
+                        onClick={() => handleRemove(pendingRemoval.id, 'Friend removed.')}
+                      >
+                        <UserMinus className="h-4 w-4" aria-hidden="true" />
+                        Remove friend
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {friendsData.friends.length > 0 ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {friendsData.friends.map((friendship) => (
                     <FriendCard
                       key={friendship.id}
                       friendship={friendship}
-                      actionLabel="Remove"
+                      actionLabel="Remove friend"
                       actionIcon={UserMinus}
-                      onAction={() => handleRemove(friendship.id, 'Friend removed.')}
+                      actionDisabled={friendship.profile.id === DEMO_SHARE_RECIPIENT_ID}
+                      onAction={() => requestFriendRemoval(friendship)}
                     />
                   ))}
                 </div>
@@ -408,6 +451,8 @@ function FriendAvatar({ friendship }: { friendship: Friendship }) {
 // Reusable card for accepted, incoming, outgoing, and blocked friendships.
 function FriendCard({
   actionIcon: ActionIcon,
+  actionDisabled = false,
+  actionDisabledLabel,
   actionLabel,
   friendship,
   onAction,
@@ -416,6 +461,8 @@ function FriendCard({
   secondaryActionLabel,
 }: {
   actionIcon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  actionDisabled?: boolean;
+  actionDisabledLabel?: string;
   actionLabel: string;
   friendship: Friendship;
   onAction: () => void;
@@ -438,9 +485,9 @@ function FriendCard({
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" size="sm" variant="secondary" onClick={onAction} className="gap-2">
+        <Button type="button" size="sm" variant="secondary" onClick={onAction} disabled={actionDisabled} className="gap-2">
           <ActionIcon className="h-4 w-4" aria-hidden="true" />
-          {actionLabel}
+          {actionDisabled && actionDisabledLabel ? actionDisabledLabel : actionLabel}
         </Button>
         {onSecondaryAction && SecondaryActionIcon && secondaryActionLabel ? (
           <Button type="button" size="sm" variant="ghost" onClick={onSecondaryAction} className="gap-2">

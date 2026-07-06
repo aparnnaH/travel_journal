@@ -10,11 +10,17 @@ export const DEMO_JOURNAL_STORAGE_KEY = 'travel-journal:demo-journal-entries';
 export const DEMO_JOURNAL_SHARE_STORAGE_KEY = 'travel-journal:demo-journal-shares';
 export const DEMO_JOURNAL_COMMENT_STORAGE_KEY = 'travel-journal:demo-journal-comments';
 export const DEMO_SHARED_JOURNAL_STORAGE_KEY = 'travel-journal:demo-shared-journal-entries';
+export const DEMO_FRIENDS_STORAGE_KEY = 'travel-journal:demo-friends';
+const DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY = 'travel-journal:country-explorer-entry';
 export const DEMO_USER_ID = 'demo-local-user';
 export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
 export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna.demo@traveljournal.app';
 export const DEMO_SHARE_RECIPIENT_NAME = 'Aparnna';
 const DEMO_PENDING_FRIEND_ID = 'demo-friend-mary-chen';
+const DEMO_OUTGOING_FRIEND_ID = 'demo-friend-lena-park';
+export const DEMO_REMOVABLE_FRIEND_ID = 'demo-friend-sofia-rivera';
+export const DEMO_REMOVABLE_FRIEND_EMAIL = 'sofia.rivera@example.com';
+export const DEMO_REMOVABLE_FRIEND_NAME = 'Sofia Rivera';
 const DEMO_INDEXED_DB_NAME = 'travel-journal-demo';
 const DEMO_INDEXED_DB_STORE = 'demo-shared-journal';
 const DEMO_SHARED_JOURNAL_INDEXED_DB_KEY = 'entries';
@@ -116,7 +122,23 @@ export const demoJournalEntries: JournalEntry[] = [
   },
 ];
 
-export const demoSharedJournalEntries: JournalEntry[] = [];
+export const demoSharedJournalEntries: JournalEntry[] = [
+  {
+    id: 'demo-shared-sofia-lisbon-morning',
+    userId: DEMO_REMOVABLE_FRIEND_ID,
+    countryId: 'PT',
+    title: 'Lisbon morning tiles',
+    content:
+      'Sofia shared a gentle Lisbon morning: blue tiles catching the sun, a tiny espresso at the corner cafe, and a slow climb toward the viewpoint before the streets got busy.',
+    mood: 'peaceful',
+    tags: ['lisbon', 'portugal', 'tiles', 'morning'],
+    photos: [],
+    tripStartDate: '2026-05-20',
+    tripEndDate: '2026-05-22',
+    createdAt: '2026-05-22T09:30:00.000Z',
+    updatedAt: '2026-05-22T09:30:00.000Z',
+  },
+];
 
 export const demoFriends: FriendsResponse = {
   friends: [
@@ -131,6 +153,20 @@ export const demoFriends: FriendsResponse = {
         id: DEMO_SHARE_RECIPIENT_ID,
         email: DEMO_SHARE_RECIPIENT_EMAIL,
         displayName: DEMO_SHARE_RECIPIENT_NAME,
+      },
+      direction: 'friend',
+    },
+    {
+      id: 'demo-friend-sofia-rivera-accepted',
+      requesterId: DEMO_REMOVABLE_FRIEND_ID,
+      addresseeId: DEMO_USER_ID,
+      status: 'accepted',
+      createdAt: '2026-05-18T14:45:00.000Z',
+      respondedAt: '2026-05-18T15:05:00.000Z',
+      profile: {
+        id: DEMO_REMOVABLE_FRIEND_ID,
+        email: DEMO_REMOVABLE_FRIEND_EMAIL,
+        displayName: DEMO_REMOVABLE_FRIEND_NAME,
       },
       direction: 'friend',
     },
@@ -151,7 +187,22 @@ export const demoFriends: FriendsResponse = {
       direction: 'incoming',
     },
   ],
-  outgoing: [],
+  outgoing: [
+    {
+      id: 'demo-friend-request-lena-park',
+      requesterId: DEMO_USER_ID,
+      addresseeId: DEMO_OUTGOING_FRIEND_ID,
+      status: 'pending',
+      createdAt: '2026-06-29T10:15:00.000Z',
+      respondedAt: null,
+      profile: {
+        id: DEMO_OUTGOING_FRIEND_ID,
+        email: 'lena.park@example.com',
+        displayName: 'Lena Park',
+      },
+      direction: 'outgoing',
+    },
+  ],
   blocked: [],
 };
 
@@ -282,7 +333,11 @@ export function seedDemoLocalContext(options?: { reset?: boolean }) {
     writeDemoJournalShares(createDefaultDemoJournalShares(demoJournalEntries));
   }
 
-  if (!window.localStorage.getItem(DEMO_SHARED_JOURNAL_STORAGE_KEY)) {
+  if (shouldReset || !window.sessionStorage.getItem(DEMO_FRIENDS_STORAGE_KEY)) {
+    writeDemoFriends(demoFriends);
+  }
+
+  if (shouldReset || !window.localStorage.getItem(DEMO_SHARED_JOURNAL_STORAGE_KEY)) {
     writeDemoSharedJournalEntries(demoSharedJournalEntries);
   }
 
@@ -303,6 +358,19 @@ export function seedDemoLocalContext(options?: { reset?: boolean }) {
   }
 }
 
+export async function resetDemoBrowserState() {
+  if (typeof window === 'undefined') return;
+
+  seedDemoLocalContext({ reset: true });
+  window.sessionStorage.removeItem(DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY);
+
+  try {
+    await writeDemoSharedJournalEntriesLarge(demoSharedJournalEntries);
+  } catch {
+    writeDemoSharedJournalEntries(demoSharedJournalEntries);
+  }
+}
+
 export function disableDemoMode() {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(DEMO_STORAGE_KEY);
@@ -313,7 +381,34 @@ export function disableDemoMode() {
   window.sessionStorage.removeItem(DEMO_JOURNAL_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_JOURNAL_SHARE_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_FRIENDS_STORAGE_KEY);
   document.cookie = `${DEMO_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+export function readDemoFriends() {
+  if (typeof window === 'undefined') return demoFriends;
+
+  const storedFriends = window.sessionStorage.getItem(DEMO_FRIENDS_STORAGE_KEY);
+  if (!storedFriends) return demoFriends;
+
+  try {
+    const parsedFriends = JSON.parse(storedFriends);
+    return parsedFriends &&
+      typeof parsedFriends === 'object' &&
+      Array.isArray(parsedFriends.friends) &&
+      Array.isArray(parsedFriends.incoming) &&
+      Array.isArray(parsedFriends.outgoing) &&
+      Array.isArray(parsedFriends.blocked)
+      ? (parsedFriends as FriendsResponse)
+      : demoFriends;
+  } catch {
+    return demoFriends;
+  }
+}
+
+export function writeDemoFriends(friends: FriendsResponse) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DEMO_FRIENDS_STORAGE_KEY, JSON.stringify(friends));
 }
 
 export function readDemoJournalEntries() {
