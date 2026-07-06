@@ -49,6 +49,16 @@ const getDemoSharedByProfile = (entry: JournalEntry) =>
         displayName: DEMO_SHARE_RECIPIENT_NAME,
       };
 
+const mergeDemoOwnedEntries = (permanentEntries: JournalEntry[]) => {
+  const entryLookup = new Map<string, JournalEntry>();
+
+  [...permanentEntries, ...readDemoJournalEntries()].forEach((entry) => {
+    entryLookup.set(entry.id, entry);
+  });
+
+  return Array.from(entryLookup.values());
+};
+
 async function parseJournalApiResponse<T>(response: Response, fallbackError: string): Promise<T & { success: boolean; error?: string }> {
   try {
     const payload = (await response.json()) as T & { success: boolean; error?: string };
@@ -81,7 +91,7 @@ export async function fetchJournalEntries(options?: {
 }) {
   if (isDemoMode()) {
     const permanentEntries = await fetchPermanentDemoJournalEntries();
-    const entries = permanentEntries.length ? permanentEntries : readDemoJournalEntries();
+    const entries = mergeDemoOwnedEntries(permanentEntries);
     const search = options?.search?.trim().toLowerCase();
     const filteredEntries = search
       ? entries.filter((entry) =>
@@ -137,7 +147,7 @@ export async function fetchJournalEntries(options?: {
 export async function fetchJournalEntry(entryId: string) {
   if (isDemoMode()) {
     const permanentEntries = await fetchPermanentDemoJournalEntries();
-    const entry = [...permanentEntries, ...readDemoJournalEntries()].find((item) => item.id === entryId);
+    const entry = mergeDemoOwnedEntries(permanentEntries).find((item) => item.id === entryId);
     return entry
       ? { success: true, data: entry }
       : { success: false, error: 'Journal entry not found.' };

@@ -4,7 +4,7 @@
 // to the chat hook and side-rail insight cards.
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -201,8 +201,29 @@ export default function TravelCompanionPage() {
   }, [dataState, resolvedCountryLabels, user, visitedCountryIds]);
 
   const insights = useMemo(() => (context ? buildCompanionInsights(context) : null), [context]);
-  const recentMemories = useMemo(() => context?.memoryPool.slice(0, 5) ?? [], [context]);
+  const recentMemories = useMemo(() => {
+    if (!context) {
+      return [];
+    }
+
+    const journalMemories = context.memoryPool.filter((memory) => memory.source === 'journal');
+
+    return (journalMemories.length ? journalMemories : context.memoryPool).slice(0, 5);
+  }, [context]);
+  const recentMemorySourceLabel = context?.journalEntries.length
+    ? 'From your current saved journal entries.'
+    : 'From journal, scrapbook, and imported trip context.';
   const passportSnapshot = useMemo(() => context?.passportStamps.slice(0, 6) ?? [], [context]);
+  const handleJournalEntrySaved = useCallback((entry: JournalEntry) => {
+    setDataState((current) => {
+      const remainingEntries = current.journalEntries.filter((item) => String(item.id) !== String(entry.id));
+
+      return {
+        ...current,
+        journalEntries: [entry, ...remainingEntries],
+      };
+    });
+  }, []);
 
   const {
     messages,
@@ -214,8 +235,9 @@ export default function TravelCompanionPage() {
     clearChat,
     saveJournalDraft,
   } = useTravelCompanionChat({
-    context,
+    context: loadingState ? null : context,
     userId: user?.id,
+    onJournalEntrySaved: handleJournalEntrySaved,
   });
 
   if (isLoading || !user) {
@@ -380,7 +402,7 @@ export default function TravelCompanionPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <h2 className="text-xl font-serif text-ink">Recent Memories</h2>
-                        <p className="text-sm text-ink/62">From journal, scrapbook, and imported trip context.</p>
+                        <p className="text-sm text-ink/62">{recentMemorySourceLabel}</p>
                       </div>
                     </div>
                     <div className="mt-3 space-y-2">

@@ -37,6 +37,7 @@ export type CompanionJournalEntry = {
   title: string;
   content: string;
   countryId: string;
+  countryName: string;
   mood: JournalEntry['mood'] | string;
   tags: string[];
   createdAt: string;

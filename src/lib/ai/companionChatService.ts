@@ -50,7 +50,7 @@ const buildArchiveSnapshot = (context: CompanionTravelContext): CompanionArchive
     tripSummary: context.tripSummary,
     recentJournalEntries: context.journalEntries.slice(0, 8).map((entry) => ({
       title: entry.title,
-      country: countryNameById.get(entry.countryId) || entry.countryId,
+      country: entry.countryName || countryNameById.get(entry.countryId) || entry.countryId,
       mood: String(entry.mood),
       tags: entry.tags.slice(0, 8),
       excerpt: trimText(entry.content, 420),

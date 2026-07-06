@@ -8,6 +8,7 @@ import type { CompanionChatMessage, CompanionTravelContext } from '@/lib/ai/type
 import { createJournalEntry } from '@/lib/journalService';
 import { generateSmartCompanionReply } from '@/lib/ai/companionChatService';
 import { polishJournalDraft } from '@/lib/ai/journalPolishService';
+import type { JournalEntry } from '@/types';
 import {
   buildUserMessage,
   buildWelcomeMessage,
@@ -19,6 +20,7 @@ import {
 type UseTravelCompanionChatInput = {
   context: CompanionTravelContext | null;
   userId?: string;
+  onJournalEntrySaved?: (entry: JournalEntry) => void;
 };
 
 // Replaces the draft block inside an assistant response after the polish endpoint
@@ -182,7 +184,7 @@ const buildJournalSessionFromSmartReply = (
 };
 
 // Public hook consumed by TravelCompanionPage.
-export function useTravelCompanionChat({ context, userId }: UseTravelCompanionChatInput) {
+export function useTravelCompanionChat({ context, userId, onJournalEntrySaved }: UseTravelCompanionChatInput) {
   const [messages, setMessages] = useState<CompanionChatMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [isSavingJournalDraft, setIsSavingJournalDraft] = useState(false);
@@ -362,9 +364,19 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
         return;
       }
 
+      const savedEntry = result.data;
+
+      if (savedEntry) {
+        onJournalEntrySaved?.(savedEntry);
+      }
+
       setMessages((current) => [
         ...current,
-        buildAssistantMessage(`Saved. "${title}" is now in your journal entries.`),
+        buildAssistantMessage(
+          savedEntry
+            ? `Saved. "${title}" is now in your journal entries. Open it from /journal/entries?entryId=${savedEntry.id}`
+            : `Saved. "${title}" is now in your journal entries.`
+        ),
       ]);
     } catch {
       setMessages((current) => [
@@ -374,7 +386,7 @@ export function useTravelCompanionChat({ context, userId }: UseTravelCompanionCh
     } finally {
       setIsSavingJournalDraft(false);
     }
-  }, [context, journalSession, userId]);
+  }, [context, journalSession, onJournalEntrySaved, userId]);
 
   return {
     messages,

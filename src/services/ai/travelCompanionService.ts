@@ -2,6 +2,7 @@
 // This module turns journal entries, scrapbook pages, imports, and map visits
 // into deterministic chat replies, prompts, insights, and journal drafts.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import { placeholderCountries } from '@/lib/placeholderData';
 import { normalizeCountryToStampId } from '@/lib/stamps/assets';
 import type {
@@ -57,6 +58,7 @@ export type JournalEntryInteractionResult = {
 const stampById = new Map(COUNTRY_STAMPS.map((stamp) => [stamp.id, stamp]));
 const countryById = new Map(placeholderCountries.map((country) => [country.id, country]));
 const countryByCode = new Map(placeholderCountries.map((country) => [country.code, country]));
+const atlasCountryById = new Map(ATLAS_STAMP_COUNTRIES.map((country) => [country.atlas_id, country]));
 const dateFormatter = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -117,6 +119,12 @@ const getCountryName = (countryId: string, countryLabels?: Record<string, string
     return knownCountry.name;
   }
 
+  const atlasCountry = atlasCountryById.get(countryId);
+
+  if (atlasCountry) {
+    return atlasCountry.name;
+  }
+
   if (/^[A-Z]{2}$/i.test(countryId)) {
     try {
       const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -133,15 +141,20 @@ const getCountryName = (countryId: string, countryLabels?: Record<string, string
 };
 
 // Normalizes database/client journal entry shapes into one companion-safe type.
-const normalizeJournalEntry = (entry: RawJournalEntry): CompanionJournalEntry => ({
-  id: String(entry.id ?? createCompanionId()),
-  title: String(entry.title ?? 'Untitled memory'),
-  content: String(entry.content ?? ''),
-  countryId: String(entry.countryId ?? entry.country_id ?? 'Unknown'),
-  mood: String(entry.mood ?? 'reflective'),
-  tags: Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
-  createdAt: String(entry.createdAt ?? entry.created_at ?? new Date().toISOString()),
-});
+const normalizeJournalEntry = (entry: RawJournalEntry, countryLabels?: Record<string, string>): CompanionJournalEntry => {
+  const countryId = String(entry.countryId ?? entry.country_id ?? 'Unknown');
+
+  return {
+    id: String(entry.id ?? createCompanionId()),
+    title: String(entry.title ?? 'Untitled memory'),
+    content: String(entry.content ?? ''),
+    countryId,
+    countryName: getCountryName(countryId, countryLabels),
+    mood: String(entry.mood ?? 'reflective'),
+    tags: Array.isArray(entry.tags) ? entry.tags.map((tag) => String(tag).trim()).filter(Boolean) : [],
+    createdAt: String(entry.createdAt ?? entry.created_at ?? new Date().toISOString()),
+  };
+};
 
 const toTimestamp = (value?: string) => (value ? new Date(value).getTime() || 0 : 0);
 const countryTokenPattern = '(?:countries?|countr(?:y|ies)|countires|coutires|places)';
@@ -746,7 +759,7 @@ const buildMemoryPool = (
     title: entry.title,
     detail: snippet(entry.content, 200),
     createdAt: entry.createdAt,
-    countryHint: getCountryName(entry.countryId),
+    countryHint: entry.countryName,
   }));
 
   const scrapbookMemories: TravelMemory[] = scrapbookPages.flatMap((page, pageIndex) => {
@@ -903,20 +916,37 @@ const buildTripSummary = (context: {
   memoryPool: TravelMemory[];
 }): CompanionTripSummary => {
   const { journalEntries, importedTrips, visitedCountryNames, memoryPool } = context;
-  const lastCountry = visitedCountryNames[0] || 'your recent routes';
-  const latestHighlights = memoryPool.slice(0, 3).map((memory) => memory.title);
+  const latestJournalEntry = journalEntries[0];
+  const latestJournalCountry = latestJournalEntry?.countryName ?? '';
+  const journalHighlights = journalEntries.slice(0, 3).map((entry) => entry.title);
+  const importHighlights = importedTrips.slice(0, 3).map((trip) => trip.title);
+  const memoryHighlights = memoryPool.slice(0, 3).map((memory) => memory.title).filter(Boolean);
+  const journalEntryLabel = `${journalEntries.length} journal entr${journalEntries.length === 1 ? 'y' : 'ies'} saved`;
+  const mapCoverageLabel = `${visitedCountryNames.length} countr${visitedCountryNames.length === 1 ? 'y' : 'ies'} tracked on your map`;
 
   const nextFocus =
     journalEntries.length === 0
       ? 'Start with a first journal entry so your future recaps can capture tone shifts.'
       : importedTrips.length === 0
         ? 'Import one itinerary or screenshot set so the companion can generate richer day-by-day recaps.'
-        : 'Tag your next two entries with place + mood to sharpen future AI reflections.';
+        : 'Keep tagging journal entries with place + mood to sharpen future AI reflections.';
 
   return {
-    headline: `${visitedCountryNames.length} countries tracked · ${journalEntries.length} journal entries`,
-    coverage: `Recent focus: ${lastCountry}. Imported trip drafts: ${importedTrips.length}.`,
-    highlights: latestHighlights.length ? latestHighlights : ['Your next highlight will appear once a new memory is added.'],
+    headline: journalEntryLabel,
+    coverage: [
+      latestJournalCountry ? `Latest journal focus: ${latestJournalCountry}.` : mapCoverageLabel,
+      `Imported trip drafts: ${importedTrips.length}.`,
+      latestJournalCountry ? mapCoverageLabel : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+    highlights: journalHighlights.length
+      ? journalHighlights
+      : importHighlights.length
+        ? importHighlights
+        : memoryHighlights.length
+          ? memoryHighlights
+          : ['Your next highlight will appear once a new memory is added.'],
     nextFocus,
   };
 };
@@ -1153,7 +1183,7 @@ export const buildTravelCompanionContext = ({
   countryLabels,
 }: BuildCompanionContextInput): CompanionTravelContext => {
   const normalizedEntries = journalEntries
-    .map(normalizeJournalEntry)
+    .map((entry) => normalizeJournalEntry(entry, countryLabels))
     .sort((first, second) => toTimestamp(second.createdAt) - toTimestamp(first.createdAt));
   const visitedCountryNames = visitedCountryIds.map((countryId) => getCountryName(countryId, countryLabels));
   const passportStamps = buildPassportStamps(visitedCountryIds, countryLabels);
@@ -1186,19 +1216,40 @@ export const buildTravelCompanionContext = ({
 // Creates deterministic writing prompts from recent archive context.
 export const buildJournalSuggestions = (context: CompanionTravelContext) => {
   const latestEntry = context.journalEntries[0];
-  const latestCountry = latestEntry ? getCountryName(latestEntry.countryId) : context.visitedCountryNames[0] || 'your latest stop';
-  const secondCountry = context.visitedCountryNames[1] || latestCountry;
+  const latestCountry = latestEntry?.countryName || context.visitedCountryNames[0] || 'your latest stop';
+  const latestTitle = latestEntry?.title || latestCountry;
+  const secondEntry = context.journalEntries.find((entry) => entry.id !== latestEntry?.id);
+  const comparisonAnchor = secondEntry?.title || context.visitedCountryNames.find((country) => country !== latestCountry) || latestCountry;
   const mood = context.topMoods[0] || 'reflective';
+
+  if (latestEntry) {
+    return [
+      `Write a sensory follow-up to "${latestTitle}" in ${latestCountry} using one smell, one sound, and one surprise.`,
+      `Create a then-vs-now reflection between "${latestTitle}" and ${comparisonAnchor}.`,
+      `Expand the ${mood} thread in "${latestTitle}": what changed in how you moved through the day?`,
+    ];
+  }
 
   return [
     `Write a sensory vignette from ${latestCountry} using one smell, one sound, and one surprise.`,
-    `Create a then-vs-now reflection between ${latestCountry} and ${secondCountry}.`,
+    `Create a then-vs-now reflection between ${latestCountry} and ${comparisonAnchor}.`,
     `Expand your ${mood} thread: what changed in how you moved through the day?`,
   ];
 };
 
-// Creates scrapbook caption ideas, preferring real photo captions when present.
+// Creates caption ideas, preferring current journal entries before older local
+// scrapbook photos so the visible studio mirrors the saved journal archive.
 export const buildCaptionIdeas = (context: CompanionTravelContext) => {
+  const journalCaptionIdeas = context.journalEntries.slice(0, 3).map((entry) => {
+    const anchor = snippet(entry.content, 64) || entry.title;
+
+    return `“${anchor}” — ${entry.title}`;
+  });
+
+  if (journalCaptionIdeas.length) {
+    return journalCaptionIdeas;
+  }
+
   const scrapbookPhotoMemories = context.memoryPool.filter((memory) => memory.source === 'scrapbook-photo').slice(0, 3);
 
   if (!scrapbookPhotoMemories.length) {
@@ -1215,6 +1266,17 @@ export const buildCaptionIdeas = (context: CompanionTravelContext) => {
 // Surfaces reflection cards from the newest memories, with an empty-state card
 // before the user has saved any memory content.
 export const buildTravelReflections = (context: CompanionTravelContext): TravelReflection[] => {
+  const journalReflections = context.journalEntries.slice(0, 3).map((entry) => ({
+    id: createCompanionId(),
+    title: entry.title,
+    reflection: `This saved journal entry is the strongest current signal for ${entry.countryName}. Use it to deepen the place, mood, and moment already in your archive.`,
+    anchor: snippet(entry.content, 84) || `${entry.countryName} · ${entry.mood}`,
+  }));
+
+  if (journalReflections.length) {
+    return journalReflections;
+  }
+
   const topMemories = context.memoryPool.slice(0, 3);
 
   if (!topMemories.length) {
@@ -1288,28 +1350,57 @@ export const buildSuggestedPrompts = (context: CompanionTravelContext): Suggeste
 };
 
 // Builds the compact insight cards displayed beside the chat experience.
-export const buildMemoryInsights = (context: CompanionTravelContext): MemoryInsight[] => [
-  {
-    id: 'personality',
-    title: context.personality.label,
-    detail: context.personality.description,
-    cta: context.personality.reasons[0],
-  },
-  {
-    id: 'organization',
-    title: 'Memory Organization',
-    detail: context.topTags.length
-      ? `Your strongest tags are ${context.topTags.slice(0, 3).join(', ')}. Group pages by tag + mood to keep retrieval fast.`
-      : 'Start by tagging each new entry with mood + place to unlock stronger clustering.',
-    cta: 'Try one tag set per trip day',
-  },
-  {
-    id: 'passport',
-    title: 'Passport Recommendation',
-    detail: getStampRecommendationsText(context.passportStamps),
-    cta: `${context.passportStamps.length} stamps currently mapped`,
-  },
-];
+export const buildMemoryInsights = (context: CompanionTravelContext): MemoryInsight[] => {
+  const latestEntry = context.journalEntries[0];
+
+  if (latestEntry) {
+    const tagSummary = latestEntry.tags.length ? latestEntry.tags.slice(0, 3).join(', ') : 'no tags yet';
+
+    return [
+      {
+        id: 'current-entry',
+        title: latestEntry.title,
+        detail: `Your newest saved journal entry is set in ${latestEntry.countryName} with a ${latestEntry.mood} mood. The companion should use this as the current memory anchor.`,
+        cta: `${context.journalEntries.length} journal entr${context.journalEntries.length === 1 ? 'y' : 'ies'} saved`,
+      },
+      {
+        id: 'journal-organization',
+        title: 'Journal Organization',
+        detail: `Current tags: ${tagSummary}. Add place + mood tags to this entry when you want sharper future reflections.`,
+        cta: 'Journal entries first',
+      },
+      {
+        id: 'passport',
+        title: 'Passport Recommendation',
+        detail: getStampRecommendationsText(context.passportStamps),
+        cta: `${context.passportStamps.length} stamps currently mapped`,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'personality',
+      title: context.personality.label,
+      detail: context.personality.description,
+      cta: context.personality.reasons[0],
+    },
+    {
+      id: 'organization',
+      title: 'Memory Organization',
+      detail: context.topTags.length
+        ? `Your strongest tags are ${context.topTags.slice(0, 3).join(', ')}. Group pages by tag + mood to keep retrieval fast.`
+        : 'Start by tagging each new entry with mood + place to unlock stronger clustering.',
+      cta: 'Try one tag set per trip day',
+    },
+    {
+      id: 'passport',
+      title: 'Passport Recommendation',
+      detail: getStampRecommendationsText(context.passportStamps),
+      cta: `${context.passportStamps.length} stamps currently mapped`,
+    },
+  ];
+};
 
 // Bundles all non-chat companion surfaces in one call for the page hook.
 export const buildCompanionInsights = (context: CompanionTravelContext): CompanionInsightBundle => ({
@@ -1477,7 +1568,20 @@ const formatGeneralReply = (context: CompanionTravelContext) => {
 
 // Initial assistant message after the archive context has loaded.
 export const buildWelcomeMessage = (context: CompanionTravelContext) => {
-  const countries = context.visitedCountryNames.slice(0, 3).join(', ') || 'your next destination';
+  const savedMemoryCount = context.journalEntries.length + context.scrapbookPages.length + context.importedTrips.length;
+
+  if (!savedMemoryCount) {
+    const countries = context.visitedCountryNames.slice(0, 3).join(', ');
+
+    return [
+      `I have synced with your travel archive: ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.importedTrips.length} imported trips.`,
+      countries
+        ? `I can see ${countries} on your map, but I do not have saved journal or scrapbook details for them yet.`
+        : 'Add a journal entry, scrapbook page, or imported trip and I will use it as memory context.',
+    ].join(' ');
+  }
+
+  const countries = context.visitedCountryNames.slice(0, 3).join(', ') || 'your saved trips';
 
   return `I have synced with your travel archive: ${context.journalEntries.length} journal entries, ${context.scrapbookPages.length} scrapbook pages, and ${context.importedTrips.length} imported trips. I am ready to help you turn ${countries} into richer stories.`;
 };
