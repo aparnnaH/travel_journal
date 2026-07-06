@@ -455,6 +455,22 @@ export async function saveJournalEntryShares(entryId: string, friendIds: string[
 // Copies one owned entry into the local demo "Shared With Me" library. This is
 // intentionally browser-local so demo mode never reads the owner's cloud data.
 export async function publishJournalEntryToDemoShared(entry: JournalEntry, comments: JournalComment[] = []) {
+  if (!isDemoMode()) {
+    const publishResponse = await fetch('/api/demo/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entryId: entry.id }),
+    });
+    const publishResult = (await publishResponse.json().catch(() => null)) as { success?: boolean; error?: string } | null;
+
+    if (!publishResponse.ok || !publishResult?.success) {
+      return {
+        success: false,
+        error: publishResult?.error || 'This account cannot publish entries to the demo.',
+      };
+    }
+  }
+
   const now = new Date().toISOString();
   const demoSharedEntry: JournalEntry = {
     ...entry,

@@ -69,12 +69,6 @@ type InsertedJournalPhoto = {
 };
 
 const ENTRY_BATCH_SIZE = 3;
-const DEMO_PUBLISHER_EMAILS = new Set(
-  (process.env.NEXT_PUBLIC_DEMO_PUBLISHER_EMAILS ?? '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-);
 const journalEntryDeepLinkStorageKey = 'travel-journal:country-explorer-entry';
 const searchScopeOptions: { value: JournalSearchScope; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -217,6 +211,7 @@ export default function JournalEntriesPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [demoCopyNotice, setDemoCopyNotice] = useState<{ title: string } | null>(null);
   const [demoCopySaving, setDemoCopySaving] = useState(false);
+  const [demoPublishAccess, setDemoPublishAccess] = useState<{ userId: string; canPublish: boolean } | null>(null);
   const openedDeepLinkEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const activeSearchQuery = deferredSearchQuery.trim();
@@ -225,8 +220,7 @@ export default function JournalEntriesPage() {
   const entryPageEnd = Math.min(entryPage * ENTRY_BATCH_SIZE + entries.length, entryCount);
   const sharedEntryPageStart = sharedEntryCount === 0 ? 0 : sharedEntryPage * ENTRY_BATCH_SIZE + 1;
   const sharedEntryPageEnd = Math.min(sharedEntryPage * ENTRY_BATCH_SIZE + sharedEntries.length, sharedEntryCount);
-  const canPublishEntriesToDemo = user ? DEMO_PUBLISHER_EMAILS.has(user.email.toLowerCase()) : false;
-
+  const canPublishEntriesToDemo = Boolean(user && demoPublishAccess?.userId === user.id && demoPublishAccess.canPublish);
   const editCountryOptions = useMemo(() => {
     const countryOptions = new Map(
       placeholderCountries.map((country) => [
@@ -303,6 +297,34 @@ export default function JournalEntriesPage() {
       isCurrent = false;
     };
   }, [activeSearchQuery, entryPage, router, searchScope, user, isLoading]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    let isCurrent = true;
+
+    const loadDemoPublishAccess = async () => {
+      const response = await fetch('/api/demo/publish');
+      const result = (await response.json().catch(() => null)) as { success?: boolean; canPublish?: boolean } | null;
+
+      if (!isCurrent) {
+        return;
+      }
+
+      setDemoPublishAccess({
+        userId: user.id,
+        canPublish: Boolean(response.ok && result?.success && result.canPublish),
+      });
+    };
+
+    void loadDemoPublishAccess();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!isLoading && !user) {
