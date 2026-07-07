@@ -9,9 +9,15 @@ import {
   ArrowRight,
   Clock3,
   Compass,
+  Globe2,
+  LockKeyhole,
   MailPlus,
+  MapPinned,
+  PlaneTakeoff,
   Send,
   ShieldCheck,
+  Sparkles,
+  Stamp,
   UserCheck,
   UserMinus,
   UserRoundPlus,
@@ -22,11 +28,21 @@ import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton from '@/components/loading/PageSkeletons';
+import StampRenderer from '@/components/stamps/StampRenderer';
 import { Button, Card, Input } from '@/components/ui';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import { DEMO_SHARE_RECIPIENT_ID } from '@/lib/demoMode';
-import { fetchFriends, removeFriendship, sendFriendRequest, updateFriendRequest } from '@/lib/friendService';
+import {
+  fetchFriendCountrySnapshots,
+  fetchFriends,
+  removeFriendship,
+  sendFriendRequest,
+  updateFriendRequest,
+} from '@/lib/friendService';
+import { findCountryStamp } from '@/lib/stamps/matching';
 import { useAuthStore } from '@/store/authStore';
-import type { FriendsResponse, Friendship } from '@/types/friends';
+import { useMapStore } from '@/store/mapStore';
+import type { FriendCountry, FriendCountrySnapshot, FriendsResponse, Friendship } from '@/types/friends';
 
 const emptyFriends: FriendsResponse = {
   friends: [],
@@ -34,6 +50,13 @@ const emptyFriends: FriendsResponse = {
   outgoing: [],
   blocked: [],
 };
+
+const atlasCountryLookup = new Map<string, string>();
+
+ATLAS_STAMP_COUNTRIES.forEach((country) => {
+  atlasCountryLookup.set(country.atlas_id.toLowerCase(), country.name);
+  country.aliases?.forEach((alias) => atlasCountryLookup.set(alias.toLowerCase(), country.name));
+});
 
 // Uses display name when available and falls back to email.
 const getFriendLabel = (friendship: Friendship) =>
@@ -70,17 +93,56 @@ const formatDate = (value: string) => {
   }).format(date);
 };
 
+const getCountryName = (countryId: string, countryLabels: Record<string, string>) => {
+  const explicitLabel = countryLabels[countryId]?.trim();
+  if (explicitLabel) return explicitLabel;
+
+  return atlasCountryLookup.get(countryId.toLowerCase()) ?? countryId;
+};
+
+const buildCountryList = (visitedCountries: string[], countryLabels: Record<string, string>) =>
+  [...new Set(visitedCountries)]
+    .map((countryId) => countryId.trim())
+    .filter(Boolean)
+    .map((countryId) => ({
+      id: countryId,
+      name: getCountryName(countryId, countryLabels),
+    }))
+    .sort((first, second) => first.name.localeCompare(second.name));
+
+const compareCountryLists = (yourCountries: FriendCountry[], friendCountries: FriendCountry[]) => {
+  const yourCountryMap = new Map(yourCountries.map((country) => [country.id, country]));
+  const friendCountryMap = new Map(friendCountries.map((country) => [country.id, country]));
+
+  const sharedCountries = yourCountries.filter((country) => friendCountryMap.has(country.id));
+  const onlyYouCountries = yourCountries.filter((country) => !friendCountryMap.has(country.id));
+  const onlyFriendCountries = friendCountries.filter((country) => !yourCountryMap.has(country.id));
+
+  return {
+    sharedCountries,
+    onlyYouCountries,
+    onlyFriendCountries,
+    nextTripIdeas: onlyFriendCountries.slice(0, 3),
+  };
+};
+
 // Protected page that loads grouped friendship data through the friends service.
 export default function FriendsPage() {
   const user = useAuthStore((state) => state.user);
   const isLoading = useAuthStore((state) => state.isLoading);
+  const visitedCountries = useMapStore((state) => state.visitedCountries);
+  const countryLabels = useMapStore((state) => state.countryLabels);
   const router = useRouter();
   const [friendsData, setFriendsData] = useState<FriendsResponse>(emptyFriends);
+  const [friendCountrySnapshots, setFriendCountrySnapshots] = useState<FriendCountrySnapshot[]>([]);
+  const [selectedCompareFriendId, setSelectedCompareFriendId] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
   const [pendingRemoval, setPendingRemoval] = useState<Friendship | null>(null);
 
   useEffect(() => {
@@ -96,14 +158,23 @@ export default function FriendsPage() {
 
     const loadFriends = async () => {
       setLoading(true);
-      const response = await fetchFriends();
+      setCompareLoading(true);
+      const [response, countryResponse] = await Promise.all([fetchFriends(), fetchFriendCountrySnapshots()]);
       setLoading(false);
+      setCompareLoading(false);
 
       if (response.success && response.data) {
         setFriendsData(response.data);
         setError(null);
       } else {
         setError(response.error || 'Unable to load friends.');
+      }
+
+      if (countryResponse.success && countryResponse.data) {
+        setFriendCountrySnapshots(countryResponse.data.friends);
+        setCompareError(null);
+      } else {
+        setCompareError(countryResponse.error || 'Unable to load country comparisons.');
       }
     };
 
@@ -138,16 +209,39 @@ export default function FriendsPage() {
     ],
     [friendsData.friends.length, friendsData.incoming.length, totalPending]
   );
+  const yourCompareCountries = useMemo(
+    () => buildCountryList(visitedCountries, countryLabels),
+    [countryLabels, visitedCountries]
+  );
+  const selectedCountrySnapshot = useMemo(
+    () =>
+      friendCountrySnapshots.find((snapshot) => snapshot.friend.id === selectedCompareFriendId) ??
+      friendCountrySnapshots[0] ??
+      null,
+    [friendCountrySnapshots, selectedCompareFriendId]
+  );
+  const countryComparison = useMemo(() => {
+    if (!selectedCountrySnapshot) return null;
+
+    return compareCountryLists(yourCompareCountries, selectedCountrySnapshot.visitedCountries);
+  }, [selectedCountrySnapshot, yourCompareCountries]);
 
   if (isLoading || !user) {
     return <AppPageSkeleton variant="friends" />;
   }
 
   const refreshFriends = async () => {
-    const response = await fetchFriends();
+    const [response, countryResponse] = await Promise.all([fetchFriends(), fetchFriendCountrySnapshots()]);
 
     if (response.success && response.data) {
       setFriendsData(response.data);
+    }
+
+    if (countryResponse.success && countryResponse.data) {
+      setFriendCountrySnapshots(countryResponse.data.friends);
+      setCompareError(null);
+    } else if (!countryResponse.success) {
+      setCompareError(countryResponse.error || 'Unable to load country comparisons.');
     }
   };
 
@@ -299,6 +393,16 @@ export default function FriendsPage() {
             })}
           </section>
 
+          <CountryCompareSection
+            compareError={compareError}
+            compareLoading={compareLoading}
+            countryComparison={countryComparison}
+            friendSnapshots={friendCountrySnapshots}
+            selectedFriendId={selectedCountrySnapshot?.friend.id ?? null}
+            onSelectFriend={setSelectedCompareFriendId}
+            yourCountryCount={yourCompareCountries.length}
+          />
+
           <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
             <Card className="bg-white/90">
               <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -424,6 +528,305 @@ export default function FriendsPage() {
         </div>
       </PageShell>
     </div>
+  );
+}
+
+function CountryCompareSection({
+  compareError,
+  compareLoading,
+  countryComparison,
+  friendSnapshots,
+  onSelectFriend,
+  selectedFriendId,
+  yourCountryCount,
+}: {
+  compareError: string | null;
+  compareLoading: boolean;
+  countryComparison: ReturnType<typeof compareCountryLists> | null;
+  friendSnapshots: FriendCountrySnapshot[];
+  onSelectFriend: (friendId: string) => void;
+  selectedFriendId: string | null;
+  yourCountryCount: number;
+}) {
+  const selectedSnapshot = friendSnapshots.find((snapshot) => snapshot.friend.id === selectedFriendId) ?? null;
+  const selectedFriendName = selectedSnapshot?.friend.displayName || selectedSnapshot?.friend.email || 'your friend';
+  const nextDestination = countryComparison?.nextTripIdeas[0] ?? null;
+
+  return (
+    <Card className="overflow-hidden border-gold/28 bg-[#FFF8EA] p-0 shadow-soft">
+      <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="relative overflow-hidden border-b border-gold/18 bg-[#20362B] p-6 text-cream xl:border-b-0 xl:border-r">
+          <div className="absolute right-[-46px] top-[-46px] h-32 w-32 rounded-full border border-cream/10" aria-hidden="true" />
+          <div className="absolute bottom-5 right-5 text-[6.5rem] font-serif font-semibold leading-none text-cream/[0.04]" aria-hidden="true">
+            TJ
+          </div>
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-lg bg-cream/12 text-cream">
+            <Globe2 className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <p className="relative mt-5 text-xs font-semibold uppercase tracking-[0.2em] text-cream/64">Friends compare</p>
+          <h2 className="relative mt-2 text-3xl font-serif font-semibold leading-tight">Shared discovery, country by country.</h2>
+          <p className="relative mt-4 text-sm leading-6 text-cream/74">
+            Compare country-level travel overlap with accepted friends. Journals, photos, cities, stamps, and timestamps stay private.
+          </p>
+          <div className="relative mt-5 flex items-center gap-2 rounded-lg border border-cream/14 bg-cream/8 px-3 py-2 text-xs font-semibold text-cream/78">
+            <LockKeyhole className="h-4 w-4" aria-hidden="true" />
+            Country names only
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          {compareError ? (
+            <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{compareError}</p>
+          ) : null}
+
+          {compareLoading ? (
+            <div className="grid gap-4 md:grid-cols-3">
+              {[0, 1, 2].map((item) => (
+                <div key={item} className="h-36 animate-pulse rounded-lg bg-cream" />
+              ))}
+            </div>
+          ) : friendSnapshots.length === 0 ? (
+            <EmptyState
+              icon={UsersRound}
+              title="No country comparisons yet"
+              description="Accepted friends with mapped countries will appear here."
+            />
+          ) : yourCountryCount === 0 ? (
+            <EmptyState
+              icon={MapPinned}
+              title="Mark your first country"
+              description="Your country list stays on your map until there is something to compare."
+            />
+          ) : (
+            <div className="space-y-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Passport spread</p>
+                  <h3 className="mt-1 text-2xl font-serif font-semibold text-ink">
+                    You and {selectedFriendName}
+                  </h3>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {friendSnapshots.map((snapshot) => {
+                    const label = snapshot.friend.displayName || snapshot.friend.email || 'Friend';
+                    const isSelected = snapshot.friend.id === selectedFriendId;
+
+                    return (
+                      <button
+                        key={snapshot.friend.id}
+                        type="button"
+                        onClick={() => onSelectFriend(snapshot.friend.id)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                          isSelected
+                            ? 'border-gold bg-gold text-ink'
+                            : 'border-gold/24 bg-cream/50 text-ink/72 hover:border-gold/50 hover:text-ink'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {selectedSnapshot && selectedSnapshot.visitedCountries.length === 0 ? (
+                <EmptyState
+                  icon={Globe2}
+                  title="No mapped countries for this friend"
+                  description="When they mark countries on their map, country-only overlap will appear here."
+                  compact
+                />
+              ) : countryComparison ? (
+                <div className="space-y-4">
+                  <div className="relative rounded-lg border border-gold/24 bg-[#EAD8B8] p-3 shadow-inner">
+                    <div className="absolute inset-y-4 left-1/2 hidden w-px -translate-x-1/2 bg-gold/28 lg:block" aria-hidden="true" />
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.82fr)_minmax(0,1fr)]">
+                      <CountryListPanel
+                        icon={Sparkles}
+                        title="Your discoveries"
+                        eyebrow="Places you can tell them about"
+                        count={countryComparison.onlyYouCountries.length}
+                        countries={countryComparison.onlyYouCountries}
+                        emptyCopy="No solo discoveries yet."
+                        variant="left"
+                      />
+                      <CountryListPanel
+                        icon={Stamp}
+                        title="Places you both know"
+                        eyebrow="Shared stamp area"
+                        count={countryComparison.sharedCountries.length}
+                        countries={countryComparison.sharedCountries}
+                        emptyCopy="No shared countries yet."
+                        variant="center"
+                      />
+                      <CountryListPanel
+                        icon={MapPinned}
+                        title="Their discoveries"
+                        eyebrow="Places they can tell you about"
+                        count={countryComparison.onlyFriendCountries.length}
+                        countries={countryComparison.onlyFriendCountries}
+                        emptyCopy="No friend-only discoveries yet."
+                        variant="right"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-gold/24 bg-white shadow-soft">
+                    <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_190px]">
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
+                          <PlaneTakeoff className="h-4 w-4" aria-hidden="true" />
+                          Next destination
+                        </div>
+                        <p className="mt-2 text-2xl font-serif font-semibold text-ink">
+                          {nextDestination ? nextDestination.name : 'Keep exploring together'}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-ink/62">
+                          {nextDestination
+                            ? `${selectedFriendName} has this on their country map, so it is a gentle place to ask about next.`
+                            : 'Your country lists already overlap here. Add more mapped countries to uncover fresh ideas.'}
+                        </p>
+                      </div>
+                      <div className="relative border-t border-dashed border-gold/34 bg-[#F8F1E4] p-4 md:border-l md:border-t-0">
+                        <div className="absolute bottom-3 right-3 h-12 w-12 rounded-full border border-dashed border-gold/42" aria-hidden="true" />
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/44">Boarding pass</p>
+                        <p className="mt-3 text-sm font-semibold text-ink">TRAVEL CIRCLE</p>
+                        <p className="mt-1 text-xs text-ink/56">Country-only compare</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function CountryListPanel({
+  count,
+  countries,
+  emptyCopy,
+  eyebrow,
+  icon: Icon,
+  title,
+  variant,
+}: {
+  count: number;
+  countries: FriendCountry[];
+  emptyCopy: string;
+  eyebrow: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  title: string;
+  variant: 'left' | 'center' | 'right';
+}) {
+  const isCenter = variant === 'center';
+
+  return (
+    <div
+      className={`relative min-h-[250px] overflow-hidden rounded-lg border p-4 ${
+        isCenter
+          ? 'border-gold/42 bg-[#FFFDF7] shadow-[0_12px_30px_rgba(61,43,14,0.14)]'
+          : 'border-gold/18 bg-[#FFF8EA] shadow-sm'
+      }`}
+    >
+      <div
+        className={`absolute inset-3 rounded-lg border ${
+          isCenter ? 'border-dashed border-gold/34' : 'border-gold/10'
+        }`}
+        aria-hidden="true"
+      />
+      <div className="absolute -bottom-10 -right-8 h-28 w-28 rounded-full border border-gold/12" aria-hidden="true" />
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">{eyebrow}</p>
+          <p className="mt-1 text-lg font-serif font-semibold text-ink">{title}</p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-ink/42">
+            {count} countr{count === 1 ? 'y' : 'ies'}
+          </p>
+        </div>
+        <span
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+            isCenter ? 'bg-gold text-ink' : 'bg-white text-gold-deep'
+          }`}
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </span>
+      </div>
+      {countries.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {countries.slice(0, 8).map((country) => (
+            <CountryPassportStamp key={country.id} country={country} featured={isCenter} />
+          ))}
+          {countries.length > 8 ? (
+            <span className="rounded-md border border-dashed border-gold/28 bg-white/80 px-3 py-2 text-xs font-semibold text-ink/58">
+              +{countries.length - 8} more
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <p className="mt-4 text-sm leading-6 text-ink/58">{emptyCopy}</p>
+      )}
+    </div>
+  );
+}
+
+function CountryPassportStamp({ country, featured = false }: { country: FriendCountry; featured?: boolean }) {
+  const stamp = findCountryStamp(country.id, country.name);
+
+  if (stamp) {
+    return (
+      <span
+        aria-label={`${country.name} passport stamp`}
+        title={country.name}
+        className={`block h-[142px] w-[112px] overflow-hidden rounded-lg ${
+          featured ? 'shadow-[0_12px_24px_rgba(61,43,14,0.18)]' : 'shadow-sm'
+        }`}
+      >
+        <span className="block origin-top-left scale-[0.59]">
+          <StampRenderer stamp={stamp} />
+        </span>
+      </span>
+    );
+  }
+
+  const countryCode =
+    country.name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0]?.toUpperCase())
+      .join('') || country.id.slice(0, 2).toUpperCase();
+
+  return (
+    <span
+      aria-label={`${country.name} passport stamp`}
+      title={country.name}
+      className={`relative inline-flex min-h-20 min-w-[96px] flex-col justify-between overflow-hidden rounded-md border px-3 py-2 text-left ${
+        featured
+          ? 'border-gold/48 bg-[#F8F1E4] text-ink shadow-[0_8px_18px_rgba(61,43,14,0.12)]'
+          : 'border-gold/30 bg-white/80 text-ink/76 shadow-sm'
+      }`}
+    >
+      <span className="absolute inset-1 rounded border border-dashed border-current/24" aria-hidden="true" />
+      <span className="absolute -right-5 -top-5 h-16 w-16 rounded-full border border-current/14" aria-hidden="true" />
+      <span className="relative flex items-center justify-between gap-3">
+        <span className="text-[0.58rem] font-bold uppercase tracking-[0.14em] text-current/56">Passport</span>
+        <span className="text-base leading-none" aria-hidden="true">TJ</span>
+      </span>
+      <span className="relative mt-2 flex items-end justify-between gap-3">
+        <span className="text-3xl font-serif font-semibold leading-none">{countryCode}</span>
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-current/40 text-[0.52rem] font-bold uppercase tracking-[0.08em]">
+          Visited
+        </span>
+      </span>
+      <span className="relative mt-2 flex items-center justify-between gap-3 border-t border-dashed border-current/20 pt-2 text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-current/58">
+        <span className="truncate">Travel archive</span>
+        <span className="shrink-0">TJ</span>
+      </span>
+    </span>
   );
 }
 

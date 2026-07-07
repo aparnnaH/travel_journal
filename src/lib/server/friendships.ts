@@ -3,9 +3,17 @@
 // grouped summary building so route files stay small.
 import { NextRequest, NextResponse } from 'next/server';
 import type { SupabaseClient, User } from '@supabase/supabase-js';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
-import type { FriendsResponse, Friendship, FriendshipStatus, FriendProfile } from '@/types/friends';
+import type {
+  FriendCountry,
+  FriendCountrySnapshot,
+  FriendsResponse,
+  Friendship,
+  FriendshipStatus,
+  FriendProfile,
+} from '@/types/friends';
 
 type FriendshipRow = {
   id: string;
@@ -24,10 +32,48 @@ type ProfileRow = {
   avatar_url?: string | null;
 };
 
+type FriendCountryMapRow = {
+  user_id: string;
+  visited_countries?: string[] | null;
+  country_labels?: Record<string, string> | null;
+};
+
 export type FriendRouteContext = {
   supabaseAdmin: SupabaseClient;
   user: User;
 };
+
+const atlasCountryLookup = new Map<string, string>();
+
+ATLAS_STAMP_COUNTRIES.forEach((country) => {
+  atlasCountryLookup.set(country.atlas_id.toLowerCase(), country.name);
+  country.aliases?.forEach((alias) => atlasCountryLookup.set(alias.toLowerCase(), country.name));
+});
+
+function getCountryDisplayName(countryId: string, labels?: Record<string, string> | null) {
+  const explicitLabel = labels?.[countryId]?.trim();
+  if (explicitLabel) return explicitLabel;
+
+  return atlasCountryLookup.get(countryId.toLowerCase()) ?? countryId;
+}
+
+function toFriendCountries(row?: FriendCountryMapRow): FriendCountry[] {
+  const visitedCountries = row?.visited_countries ?? [];
+  const uniqueCountryIds = [
+    ...new Set(
+      visitedCountries
+        .map((countryId) => (typeof countryId === 'string' ? countryId.trim() : ''))
+        .filter(Boolean)
+    ),
+  ];
+
+  return uniqueCountryIds
+    .map((countryId) => ({
+      id: countryId,
+      name: getCountryDisplayName(countryId, row?.country_labels),
+    }))
+    .sort((first, second) => first.name.localeCompare(second.name));
+}
 
 // Standard JSON error shape for friend-related routes.
 export function jsonError(error: string, status = 400) {
@@ -148,6 +194,38 @@ export async function loadFriendshipSummary(supabaseAdmin: SupabaseClient, curre
     outgoing: friendships.filter((friendship) => friendship.status === 'pending' && friendship.direction === 'outgoing'),
     blocked: friendships.filter((friendship) => friendship.status === 'blocked'),
   };
+}
+
+// Loads only country-level map progress for accepted friends. It intentionally
+// excludes city pins, colors, journals, stamps, timestamps, and scratch totals.
+export async function loadFriendCountrySnapshots(
+  supabaseAdmin: SupabaseClient,
+  currentUserId: string
+): Promise<FriendCountrySnapshot[]> {
+  const summary = await loadFriendshipSummary(supabaseAdmin, currentUserId);
+  const acceptedFriends = summary.friends.filter((friendship) => Boolean(friendship.profile.id));
+  const friendIds = acceptedFriends.map((friendship) => friendship.profile.id);
+
+  if (friendIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('map_states')
+    .select('user_id,visited_countries,country_labels')
+    .in('user_id', friendIds);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const mapRows = new Map((data ?? []).map((row) => [String(row.user_id), row as FriendCountryMapRow]));
+
+  return acceptedFriends.map((friendship) => ({
+    friendshipId: friendship.id,
+    friend: friendship.profile,
+    visitedCountries: toFriendCountries(mapRows.get(friendship.profile.id)),
+  }));
 }
 
 // Finds a profile by email when sending a friend request.

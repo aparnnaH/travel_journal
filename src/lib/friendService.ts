@@ -2,6 +2,7 @@
 // Pages use this service to avoid duplicating response parsing and error
 // handling around the friends route handlers.
 import type { FriendRequestAction, FriendsResponse, Friendship } from '@/types/friends';
+import type { FriendCountrySnapshotsResponse } from '@/types/friends';
 import {
   DEMO_SHARE_RECIPIENT_ID,
   DEMO_USER_ID,
@@ -35,6 +36,34 @@ async function parseApiResponse<T>(response: Response): Promise<ApiResult<T>> {
 
 function cloneDemoFriends() {
   return JSON.parse(JSON.stringify(readDemoFriends())) as FriendsResponse;
+}
+
+function getDemoFriendCountrySnapshots(): FriendCountrySnapshotsResponse {
+  const friends = readDemoFriends().friends;
+  const countrySnapshots: Record<string, FriendCountrySnapshotsResponse['friends'][number]['visitedCountries']> = {
+    [DEMO_SHARE_RECIPIENT_ID]: [
+      { id: 'CA', name: 'Canada' },
+      { id: 'JP', name: 'Japan' },
+      { id: 'KR', name: 'South Korea' },
+      { id: 'PT', name: 'Portugal' },
+      { id: 'US', name: 'United States' },
+    ],
+    'demo-friend-sofia-rivera': [
+      { id: 'ES', name: 'Spain' },
+      { id: 'FR', name: 'France' },
+      { id: 'MX', name: 'Mexico' },
+      { id: 'PT', name: 'Portugal' },
+      { id: 'US', name: 'United States' },
+    ],
+  };
+
+  return {
+    friends: friends.map((friendship) => ({
+      friendshipId: friendship.id,
+      friend: friendship.profile,
+      visitedCountries: countrySnapshots[friendship.profile.id] ?? [],
+    })),
+  };
 }
 
 function findDemoFriendship(friends: FriendsResponse, friendshipId: string) {
@@ -76,6 +105,17 @@ export async function fetchFriends() {
 
   const response = await fetch('/api/friends');
   return parseApiResponse<FriendsResponse>(response);
+}
+
+// Loads country-only snapshots for accepted friends. The route deliberately
+// does not return journals, photos, city pins, stamps, colors, or timestamps.
+export async function fetchFriendCountrySnapshots() {
+  if (isDemoMode()) {
+    return { success: true, data: getDemoFriendCountrySnapshots() };
+  }
+
+  const response = await fetch('/api/friends/countries');
+  return parseApiResponse<FriendCountrySnapshotsResponse>(response);
 }
 
 // Sends a friend request by email. The server prevents self-requests and
