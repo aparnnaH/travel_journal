@@ -126,6 +126,156 @@ const compareCountryLists = (yourCountries: FriendCountry[], friendCountries: Fr
   };
 };
 
+type RegionOverlap = {
+  region: string;
+  sharedCount: number;
+  yourCount: number;
+  friendCount: number;
+};
+
+type NextTripMatch = {
+  country: FriendCountry;
+  label: string;
+  detail: string;
+};
+
+type TravelTwinBadge = {
+  label: string;
+  detail: string;
+};
+
+const formatCountryList = (countries: FriendCountry[]) => {
+  if (countries.length === 0) return '';
+  if (countries.length === 1) return countries[0].name;
+  if (countries.length === 2) return `${countries[0].name} and ${countries[1].name}`;
+
+  return `${countries[0].name}, ${countries[1].name}, and ${countries[2].name}`;
+};
+
+const getCountryRegion = (country: FriendCountry) => findCountryStamp(country.id, country.name)?.region || 'Travel archive';
+
+const countRegions = (countries: FriendCountry[]) =>
+  countries.reduce((regions, country) => {
+    const region = getCountryRegion(country);
+    regions.set(region, (regions.get(region) ?? 0) + 1);
+    return regions;
+  }, new Map<string, number>());
+
+const buildRegionOverlap = (
+  yourCountries: FriendCountry[],
+  friendCountries: FriendCountry[],
+  sharedCountries: FriendCountry[]
+): RegionOverlap[] => {
+  const yourRegions = countRegions(yourCountries);
+  const friendRegions = countRegions(friendCountries);
+  const sharedRegions = countRegions(sharedCountries);
+  const allRegionNames = [...new Set([...yourRegions.keys(), ...friendRegions.keys(), ...sharedRegions.keys()])];
+
+  return allRegionNames
+    .map((region) => ({
+      region,
+      sharedCount: sharedRegions.get(region) ?? 0,
+      yourCount: yourRegions.get(region) ?? 0,
+      friendCount: friendRegions.get(region) ?? 0,
+    }))
+    .filter((region) => region.sharedCount > 0 || (region.yourCount > 0 && region.friendCount > 0))
+    .sort((first, second) => second.sharedCount - first.sharedCount || second.yourCount + second.friendCount - (first.yourCount + first.friendCount))
+    .slice(0, 4);
+};
+
+const buildTravelTwinBadge = (
+  comparison: ReturnType<typeof compareCountryLists>,
+  regionOverlap: RegionOverlap[]
+): TravelTwinBadge => {
+  if (comparison.sharedCountries.length >= 3) {
+    return {
+      label: 'Shared Stamp Spark',
+      detail: 'You already have several countries in common.',
+    };
+  }
+
+  if (comparison.sharedCountries.length > 0 || regionOverlap.some((region) => region.sharedCount > 0)) {
+    return {
+      label: 'Neighboring Routes',
+      detail: 'Your maps cross paths in familiar places.',
+    };
+  }
+
+  if (comparison.onlyFriendCountries.length > 0 && comparison.onlyYouCountries.length > 0) {
+    return {
+      label: 'Story Swap Pair',
+      detail: 'You each have stamps the other can ask about.',
+    };
+  }
+
+  return {
+    label: 'Future Trip Energy',
+    detail: 'Your maps are ready for new shared stamps.',
+  };
+};
+
+const buildTravelCircleHighlights = (
+  comparison: ReturnType<typeof compareCountryLists>,
+  selectedFriendName: string
+) => {
+  const highlights: string[] = [];
+  const sharedRegion = buildRegionOverlap(
+    [...comparison.sharedCountries, ...comparison.onlyYouCountries],
+    [...comparison.sharedCountries, ...comparison.onlyFriendCountries],
+    comparison.sharedCountries
+  )[0];
+
+  if (comparison.sharedCountries.length > 0) {
+    highlights.push(
+      `You both have ${formatCountryList(comparison.sharedCountries.slice(0, 3))} in your passport spread.`
+    );
+  } else if (sharedRegion) {
+    highlights.push(`Your maps both touch ${sharedRegion.region}, even without a shared country yet.`);
+  } else {
+    highlights.push('Your maps are mostly different right now, which gives you more stories to trade.');
+  }
+
+  if (comparison.onlyFriendCountries.length > 0) {
+    highlights.push(`Ask ${selectedFriendName} about ${formatCountryList(comparison.onlyFriendCountries.slice(0, 3))}.`);
+  }
+
+  if (comparison.onlyYouCountries.length > 0) {
+    highlights.push(`You can recommend ${formatCountryList(comparison.onlyYouCountries.slice(0, 3))}.`);
+  }
+
+  return highlights.slice(0, 3);
+};
+
+const buildNextTripMatches = (comparison: ReturnType<typeof compareCountryLists>): NextTripMatch[] => {
+  const matches: NextTripMatch[] = comparison.onlyFriendCountries.slice(0, 3).map((country) => ({
+    country,
+    label: 'Ask them about',
+    detail: 'They have this stamp and you have not mapped it yet.',
+  }));
+
+  if (matches.length < 3) {
+    comparison.sharedCountries.slice(0, 3 - matches.length).forEach((country) => {
+      matches.push({
+        country,
+        label: 'Revisit together',
+        detail: 'You both already know this country.',
+      });
+    });
+  }
+
+  if (matches.length < 3) {
+    comparison.onlyYouCountries.slice(0, 3 - matches.length).forEach((country) => {
+      matches.push({
+        country,
+        label: 'You can recommend',
+        detail: 'You have this stamp and they have not mapped it yet.',
+      });
+    });
+  }
+
+  return matches;
+};
+
 // Protected page that loads grouped friendship data through the friends service.
 export default function FriendsPage() {
   const user = useAuthStore((state) => state.user);
@@ -551,6 +701,16 @@ function CountryCompareSection({
   const selectedSnapshot = friendSnapshots.find((snapshot) => snapshot.friend.id === selectedFriendId) ?? null;
   const selectedFriendName = selectedSnapshot?.friend.displayName || selectedSnapshot?.friend.email || 'your friend';
   const nextDestination = countryComparison?.nextTripIdeas[0] ?? null;
+  const regionOverlap = countryComparison
+    ? buildRegionOverlap(
+        [...countryComparison.sharedCountries, ...countryComparison.onlyYouCountries],
+        [...countryComparison.sharedCountries, ...countryComparison.onlyFriendCountries],
+        countryComparison.sharedCountries
+      )
+    : [];
+  const travelCircleHighlights = countryComparison ? buildTravelCircleHighlights(countryComparison, selectedFriendName) : [];
+  const nextTripMatches = countryComparison ? buildNextTripMatches(countryComparison) : [];
+  const travelTwinBadge = countryComparison ? buildTravelTwinBadge(countryComparison, regionOverlap) : null;
 
   return (
     <Card className="overflow-hidden border-gold/28 bg-[#FFF8EA] p-0 shadow-soft">
@@ -605,6 +765,17 @@ function CountryCompareSection({
                   <h3 className="mt-1 text-2xl font-serif font-semibold text-ink">
                     You and {selectedFriendName}
                   </h3>
+                  {travelTwinBadge ? (
+                    <div className="mt-3 inline-flex max-w-full items-start gap-3 rounded-lg border border-gold/24 bg-[#F8F1E4] px-3 py-2 text-left shadow-sm">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold text-ink">
+                        <Sparkles className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-ink">{travelTwinBadge.label}</span>
+                        <span className="mt-0.5 block text-xs leading-5 text-ink/62">{travelTwinBadge.detail}</span>
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {friendSnapshots.map((snapshot) => {
@@ -669,6 +840,87 @@ function CountryCompareSection({
                         variant="right"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Region overlap</p>
+                          <p className="mt-1 text-lg font-serif font-semibold text-ink">Shared map zones</p>
+                        </div>
+                        <Globe2 className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      </div>
+                      {regionOverlap.length > 0 ? (
+                        <div className="mt-4 space-y-3">
+                          {regionOverlap.map((region) => (
+                            <div key={region.region} className="rounded-lg border border-gold/12 bg-cream/40 px-3 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="min-w-0 truncate text-sm font-semibold text-ink">{region.region}</p>
+                                <p className="shrink-0 text-xs font-semibold uppercase tracking-[0.12em] text-ink/46">
+                                  {region.sharedCount > 0 ? `${region.sharedCount} shared` : 'same region'}
+                                </p>
+                              </div>
+                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                                <div
+                                  className="h-full rounded-full bg-gold"
+                                  style={{
+                                    width: `${Math.max(
+                                      18,
+                                      Math.min(100, (region.sharedCount / Math.max(region.yourCount, region.friendCount, 1)) * 100)
+                                    )}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-sm leading-6 text-ink/62">
+                          Add more country stamps to reveal region overlap.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="rounded-lg border border-gold/20 bg-[#FFFDF7] p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Travel Circle highlights</p>
+                          <p className="mt-1 text-lg font-serif font-semibold text-ink">What your maps suggest</p>
+                        </div>
+                        <Compass className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        {travelCircleHighlights.map((highlight) => (
+                          <p key={highlight} className="rounded-lg border border-gold/12 bg-cream/40 px-3 py-2 text-sm leading-6 text-ink/72">
+                            {highlight}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">3 next trip matches</p>
+                        <p className="mt-1 text-lg font-serif font-semibold text-ink">Country-only ideas to trade stories around</p>
+                      </div>
+                      <PlaneTakeoff className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    </div>
+                    {nextTripMatches.length > 0 ? (
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {nextTripMatches.map((match) => (
+                          <div key={`${match.label}-${match.country.id}`} className="rounded-lg border border-dashed border-gold/24 bg-[#F8F1E4] p-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">{match.label}</p>
+                            <p className="mt-2 truncate text-lg font-serif font-semibold text-ink">{match.country.name}</p>
+                            <p className="mt-1 text-sm leading-5 text-ink/62">{match.detail}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-6 text-ink/62">Add more mapped countries to unlock trip matches.</p>
+                    )}
                   </div>
 
                   <div className="overflow-hidden rounded-lg border border-gold/24 bg-white shadow-soft">

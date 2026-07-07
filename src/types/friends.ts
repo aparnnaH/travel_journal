@@ -28,4 +28,19 @@ export type FriendsResponse = {
   blocked: Friendship[];
 };
 
+export type FriendCountry = {
+  id: string;
+  name: string;
+};
+
+export type FriendCountrySnapshot = {
+  friendshipId: string;
+  friend: FriendProfile;
+  visitedCountries: FriendCountry[];
+};
+
+export type FriendCountrySnapshotsResponse = {
+  friends: FriendCountrySnapshot[];
+};
+
 export type FriendRequestAction = 'accept' | 'block';
