@@ -5,7 +5,7 @@
 
 import { AlertTriangle, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { isDemoUserId } from '@/lib/demoMode';
+import { isDemoUserId, writeDemoMapState } from '@/lib/demoMode';
 import { fetchCloudMapState, saveCloudMapState } from '@/lib/mapStateService';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -68,6 +68,16 @@ export default function MapCloudSync() {
   const isApplyingRemoteRef = useRef(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [syncIssue, setSyncIssue] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isAuthLoading || !user || !isDemoUserId(user.id)) return;
+
+    writeDemoMapState(selectPersistedMapState(useMapStore.getState()));
+
+    return useMapStore.subscribe((state) => {
+      writeDemoMapState(selectPersistedMapState(state));
+    });
+  }, [isAuthLoading, user]);
 
   useEffect(() => {
     if (isAuthLoading || !user || isDemoUserId(user.id)) return;

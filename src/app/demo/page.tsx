@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { Compass } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { demoMapState, demoUser, enableDemoMode, seedDemoLocalContext } from '@/lib/demoMode';
+import { demoUser, enableDemoMode, readDemoMapState, seedDemoLocalContext } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 
@@ -20,7 +20,7 @@ export default function DemoPage() {
     seedDemoLocalContext({ reset: true });
     setLoading(false);
     setUser(demoUser);
-    replaceMapState(demoMapState);
+    replaceMapState(readDemoMapState());
     router.replace('/dashboard');
   }, [replaceMapState, router, setLoading, setUser]);
 

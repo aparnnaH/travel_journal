@@ -8,10 +8,10 @@ import PageShell from '@/components/layout/PageShell';
 import { Button, Card } from '@/components/ui';
 import {
   demoJournalEntries,
-  demoMapState,
   demoUser,
   DEMO_SHARE_RECIPIENT_NAME,
   enableDemoMode,
+  readDemoMapState,
   seedDemoLocalContext,
 } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
@@ -30,7 +30,7 @@ export default function DemoFriendRequestPage() {
     seedDemoLocalContext({ reset: true });
     setLoading(false);
     setUser(demoUser);
-    replaceMapState(demoMapState);
+    replaceMapState(readDemoMapState());
   }, [replaceMapState, setLoading, setUser]);
 
   const sharedEntryCount = demoJournalEntries.length;

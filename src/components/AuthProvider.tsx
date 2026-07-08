@@ -8,7 +8,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { getSupabaseClient, syncAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
-import { demoMapState, demoUser, enableDemoMode, isDemoMode, isLocalDemoHost, seedDemoLocalContext } from '@/lib/demoMode';
+import { demoUser, enableDemoMode, isDemoMode, isLocalDemoHost, readDemoMapState, seedDemoLocalContext } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 import type { AuthUser } from '@/types';
@@ -98,7 +98,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
       enableDemoMode();
       seedDemoLocalContext();
       setUser(demoUser);
-      replaceMapState(demoMapState);
+      replaceMapState(readDemoMapState());
       setLoading(false);
     };
 

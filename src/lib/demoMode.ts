@@ -11,6 +11,7 @@ export const DEMO_JOURNAL_SHARE_STORAGE_KEY = 'travel-journal:demo-journal-share
 export const DEMO_JOURNAL_COMMENT_STORAGE_KEY = 'travel-journal:demo-journal-comments';
 export const DEMO_SHARED_JOURNAL_STORAGE_KEY = 'travel-journal:demo-shared-journal-entries';
 export const DEMO_FRIENDS_STORAGE_KEY = 'travel-journal:demo-friends';
+export const DEMO_MAP_STORAGE_KEY = 'travel-journal:demo-map-state';
 const DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY = 'travel-journal:country-explorer-entry';
 export const DEMO_USER_ID = 'demo-local-user';
 export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
@@ -309,6 +310,10 @@ export function seedDemoLocalContext(options?: { reset?: boolean }) {
 
   const shouldReset = options?.reset === true;
 
+  if (shouldReset || !window.sessionStorage.getItem(DEMO_MAP_STORAGE_KEY)) {
+    writeDemoMapState(demoMapState);
+  }
+
   if (shouldReset || !window.sessionStorage.getItem(DEMO_JOURNAL_STORAGE_KEY)) {
     writeDemoJournalEntries(demoJournalEntries);
   }
@@ -366,7 +371,49 @@ export function disableDemoMode() {
   window.sessionStorage.removeItem(DEMO_JOURNAL_SHARE_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_FRIENDS_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_MAP_STORAGE_KEY);
   document.cookie = `${DEMO_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
+}
+
+export function readDemoMapState() {
+  if (typeof window === 'undefined') return demoMapState;
+
+  const storedMapState = window.sessionStorage.getItem(DEMO_MAP_STORAGE_KEY);
+  if (!storedMapState) return demoMapState;
+
+  try {
+    const parsedMapState = JSON.parse(storedMapState) as ScratchMapState;
+
+    return {
+      scratchPercentage:
+        typeof parsedMapState.scratchPercentage === 'number'
+          ? parsedMapState.scratchPercentage
+          : demoMapState.scratchPercentage,
+      visitedCountries: Array.isArray(parsedMapState.visitedCountries)
+        ? parsedMapState.visitedCountries
+        : demoMapState.visitedCountries,
+      countryColors:
+        parsedMapState.countryColors && typeof parsedMapState.countryColors === 'object'
+          ? parsedMapState.countryColors
+          : demoMapState.countryColors,
+      countryLabels:
+        parsedMapState.countryLabels && typeof parsedMapState.countryLabels === 'object'
+          ? parsedMapState.countryLabels
+          : demoMapState.countryLabels,
+      countryCities:
+        parsedMapState.countryCities && typeof parsedMapState.countryCities === 'object'
+          ? parsedMapState.countryCities
+          : demoMapState.countryCities,
+      lastUpdated: typeof parsedMapState.lastUpdated === 'string' ? parsedMapState.lastUpdated : demoMapState.lastUpdated,
+    };
+  } catch {
+    return demoMapState;
+  }
+}
+
+export function writeDemoMapState(mapState: ScratchMapState) {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.setItem(DEMO_MAP_STORAGE_KEY, JSON.stringify(mapState));
 }
 
 export function readDemoFriends() {
