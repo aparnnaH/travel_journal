@@ -73,8 +73,8 @@ export const createCountryArtworkAsset = (
 export const createPlaceholderArtworkAsset = (stampId: string, countryName: string): StampAsset =>
   createStampAsset({
     id: `${stampId}-placeholder-artwork`,
-    src: `${STAMP_PUBLIC_ROOT}/countries/_placeholder.svg`,
-    format: 'svg',
+    src: `${STAMP_PUBLIC_ROOT}/countries/placeholder.png`,
+    format: 'png',
     role: 'artwork',
     alt: `${countryName} placeholder passport stamp artwork`,
     width: 1024,

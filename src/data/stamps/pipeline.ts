@@ -8,7 +8,7 @@ import type { StampAssetFormat } from '@/types/stamps';
 export const STAMP_ASSET_PIPELINE = {
   root: '/stamps',
   countryArtworkPattern: '/stamps/countries/{stampId}.png',
-  placeholderArtwork: '/stamps/countries/_placeholder.svg',
+  placeholderArtwork: '/stamps/countries/placeholder.png',
   acceptedFormats: ['svg', 'png'] satisfies StampAssetFormat[],
   transparentCanvas: true,
   recommendedSize: {
