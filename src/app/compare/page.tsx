@@ -1,31 +1,189 @@
 // Travel Audit page.
-// Compares countries marked on the map with passport stamp metadata to show
-// coverage, missing matches, and still-locked stamp goals.
+// Compares countries marked on the map with passport stamp metadata and
+// country-only friend overlap.
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
-  BadgeCheck,
+  BarChart3,
   BookOpen,
   Compass,
+  LockKeyhole,
   MapPinned,
-  Plane,
-  Search,
   Stamp,
   TicketCheck,
+  UsersRound,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import { Button, Card } from '@/components/ui';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
+import { fetchFriendCountrySnapshots } from '@/lib/friendService';
+import { fetchJournalEntries } from '@/lib/journalService';
+import { findCountryStamp } from '@/lib/stamps/matching';
 import { comparePassportStampsToMap } from '@/lib/stamps/passportMapComparison';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
+import type { JournalEntry } from '@/types';
+import type { FriendCountry, FriendCountrySnapshot } from '@/types/friends';
 import type { CountryStamp } from '@/types/stamps';
 
-const previewLimit = 8;
+const atlasCountryLookup = new Map<string, string>();
+
+ATLAS_STAMP_COUNTRIES.forEach((country) => {
+  atlasCountryLookup.set(country.atlas_id.toLowerCase(), country.name);
+  country.aliases?.forEach((alias) => atlasCountryLookup.set(alias.toLowerCase(), country.name));
+});
+
+const getCountryName = (countryId: string, countryLabels: Record<string, string>) => {
+  const explicitLabel = countryLabels[countryId]?.trim();
+  if (explicitLabel) return explicitLabel;
+
+  return atlasCountryLookup.get(countryId.toLowerCase()) ?? countryId;
+};
+
+const buildCountryList = (visitedCountries: string[], countryLabels: Record<string, string>) =>
+  [...new Set(visitedCountries)]
+    .map((countryId) => countryId.trim())
+    .filter(Boolean)
+    .map((countryId) => ({
+      id: countryId,
+      name: getCountryName(countryId, countryLabels),
+    }))
+    .sort((first, second) => first.name.localeCompare(second.name));
+
+const compareCountryLists = (yourCountries: FriendCountry[], friendCountries: FriendCountry[]) => {
+  const yourCountryMap = new Map(yourCountries.map((country) => [country.id, country]));
+  const friendCountryMap = new Map(friendCountries.map((country) => [country.id, country]));
+
+  return {
+    sharedCountries: yourCountries.filter((country) => friendCountryMap.has(country.id)),
+    onlyYouCountries: yourCountries.filter((country) => !friendCountryMap.has(country.id)),
+    onlyFriendCountries: friendCountries.filter((country) => !yourCountryMap.has(country.id)),
+  };
+};
+
+type RegionBreakdownItem = {
+  region: string;
+  unlocked: number;
+  total: number;
+  percent: number;
+};
+
+type JournalGap = {
+  countryId: string;
+  countryName: string;
+  stamp: CountryStamp;
+};
+
+type JournalEntryWithCountryColumn = JournalEntry & {
+  country_id?: string | null;
+};
+
+const getJournalEntryCountryId = (entry: JournalEntryWithCountryColumn) => entry.countryId || entry.country_id || '';
+
+const buildRegionBreakdown = (comparison: ReturnType<typeof comparePassportStampsToMap>) => {
+  const regions = new Map<string, { total: number; unlocked: number }>();
+
+  [...comparison.matched.map((match) => match.stamp), ...comparison.stampsNotOnMap].forEach((stamp) => {
+    const currentRegion = regions.get(stamp.region) ?? { total: 0, unlocked: 0 };
+    regions.set(stamp.region, {
+      ...currentRegion,
+      total: currentRegion.total + 1,
+      unlocked: currentRegion.unlocked + (comparison.unlockedStampIds.includes(stamp.id) ? 1 : 0),
+    });
+  });
+
+  const regionBreakdown = Array.from(regions.entries()).map<RegionBreakdownItem>(([region, counts]) => ({
+    region,
+    unlocked: counts.unlocked,
+    total: counts.total,
+    percent: counts.total === 0 ? 0 : Math.round((counts.unlocked / counts.total) * 100),
+  }));
+
+  const strongest = [...regionBreakdown]
+    .filter((region) => region.unlocked > 0)
+    .sort((first, second) => second.unlocked - first.unlocked || second.percent - first.percent)
+    .slice(0, 4);
+  const strongestRegionNames = new Set(strongest.map((region) => region.region));
+
+  return {
+    strongest,
+    weakest: [...regionBreakdown]
+      .filter((region) => !strongestRegionNames.has(region.region))
+      .sort((first, second) => first.unlocked - second.unlocked || first.percent - second.percent)
+      .slice(0, 4),
+  };
+};
+
+const buildTravelMomentum = (comparison: ReturnType<typeof comparePassportStampsToMap>) => {
+  const unlockedCount = comparison.unlockedStampIds.length;
+  const stampTotal = unlockedCount + comparison.stampsNotOnMap.length;
+  const nextMilestone = comparison.passportCompletionPercent >= 100
+    ? 100
+    : Math.min(100, Math.ceil((comparison.passportCompletionPercent + 1) / 10) * 10);
+  const stampsNeededForMilestone =
+    comparison.passportCompletionPercent >= 100
+      ? 0
+      : Math.max(1, Math.ceil((stampTotal * nextMilestone) / 100) - unlockedCount);
+
+  return {
+    recentMatches: comparison.matched.slice(-3).reverse(),
+    nextMilestone,
+    stampsNeededForMilestone,
+  };
+};
+
+const buildJournalGaps = (
+  comparison: ReturnType<typeof comparePassportStampsToMap>,
+  journalEntries: JournalEntryWithCountryColumn[],
+  countryLabels: Record<string, string>
+): JournalGap[] => {
+  const journalStampIds = new Set<string>();
+
+  journalEntries.forEach((entry) => {
+    const countryId = getJournalEntryCountryId(entry).trim();
+    if (!countryId) return;
+
+    const stamp = findCountryStamp(countryId, countryLabels[countryId] || countryId);
+    if (stamp) {
+      journalStampIds.add(stamp.id);
+    }
+  });
+
+  return comparison.matched
+    .filter((match) => !journalStampIds.has(match.stamp.id))
+    .map((match) => ({
+      countryId: match.countryId,
+      countryName: match.countryName,
+      stamp: match.stamp,
+    }))
+    .slice(0, 4);
+};
+
+const countStampedCountriesWithStories = (
+  comparison: ReturnType<typeof comparePassportStampsToMap>,
+  journalEntries: JournalEntryWithCountryColumn[],
+  countryLabels: Record<string, string>
+) => {
+  const matchedStampIds = new Set(comparison.matched.map((match) => match.stamp.id));
+  const journalStampIds = new Set<string>();
+
+  journalEntries.forEach((entry) => {
+    const countryId = getJournalEntryCountryId(entry).trim();
+    if (!countryId) return;
+
+    const stamp = findCountryStamp(countryId, countryLabels[countryId] || countryId);
+    if (stamp && matchedStampIds.has(stamp.id)) {
+      journalStampIds.add(stamp.id);
+    }
+  });
+
+  return journalStampIds.size;
+};
 
 // Protected page that derives all audit data from existing map and stamp systems.
 export default function ComparePage() {
@@ -35,6 +193,13 @@ export default function ComparePage() {
   const countryLabels = useMapStore((state) => state.countryLabels);
   const countryCities = useMapStore((state) => state.countryCities);
   const router = useRouter();
+  const [friendSnapshots, setFriendSnapshots] = useState<FriendCountrySnapshot[]>([]);
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [isFriendCompareLoading, setIsFriendCompareLoading] = useState(false);
+  const [friendCompareError, setFriendCompareError] = useState<string | null>(null);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+  const [isJournalGapsLoading, setIsJournalGapsLoading] = useState(false);
+  const [journalGapsError, setJournalGapsError] = useState<string | null>(null);
 
   useEffect(() => {
     // Client-side guard mirrors the pattern used by other authenticated pages.
@@ -42,6 +207,69 @@ export default function ComparePage() {
       router.replace('/login');
     }
   }, [router, user, isLoading]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+
+    const loadFriendCountries = async () => {
+      setIsFriendCompareLoading(true);
+      const response = await fetchFriendCountrySnapshots();
+
+      if (!isMounted) return;
+
+      setIsFriendCompareLoading(false);
+
+      if (response.success && response.data) {
+        setFriendSnapshots(response.data.friends);
+        setSelectedFriendId((currentFriendId) =>
+          currentFriendId && response.data?.friends.some((snapshot) => snapshot.friend.id === currentFriendId)
+            ? currentFriendId
+            : response.data?.friends[0]?.friend.id ?? null
+        );
+        setFriendCompareError(null);
+      } else {
+        setFriendSnapshots([]);
+        setFriendCompareError(response.error || 'Unable to load Travel Circle comparisons.');
+      }
+    };
+
+    void loadFriendCountries();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+
+    const loadJournalSummaries = async () => {
+      setIsJournalGapsLoading(true);
+      const response = await fetchJournalEntries({ limit: 200, summary: true });
+
+      if (!isMounted) return;
+
+      setIsJournalGapsLoading(false);
+
+      if (response.success) {
+        setJournalEntries(response.data ?? []);
+        setJournalGapsError(null);
+      } else {
+        setJournalEntries([]);
+        setJournalGapsError(response.error || 'Unable to load journal coverage.');
+      }
+    };
+
+    void loadJournalSummaries();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   // The comparison helper centralizes country/stamp matching so this page stays
   // presentational.
@@ -56,14 +284,41 @@ export default function ComparePage() {
     () => Object.values(countryCities ?? {}).reduce((total, cities) => total + cities.length, 0),
     [countryCities]
   );
+  const yourCompareCountries = useMemo(
+    () => buildCountryList(visitedCountries, countryLabels),
+    [countryLabels, visitedCountries]
+  );
+  const selectedFriendSnapshot = useMemo(
+    () =>
+      friendSnapshots.find((snapshot) => snapshot.friend.id === selectedFriendId) ??
+      friendSnapshots[0] ??
+      null,
+    [friendSnapshots, selectedFriendId]
+  );
+  const friendComparison = useMemo(() => {
+    if (!selectedFriendSnapshot) return null;
 
+    return compareCountryLists(yourCompareCountries, selectedFriendSnapshot.visitedCountries);
+  }, [selectedFriendSnapshot, yourCompareCountries]);
+  const regionBreakdown = useMemo(() => buildRegionBreakdown(comparison), [comparison]);
+  const travelMomentum = useMemo(() => buildTravelMomentum(comparison), [comparison]);
+  const journalGaps = useMemo(
+    () => buildJournalGaps(comparison, journalEntries, countryLabels),
+    [comparison, countryLabels, journalEntries]
+  );
+  const stampedCountriesWithStories = useMemo(
+    () => countStampedCountriesWithStories(comparison, journalEntries, countryLabels),
+    [comparison, countryLabels, journalEntries]
+  );
+  const strongestRegion = regionBreakdown.strongest[0]?.region ?? null;
+  const mapCoveragePercent = Math.round((comparison.mapCountryCount / ATLAS_STAMP_COUNTRIES.length) * 100);
+  const journalCoveragePercent =
+    comparison.matched.length === 0 ? 0 : Math.round((stampedCountriesWithStories / comparison.matched.length) * 100);
   if (isLoading || !user) {
     return <AppPageSkeleton variant="compare" />;
   }
 
-  const matchedPreview = comparison.matched.slice(0, previewLimit);
-  const missingPreview = comparison.missingStamps.slice(0, previewLimit);
-  const lockedPreview = comparison.stampsNotOnMap.slice(0, 10);
+  const lockedPreview = comparison.stampsNotOnMap.slice(0, 5);
 
   return (
     <div className="min-h-screen bg-cream">
@@ -94,7 +349,7 @@ export default function ComparePage() {
                     Map and passport audit
                   </div>
                   <h2 className="mt-5 max-w-3xl text-4xl font-serif font-semibold leading-tight text-ink sm:text-5xl">
-                    {comparison.stampCoveragePercent}% of your mapped countries have passport stamps.
+                    Your map is turning into a stamped travel archive.
                   </h2>
                   <p className="mt-4 max-w-2xl text-lg leading-7 text-ink/72">
                     You have {comparison.mapCountryCount} countr{comparison.mapCountryCount === 1 ? 'y' : 'ies'} on the map,{' '}
@@ -102,6 +357,26 @@ export default function ComparePage() {
                     {comparison.unlockedStampIds.length === 1 ? '' : 's'}, and {cityPinCount} saved city pin
                     {cityPinCount === 1 ? '' : 's'}.
                   </p>
+                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                    <AuditSnapshotTile
+                      label="Map coverage"
+                      value={`${comparison.mapCountryCount}/${ATLAS_STAMP_COUNTRIES.length}`}
+                      detail={
+                        strongestRegion
+                          ? `${strongestRegion} is your strongest region.`
+                          : `${mapCoveragePercent}% of stamp countries mapped.`
+                      }
+                    />
+                    <AuditSnapshotTile
+                      label="Journal coverage"
+                      value={`${stampedCountriesWithStories}/${comparison.matched.length}`}
+                      detail={
+                        comparison.matched.length > 0
+                          ? `${journalCoveragePercent}% of stamped countries have stories.`
+                          : 'Scratch a country to start journal coverage.'
+                      }
+                    />
+                  </div>
                 </div>
                 <div className="border-t border-gold/20 bg-[#21382B] p-6 text-cream lg:border-l lg:border-t-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cream/64">Passport completion</p>
@@ -138,113 +413,101 @@ export default function ComparePage() {
                   description="Turn the matched stamp into a journal entry."
                   onClick={() => router.push('/journal')}
                 />
+                <ActionRow
+                  icon={TicketCheck}
+                  title="Open full archive"
+                  description="Review your entries, shared stories, and comments."
+                  onClick={() => router.push('/journal/entries')}
+                />
               </div>
             </Card>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-3">
-            <MetricCard
-              icon={BadgeCheck}
-              label="Matched"
-              value={comparison.matched.length}
-              detail="Map countries with stamps"
-              tone="bg-[#E8F1EA] text-[#315F43]"
-            />
-            <MetricCard
-              icon={Search}
-              label="Needs review"
-              value={comparison.missingStamps.length}
-              detail="Mapped countries without matches"
-              tone="bg-[#F3E6D8] text-[#71481F]"
-            />
-            <MetricCard
-              icon={Plane}
-              label="Not on map"
-              value={comparison.stampsNotOnMap.length}
-              detail="Passport stamps still locked"
-              tone="bg-[#EAF0F6] text-[#27516F]"
-            />
+          <section className="grid gap-6 lg:grid-cols-2">
+            <RegionBreakdownCard breakdown={regionBreakdown} />
+            <TravelMomentumCard momentum={travelMomentum} onOpenMap={() => router.push('/map')} />
           </section>
 
           <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
             <Card className="bg-white/90">
               <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Matched ledger</p>
-                  <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Map visits with stamps</h2>
+                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Journal next ideas</p>
+                  <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Stamped, not written</h2>
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => router.push('/passport')} className="gap-2 self-start sm:self-auto">
                   Passport
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </div>
-              {matchedPreview.length > 0 ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {matchedPreview.map((match) => (
-                    <button
-                      key={`${match.countryId}-${match.stamp.id}`}
-                      type="button"
-                      onClick={() => router.push(`/passport?stamp=${encodeURIComponent(match.stamp.id)}`)}
-                      className="group rounded-lg border border-gold/16 bg-cream/36 p-4 text-left transition hover:border-gold/45 hover:bg-cream"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-ink">{match.countryName}</p>
-                          <p className="mt-1 truncate text-sm text-ink/62">{match.stamp.visual.edition_name}</p>
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_240px]">
+                {journalGapsError ? (
+                  <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{journalGapsError}</p>
+                ) : isJournalGapsLoading ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {[0, 1, 2, 3].map((item) => (
+                      <div key={item} className="h-28 animate-pulse rounded-lg bg-cream/60" />
+                    ))}
+                  </div>
+                ) : journalGaps.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {journalGaps.map((gap) => (
+                      <div key={`${gap.countryId}-${gap.stamp.id}`} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-ink">{gap.countryName}</p>
+                            <p className="mt-1 text-sm leading-5 text-ink/62">
+                              {gap.countryName} has a stamp but no story yet.
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-ink/55">
+                            {gap.stamp.region}
+                          </span>
                         </div>
-                        <span className="rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-ink/55">
-                          {match.stamp.region}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-gold-deep">
-                        {match.stamp.rarity} stamp
-                      </p>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  title="No stamp matches yet"
-                  description="Scratch a country on the map to begin unlocking passport matches."
-                />
-              )}
-            </Card>
-
-            <div className="space-y-6">
-              <Card className="bg-[#F8F1E4]">
-                <div className="mb-4">
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Map gaps</p>
-                  <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Needs stamp match</h2>
-                </div>
-                {missingPreview.length > 0 ? (
-                  <div className="space-y-2">
-                    {missingPreview.map((gap) => (
-                      <div key={gap.countryId} className="rounded-lg border border-gold/16 bg-white/70 px-3 py-3">
-                        <p className="font-semibold text-ink">{gap.countryName}</p>
-                        <p className="text-sm text-ink/58">Mapped as {gap.countryId}</p>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => router.push('/journal')} className="mt-3 gap-2">
+                          <BookOpen className="h-4 w-4" aria-hidden="true" />
+                          Write story
+                        </Button>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <EmptyState title="No map gaps" description="Every mapped country currently resolves to a stamp." compact />
+                  <EmptyState
+                    title="No journal gaps"
+                    description="Every mapped stamp currently has a journal story attached."
+                  />
                 )}
-              </Card>
 
-              <Card className="bg-white/90">
-                <div className="mb-4">
-                  <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Still locked</p>
-                  <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Stamp goals</h2>
+                <div className="rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">Still locked</p>
+                    <h3 className="mt-1 text-lg font-serif font-semibold text-ink">Stamp goals</h3>
+                  </div>
+                  <div className="space-y-1.5">
+                    {lockedPreview.map((stamp) => (
+                      <StampGoalRow
+                        key={stamp.id}
+                        stamp={stamp}
+                        onClick={() => router.push(`/passport?stamp=${encodeURIComponent(stamp.id)}`)}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {lockedPreview.map((stamp) => (
-                    <StampGoalRow
-                      key={stamp.id}
-                      stamp={stamp}
-                      onClick={() => router.push(`/passport?stamp=${encodeURIComponent(stamp.id)}`)}
-                    />
-                  ))}
-                </div>
-              </Card>
+              </div>
+            </Card>
+
+            <div className="space-y-6">
+              <TravelCircleCompareCard
+                comparison={friendComparison}
+                error={friendCompareError}
+                friendSnapshots={friendSnapshots}
+                isLoading={isFriendCompareLoading}
+                onOpenFriends={() => router.push('/friends')}
+                onSelectFriend={setSelectedFriendId}
+                selectedFriendId={selectedFriendSnapshot?.friend.id ?? null}
+                yourCountryCount={yourCompareCountries.length}
+              />
+
             </div>
           </section>
         </div>
@@ -253,28 +516,238 @@ export default function ComparePage() {
   );
 }
 
-// Small metric card used for audit summary stats.
-function MetricCard({
-  detail,
-  icon: Icon,
-  label,
-  tone,
-  value,
+function TravelCircleCompareCard({
+  comparison,
+  error,
+  friendSnapshots,
+  isLoading,
+  onOpenFriends,
+  onSelectFriend,
+  selectedFriendId,
+  yourCountryCount,
 }: {
-  detail: string;
-  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
-  label: string;
-  tone: string;
-  value: number;
+  comparison: ReturnType<typeof compareCountryLists> | null;
+  error: string | null;
+  friendSnapshots: FriendCountrySnapshot[];
+  isLoading: boolean;
+  onOpenFriends: () => void;
+  onSelectFriend: (friendId: string) => void;
+  selectedFriendId: string | null;
+  yourCountryCount: number;
 }) {
+  const selectedSnapshot = friendSnapshots.find((snapshot) => snapshot.friend.id === selectedFriendId) ?? null;
+  const selectedFriendName = selectedSnapshot?.friend.displayName || selectedSnapshot?.friend.email || 'your friend';
+  const firstFriendOnlyCountry = comparison?.onlyFriendCountries[0];
+
   return (
-    <div className="rounded-3xl border border-gold/20 bg-white p-5 shadow-soft">
-      <span className={`flex h-11 w-11 items-center justify-center rounded-lg ${tone}`}>
-        <Icon className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <p className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-ink/52">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-ink">{value}</p>
-      <p className="mt-1 text-sm text-ink/62">{detail}</p>
+    <Card className="bg-[#F8F1E4]">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Travel Circle</p>
+          <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Compare with friends</h2>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-gold-deep">
+          <UsersRound className="h-5 w-5" aria-hidden="true" />
+        </span>
+      </div>
+
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-gold/18 bg-white/70 px-3 py-2 text-xs font-semibold leading-5 text-ink/64">
+        <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0 text-gold-deep" aria-hidden="true" />
+        Country-level only. Journals, photos, cities, and timestamps stay private.
+      </div>
+
+      {error ? (
+        <p className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">{error}</p>
+      ) : null}
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="h-16 animate-pulse rounded-lg bg-white/70" />
+          ))}
+        </div>
+      ) : friendSnapshots.length === 0 ? (
+        <EmptyState
+          title="No friends to compare yet"
+          description="Add accepted friends to see country overlap on Travel Audit."
+          compact
+        />
+      ) : yourCountryCount === 0 ? (
+        <EmptyState title="Mark your first country" description="Your map needs a country before friend overlap can appear." compact />
+      ) : comparison ? (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            {friendSnapshots.map((snapshot) => {
+              const label = snapshot.friend.displayName || snapshot.friend.email || 'Friend';
+              const isSelected = snapshot.friend.id === selectedFriendId;
+
+              return (
+                <button
+                  key={snapshot.friend.id}
+                  type="button"
+                  onClick={() => onSelectFriend(snapshot.friend.id)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    isSelected
+                      ? 'border-gold bg-gold text-ink'
+                      : 'border-gold/24 bg-white/70 text-ink/72 hover:border-gold/50 hover:text-ink'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <FriendCompareStat label="Shared" value={comparison.sharedCountries.length} />
+            <FriendCompareStat label="You can share" value={comparison.onlyYouCountries.length} />
+            <FriendCompareStat label="Ask about" value={comparison.onlyFriendCountries.length} />
+          </div>
+
+          <div className="rounded-lg border border-gold/16 bg-white/70 px-3 py-3">
+            <p className="text-sm font-semibold text-ink">
+              {comparison.sharedCountries.length > 0
+                ? `You and ${selectedFriendName} both know ${comparison.sharedCountries[0].name}.`
+                : firstFriendOnlyCountry
+                  ? `Ask ${selectedFriendName} about ${firstFriendOnlyCountry.name}.`
+                  : `You can recommend ${comparison.onlyYouCountries[0]?.name ?? 'a mapped country'} to ${selectedFriendName}.`}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-ink/62">
+              This replaces stamp gap checking now that every mapped country resolves to a passport stamp.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      <Button type="button" variant="ghost" size="sm" onClick={onOpenFriends} className="mt-4 gap-2">
+        Manage friends
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </Card>
+  );
+}
+
+function RegionBreakdownCard({ breakdown }: { breakdown: ReturnType<typeof buildRegionBreakdown> }) {
+  return (
+    <Card className="bg-white/90">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Region breakdown</p>
+          <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Strongest stamp regions</h2>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8F1EA] text-[#315F43]">
+          <BarChart3 className="h-5 w-5" aria-hidden="true" />
+        </span>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/46">Strongest</p>
+          {breakdown.strongest.length > 0 ? (
+            breakdown.strongest.map((region) => <RegionBreakdownRow key={region.region} region={region} />)
+          ) : (
+            <p className="rounded-lg border border-dashed border-gold/24 bg-cream/35 px-3 py-3 text-sm text-ink/62">
+              Add a mapped country to start region totals.
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/46">Needs more visits</p>
+          {breakdown.weakest.map((region) => (
+            <RegionBreakdownRow key={region.region} region={region} />
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function RegionBreakdownRow({ region }: { region: RegionBreakdownItem }) {
+  return (
+    <div className="rounded-lg border border-gold/16 bg-cream/36 px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-sm font-semibold text-ink">{region.region}</p>
+        <p className="shrink-0 text-xs font-semibold text-ink/56">
+          {region.unlocked}/{region.total}
+        </p>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+        <div className="h-full rounded-full bg-gold" style={{ width: `${Math.max(8, region.percent)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function TravelMomentumCard({
+  momentum,
+  onOpenMap,
+}: {
+  momentum: ReturnType<typeof buildTravelMomentum>;
+  onOpenMap: () => void;
+}) {
+  const milestoneCopy =
+    momentum.stampsNeededForMilestone === 0
+      ? 'Passport completion is fully unlocked from your map.'
+      : `${momentum.stampsNeededForMilestone} more mapped stamp${momentum.stampsNeededForMilestone === 1 ? '' : 's'} to reach ${momentum.nextMilestone}% passport completion.`;
+
+  return (
+    <Card className="bg-[#FFF8EA]">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-gold-deep">Travel momentum</p>
+          <h2 className="mt-1 text-2xl font-serif font-semibold text-ink">Recent map progress</h2>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#EAF0F6] text-[#27516F]">
+          <MapPinned className="h-5 w-5" aria-hidden="true" />
+        </span>
+      </div>
+
+      <div className="rounded-lg border border-gold/18 bg-white/70 px-4 py-3">
+        <p className="text-sm font-semibold text-ink">{milestoneCopy}</p>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ink/46">Newest stamped countries</p>
+        {momentum.recentMatches.length > 0 ? (
+          momentum.recentMatches.map((match) => (
+            <button
+              key={`${match.countryId}-${match.stamp.id}`}
+              type="button"
+              onClick={onOpenMap}
+              className="group flex w-full items-center justify-between gap-3 rounded-lg border border-gold/16 bg-white/70 px-3 py-2 text-left transition hover:border-gold/45 hover:bg-white"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold text-ink">{match.countryName}</span>
+              </span>
+              <ArrowRight className="h-4 w-4 shrink-0 text-ink/45 transition group-hover:translate-x-1 group-hover:text-ink" aria-hidden="true" />
+            </button>
+          ))
+        ) : (
+          <p className="rounded-lg border border-dashed border-gold/24 bg-white/60 px-3 py-3 text-sm text-ink/62">
+            Scratch a country on the map to start momentum.
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function FriendCompareStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-gold/16 bg-white/72 px-3 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/46">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function AuditSnapshotTile({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-gold/18 bg-white/72 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">{label}</p>
+      <p className="mt-2 text-2xl font-serif font-semibold text-ink">{value}</p>
+      <p className="mt-1 text-sm leading-5 text-ink/62">{detail}</p>
     </div>
   );
 }
@@ -315,11 +788,11 @@ function StampGoalRow({ onClick, stamp }: { onClick: () => void; stamp: CountryS
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-gold/16 bg-cream/36 px-3 py-3 text-left transition hover:border-gold/45 hover:bg-cream"
+      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-gold/16 bg-cream/36 px-3 py-2 text-left transition hover:border-gold/45 hover:bg-cream"
     >
       <span className="min-w-0">
-        <span className="block truncate font-semibold text-ink">{stamp.country_name}</span>
-        <span className="mt-0.5 block truncate text-sm text-ink/58">{stamp.region}</span>
+        <span className="block truncate text-sm font-semibold text-ink">{stamp.country_name}</span>
+        <span className="block truncate text-xs text-ink/58">{stamp.region}</span>
       </span>
       <TicketCheck className="h-4 w-4 shrink-0 text-gold-deep transition group-hover:scale-110" aria-hidden="true" />
     </button>

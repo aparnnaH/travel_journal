@@ -3,7 +3,6 @@
 // components, companion services, and AI API routes.
 import type { JournalEntry } from '@/types';
 import type { ScrapbookPageData } from '@/lib/canvas/scrapbook';
-import type { CountryStamp } from '@/types/stamps';
 
 export type CompanionChatRole = 'assistant' | 'user';
 
@@ -78,7 +77,6 @@ export type CompanionPassportStamp = {
   stampId: string;
   countryName: string;
   region: string;
-  rarity: CountryStamp['rarity'];
   collected: boolean;
 };
 
@@ -176,6 +174,5 @@ export type CompanionArchiveSnapshot = {
   passportStamps: Array<{
     countryName: string;
     region: string;
-    rarity: CountryStamp['rarity'];
   }>;
 };

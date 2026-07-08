@@ -53,17 +53,6 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
     };
   }, [unlockedStamps]);
 
-  // Highlights rare collected stamps separately from the full grid.
-  const rareCollected = useMemo(
-    () =>
-      COUNTRY_STAMPS.filter(
-        (stamp) =>
-          unlockedStamps.includes(stamp.id) &&
-          ['rare', 'epic', 'legendary'].includes(stamp.rarity),
-      ).length,
-    [unlockedStamps],
-  );
-
   // Region filters come from the stamp catalog so adding stamp metadata updates
   // the filter list automatically.
   const availableRegions = useMemo(() => {
@@ -94,7 +83,7 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
           <div className={styles.archiveMeta} aria-label="Passport collection summary">
             <span>Edition 2026</span>
             <span>{stats.total_stamps} country seals</span>
-            <span>{rareCollected} premium marks</span>
+            <span>{stats.regions_visited.length} regions started</span>
           </div>
         </div>
 
@@ -150,8 +139,8 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
             <strong className={styles.statValue}>{stats.regions_visited.length}</strong>
           </div>
           <div className={styles.statBox}>
-            <span className={styles.statLabel}>Rare+</span>
-            <strong className={styles.statValue}>{rareCollected}</strong>
+            <span className={styles.statLabel}>Seals</span>
+            <strong className={styles.statValue}>{stats.total_stamps}</strong>
           </div>
         </div>
       </motion.section>

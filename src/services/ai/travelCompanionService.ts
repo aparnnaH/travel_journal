@@ -732,7 +732,6 @@ const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record
         stampId: stamp.id,
         countryName: stamp.country_name,
         region: stamp.region,
-        rarity: stamp.rarity,
         collected: true,
       };
     }
@@ -741,7 +740,6 @@ const buildPassportStamps = (visitedCountryIds: string[], countryLabels?: Record
       stampId: normalizedStampId || normalizeCountryToStampId(countryId),
       countryName,
       region: 'Unmapped',
-      rarity: 'common',
       collected: true,
     };
   });
@@ -966,22 +964,13 @@ const getStampRecommendationsText = (passportStamps: CompanionPassportStamp[]) =
   );
   const target = regionMatch ?? candidate;
 
-  return `Next collectible target: ${target.country_name} (${target.region}, ${target.rarity}).`;
+  return `Next collectible target: ${target.country_name} (${target.region}).`;
 };
 
 type DestinationRecommendation = {
   countryName: string;
   region: string;
-  rarity: string;
   reason: string;
-};
-
-const rarityWeight: Record<string, number> = {
-  common: 1,
-  uncommon: 2,
-  rare: 3,
-  epic: 4,
-  legendary: 5,
 };
 
 // Builds all known visited stamp identifiers so recommendations do not point at
@@ -996,13 +985,12 @@ const getVisitedStampIds = (context: CompanionTravelContext) => {
   return collected;
 };
 
-// Adds stamp region/rarity metadata to country-name recommendations.
+// Adds stamp region metadata to country-name recommendations.
 const getCountryRecommendationMeta = (countryName: string) => {
   const stamp = stampById.get(normalizeCountryToStampId(countryName));
 
   return {
     region: stamp?.region ?? 'Global',
-    rarity: stamp?.rarity ?? 'standard',
   };
 };
 
@@ -1029,7 +1017,7 @@ const getPersonalitySuggestionPool = (personalityLabel: string, isUnvisited: (co
   return pool.filter(isUnvisited);
 };
 
-// Combines nearby, personality, region, stamp-rarity, and catalog fallbacks into
+// Combines nearby, personality, region, and catalog fallbacks into
 // up to three next-destination recommendations.
 const buildNextDestinationRecommendations = (context: CompanionTravelContext): DestinationRecommendation[] => {
   const visitedStampIds = getVisitedStampIds(context);
@@ -1087,23 +1075,14 @@ const buildNextDestinationRecommendations = (context: CompanionTravelContext): D
     picked.push({
       countryName,
       region: meta.region,
-      rarity: meta.rarity,
       reason,
     });
   };
 
-  // Prefer rarer collectible stamps when multiple recommendation candidates are
-  // otherwise equally valid.
+  // Keep catalog fallback deterministic without ranking countries by stamp tier.
   const pickCandidate = (candidates: typeof COUNTRY_STAMPS) =>
     [...candidates]
-      .sort((first, second) => {
-        const rarityDelta = (rarityWeight[second.rarity] ?? 0) - (rarityWeight[first.rarity] ?? 0);
-        if (rarityDelta !== 0) {
-          return rarityDelta;
-        }
-
-        return first.country_name.localeCompare(second.country_name);
-      })
+      .sort((first, second) => first.country_name.localeCompare(second.country_name))
       .find((candidate) => !usedCountries.has(canonicalCountryKey(candidate.country_name)));
 
   const nearbySuggestions = getNearbySuggestionsFromRecentCountry(recentCountryName, isUnvisited);
@@ -1475,7 +1454,7 @@ const formatNextDestinationReply = (context: CompanionTravelContext) => {
   }
 
   const recommendationLines = recommendations
-    .map((item, index) => `${index + 1}. ${item.countryName} (${item.region}, ${item.rarity}) — ${item.reason}`)
+    .map((item, index) => `${index + 1}. ${item.countryName} (${item.region}) — ${item.reason}`)
     .join('\n');
 
   const anchor = context.visitedCountryNames.length
@@ -1493,7 +1472,7 @@ const formatNextDestinationReply = (context: CompanionTravelContext) => {
 const formatPassportReply = (context: CompanionTravelContext) => {
   const topStamps = context.passportStamps.slice(0, 4);
   const stampList = topStamps.length
-    ? topStamps.map((stamp) => `- ${stamp.countryName} (${stamp.region}, ${stamp.rarity})`).join('\n')
+    ? topStamps.map((stamp) => `- ${stamp.countryName} (${stamp.region})`).join('\n')
     : '- No collected stamps yet';
 
   return [

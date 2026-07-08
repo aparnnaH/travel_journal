@@ -427,7 +427,7 @@ export default function TravelCompanionPage() {
                       {passportSnapshot.length ? (
                         passportSnapshot.map((stamp) => (
                           <p key={`${stamp.stampId}-${stamp.countryName}`} className="rounded-md border border-gold/14 bg-cream/42 px-3 py-2 text-sm text-ink/76">
-                            {stamp.countryName} · {stamp.region} · {stamp.rarity}
+                            {stamp.countryName} · {stamp.region}
                           </p>
                         ))
                       ) : (

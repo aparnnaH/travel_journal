@@ -70,7 +70,6 @@ const buildArchiveSnapshot = (context: CompanionTravelContext): CompanionArchive
     passportStamps: context.passportStamps.slice(0, 30).map((stamp) => ({
       countryName: stamp.countryName,
       region: stamp.region,
-      rarity: stamp.rarity,
     })),
   };
 };

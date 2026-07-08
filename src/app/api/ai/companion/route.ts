@@ -101,7 +101,7 @@ const buildArchivePrompt = (archive: CompanionArchiveSnapshot) =>
       )
       .join('\n') || '- none'}`,
     `Passport stamps:\n${archive.passportStamps
-      .map((stamp) => `- ${stamp.countryName} (${stamp.region}, ${stamp.rarity})`)
+      .map((stamp) => `- ${stamp.countryName} (${stamp.region})`)
       .join('\n') || '- none'}`,
   ].join('\n\n');
 
