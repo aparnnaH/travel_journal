@@ -593,6 +593,12 @@ function TravelCircleCompareCard({
             <FriendCompareStat label="Friend-only" value={comparison.onlyFriendCountries.length} />
           </div>
 
+          <FriendCompareDonut
+            friendOnlyCount={comparison.onlyFriendCountries.length}
+            sharedCount={comparison.sharedCountries.length}
+            youOnlyCount={comparison.onlyYouCountries.length}
+          />
+
           <div className="rounded-lg border border-gold/16 bg-white/70 px-3 py-3">
             <p className="text-sm font-semibold text-ink">
               {firstFriendOnlyCountry
@@ -699,12 +705,7 @@ function TravelMomentumCard({
       </div>
 
       <div className="rounded-lg border border-gold/18 bg-white/70 px-4 py-3">
-        <div className="flex items-start justify-between gap-3">
-          <p className="text-sm font-semibold leading-5 text-ink">{milestoneCopy}</p>
-          <span className="shrink-0 rounded-full border border-gold/18 bg-[#FFF8EA] px-2 py-1 text-xs font-semibold text-gold-deep">
-            {momentum.currentCompletion}%
-          </span>
-        </div>
+        <p className="text-sm font-semibold leading-5 text-ink">{milestoneCopy}</p>
         <div className="mt-3 h-3 overflow-hidden rounded-full bg-cream">
           <div className="h-full rounded-full bg-[#315F43]" style={{ width: `${milestoneProgress}%` }} />
         </div>
@@ -745,6 +746,84 @@ function FriendCompareStat({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-gold/16 bg-white/72 px-3 py-3">
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/46">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function FriendCompareDonut({
+  friendOnlyCount,
+  sharedCount,
+  youOnlyCount,
+}: {
+  friendOnlyCount: number;
+  sharedCount: number;
+  youOnlyCount: number;
+}) {
+  const segments = [
+    { label: 'Shared', value: sharedCount, color: '#315F43' },
+    { label: 'You can share', value: youOnlyCount, color: '#C9A96A' },
+    { label: 'Friend-only', value: friendOnlyCount, color: '#7FA6C5' },
+  ];
+  const total = Math.max(1, segments.reduce((sum, segment) => sum + segment.value, 0));
+  let runningPercent = 0;
+  const donutStops = segments
+    .map((segment) => {
+      const start = runningPercent;
+      const end = runningPercent + (segment.value / total) * 100;
+      runningPercent = end;
+      return `${segment.color} ${start}% ${end}%`;
+    })
+    .join(', ');
+
+  return (
+    <div className="rounded-lg border border-gold/16 bg-white/70 p-3">
+      <div className="grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
+        <div
+          aria-label={`Friend comparison donut: ${sharedCount} shared, ${youOnlyCount} you can share, ${friendOnlyCount} friend-only.`}
+          className="grid h-28 w-28 place-items-center rounded-full"
+          style={{ background: `conic-gradient(${donutStops})` }}
+          title={`${sharedCount} shared, ${youOnlyCount} you can share, ${friendOnlyCount} friend-only`}
+        >
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-[#F8F1E4] text-center">
+            <div>
+              <span className="block text-lg font-semibold leading-none text-ink">{sharedCount + youOnlyCount + friendOnlyCount}</span>
+              <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/48">total</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/46">Country split</p>
+          <p className="mt-1 text-sm font-semibold text-ink">How your maps overlap</p>
+          <FriendCompareLegend segments={segments} total={total} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FriendCompareLegend({
+  segments,
+  total,
+}: {
+  segments: Array<{ label: string; value: number; color: string }>;
+  total: number;
+}) {
+  return (
+    <div className="mt-3 space-y-2">
+      {segments.map((segment) => (
+        <div
+          key={segment.label}
+          className="grid grid-cols-[minmax(0,1fr)_2.5rem_3rem] items-center gap-2 rounded-md bg-white/52 px-2 py-1.5 text-xs text-ink/62"
+          title={`${segment.label}: ${segment.value}`}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: segment.color }} aria-hidden="true" />
+            <span className="truncate font-semibold">{segment.label}</span>
+          </span>
+          <span className="text-right font-semibold tabular-nums text-ink/72">{segment.value}</span>
+          <span className="text-right font-semibold tabular-nums text-ink/54">{Math.round((segment.value / total) * 100)}%</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -807,26 +886,18 @@ function StampGoalRow({ onClick, stamp }: { onClick: () => void; stamp: CountryS
 }
 
 function JournalGapCard({ gap, onWriteStory }: { gap: JournalGap; onWriteStory: () => void }) {
-  const copyVariants = [
-    `${gap.countryName} has the stamp. Add the memory that belongs with it.`,
-    `Turn this ${gap.stamp.region} stamp into a place note while it is fresh.`,
-    `Give ${gap.countryName} a short story, favorite meal, or arrival detail.`,
-    `This stamp is collected; the journal page is still open.`,
-    `Capture one scene from ${gap.countryName} to complete the archive.`,
-    `Add the people, route, or small moment behind this stamp.`,
-  ];
-  const copyIndex =
-    gap.countryName.split('').reduce((total, character) => total + character.charCodeAt(0), 0) % copyVariants.length;
-
   return (
     <div className="flex min-h-40 flex-col rounded-lg border border-gold/16 bg-cream/36 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-lg font-serif font-semibold text-ink">{gap.countryName}</p>
-          <p className="mt-1 text-sm leading-5 text-ink/62">{copyVariants[copyIndex]}</p>
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md bg-white/58 px-2 py-1.5 text-xs">
+            <span className="truncate font-semibold uppercase tracking-[0.12em] text-ink/44">Missing story</span>
+            <span className="shrink-0 font-semibold text-ink/62">{gap.stamp.region}</span>
+          </div>
         </div>
-        <span className="shrink-0 rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-ink/55">
-          {gap.stamp.region}
+        <span className="shrink-0 rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-gold-deep">
+          Stamp ready
         </span>
       </div>
 

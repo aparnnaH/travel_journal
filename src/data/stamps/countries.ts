@@ -949,7 +949,6 @@ const CURATED_COUNTRY_STAMPS: CountryStamp[] = [
     cultural_elements: ['aurora', 'glaciers', 'volcanic ridge'],
     border_style: 'simple',
     rotation_angle: -0.4,
-    artwork_format: 'svg',
     prompt_hint:
       'Transparent SVG or PNG, Iceland legendary passport stamp, aurora bands, glacier peaks, volcanic ridge, teal ink, premium worn collectible.',
     visual: {

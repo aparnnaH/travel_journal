@@ -4,6 +4,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   AlertTriangle,
   ArrowRight,
@@ -32,7 +33,7 @@ import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import StampRenderer from '@/components/stamps/StampRenderer';
 import { Button, Card, Input } from '@/components/ui';
 import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
-import { DEMO_SHARE_RECIPIENT_ID } from '@/lib/demoMode';
+import { DEMO_REMOVABLE_FRIEND_ID, DEMO_SHARE_RECIPIENT_ID, isDemoMode } from '@/lib/demoMode';
 import {
   fetchFriendCountrySnapshots,
   fetchFriends,
@@ -40,13 +41,13 @@ import {
   sendFriendRequest,
   updateFriendRequest,
 } from '@/lib/friendService';
-import { fetchJournalEntries } from '@/lib/journalService';
+import { fetchJournalEntries, fetchJournalEntryShares, fetchSharedJournalEntries } from '@/lib/journalService';
 import { findCountryStamp } from '@/lib/stamps/matching';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 import type { JournalEntry } from '@/types';
 import type { FriendCountry, FriendCountrySnapshot, FriendsResponse, Friendship } from '@/types/friends';
-import type { CountryStamp } from '@/types/stamps';
+import type { JournalShareRecipient, SharedJournalEntry } from '@/types/journalSharing';
 
 const emptyFriends: FriendsResponse = {
   friends: [],
@@ -138,22 +139,33 @@ type RegionOverlap = {
 };
 
 type TravelTwinBadge = {
+  id: 'future-trip' | 'story-swap' | 'neighboring-routes' | 'shared-countries';
   label: string;
   detail: string;
+  earnLabel: string;
+  imageSrc: string;
+  unlocked: boolean;
 };
 
-type JournalGap = {
-  countryId: string;
+type OwnedSharedJournalEntry = {
+  entry: JournalEntry;
+  recipients: JournalShareRecipient[];
+};
+
+type SharedJournalPreview = {
+  id: string;
+  title: string;
   countryName: string;
-  stamp: CountryStamp;
+  detail: string;
+  sharedAt: string;
+  direction: 'from-friend' | 'from-you';
 };
 
-const formatCountryList = (countries: FriendCountry[]) => {
-  if (countries.length === 0) return '';
-  if (countries.length === 1) return countries[0].name;
-  if (countries.length === 2) return `${countries[0].name} and ${countries[1].name}`;
-
-  return `${countries[0].name}, ${countries[1].name}, and ${countries[2].name}`;
+type CountrySpreadDrawer = {
+  countries: FriendCountry[];
+  eyebrow: string;
+  title: string;
+  variant: 'left' | 'center' | 'right';
 };
 
 const getCountryRegion = (country: FriendCountry) => findCountryStamp(country.id, country.name)?.region || 'Travel archive';
@@ -187,103 +199,138 @@ const buildRegionOverlap = (
     .slice(0, 4);
 };
 
-const buildTravelTwinBadge = (
+const buildTravelCircleBadges = (
   comparison: ReturnType<typeof compareCountryLists>,
-  regionOverlap: RegionOverlap[]
-): TravelTwinBadge => {
-  if (comparison.sharedCountries.length >= 3) {
-    return {
-      label: 'Shared Stamp Spark',
-      detail: 'You already have several countries in common.',
-    };
-  }
+  regionOverlap: RegionOverlap[],
+  sharedJournalPreviews: SharedJournalPreview[]
+): TravelTwinBadge[] => {
+  const hasSharedCountry = comparison.sharedCountries.length > 0;
+  const hasSharedRegion = regionOverlap.some((region) => region.sharedCount > 0);
+  const hasJournalExchange =
+    sharedJournalPreviews.some((preview) => preview.direction === 'from-friend') &&
+    sharedJournalPreviews.some((preview) => preview.direction === 'from-you');
+  const hasCountriesToCompare =
+    (comparison.sharedCountries.length + comparison.onlyYouCountries.length > 0) &&
+    (comparison.sharedCountries.length + comparison.onlyFriendCountries.length > 0);
 
-  if (comparison.sharedCountries.length > 0 || regionOverlap.some((region) => region.sharedCount > 0)) {
-    return {
-      label: 'Neighboring Routes',
-      detail: 'Your maps cross paths in familiar places.',
-    };
-  }
-
-  if (comparison.onlyFriendCountries.length > 0 && comparison.onlyYouCountries.length > 0) {
-    return {
-      label: 'Story Swap Pair',
-      detail: 'You each have stamps the other can ask about.',
-    };
-  }
-
-  return {
-    label: 'Future Trip Energy',
-    detail: 'Your maps are ready for new shared stamps.',
-  };
+  return [
+    {
+      id: 'future-trip',
+      label: 'Ready to compare',
+      detail: 'Your maps can start building friend-specific travel ideas.',
+      earnLabel: 'Unlocked when both maps have countries to compare.',
+      imageSrc: '/images/travel-circle/badges/ready-to-compare.png',
+      unlocked: hasCountriesToCompare,
+    },
+    {
+      id: 'story-swap',
+      label: 'Journal exchange',
+      detail: 'You and your friend have shared travel stories in your journals.',
+      earnLabel: 'Unlock by sharing journal entries back and forth with this friend.',
+      imageSrc: '/images/travel-circle/badges/journal-exchange.png',
+      unlocked: hasJournalExchange,
+    },
+    {
+      id: 'neighboring-routes',
+      label: 'Neighboring routes',
+      detail: 'Your maps cross paths in familiar regions.',
+      earnLabel: 'Unlock by sharing a country or overlapping in the same region.',
+      imageSrc: '/images/travel-circle/badges/neighboring-routes.png',
+      unlocked: hasSharedCountry || hasSharedRegion,
+    },
+    {
+      id: 'shared-countries',
+      label: 'Shared countries',
+      detail: 'Your maps overlap in multiple places.',
+      earnLabel: 'Unlock by sharing at least 3 mapped countries.',
+      imageSrc: '/images/travel-circle/badges/shared-countries.png',
+      unlocked: comparison.sharedCountries.length >= 3,
+    },
+  ];
 };
 
-const buildTravelCircleHighlights = (
-  comparison: ReturnType<typeof compareCountryLists>,
-  selectedFriendName: string
-) => {
-  const highlights: string[] = [];
-  const sharedRegion = buildRegionOverlap(
-    [...comparison.sharedCountries, ...comparison.onlyYouCountries],
-    [...comparison.sharedCountries, ...comparison.onlyFriendCountries],
-    comparison.sharedCountries
-  )[0];
+const getEntryCountryId = (entry: JournalEntry | SharedJournalEntry) => entry.countryId || ('country_id' in entry ? entry.country_id : '') || '';
 
-  if (comparison.sharedCountries.length > 0) {
-    highlights.push(
-      `You both have ${formatCountryList(comparison.sharedCountries.slice(0, 3))} in your passport spread.`
-    );
-  } else if (sharedRegion) {
-    highlights.push(`Your maps both touch ${sharedRegion.region}, even without a shared country yet.`);
-  } else {
-    highlights.push('Your maps are mostly different right now, which gives you more stories to trade.');
-  }
+const isMatchingShareRecipient = (recipient: JournalShareRecipient, friend: FriendCountrySnapshot['friend']) =>
+  recipient.id === friend.id || recipient.email.toLowerCase() === friend.email.toLowerCase();
 
-  if (comparison.onlyFriendCountries.length > 0) {
-    highlights.push(`Ask ${selectedFriendName} about ${formatCountryList(comparison.onlyFriendCountries.slice(0, 3))}.`);
-  }
+const buildSharedJournalPreviews = ({
+  countryLabels,
+  friend,
+  inboundEntries,
+  outboundEntries,
+}: {
+  countryLabels: Record<string, string>;
+  friend: FriendCountrySnapshot['friend'] | null;
+  inboundEntries: SharedJournalEntry[];
+  outboundEntries: OwnedSharedJournalEntry[];
+}): SharedJournalPreview[] => {
+  if (!friend) return [];
 
-  if (comparison.onlyYouCountries.length > 0) {
-    highlights.push(`You can recommend ${formatCountryList(comparison.onlyYouCountries.slice(0, 3))}.`);
-  }
-
-  return highlights.slice(0, 3);
-};
-
-const buildJournalGaps = (
-  visitedCountries: string[],
-  countryLabels: Record<string, string>,
-  journalEntries: JournalEntry[]
-): JournalGap[] => {
-  const journalStampIds = new Set<string>();
-
-  journalEntries.forEach((entry) => {
-    const countryId = entry.countryId?.trim();
-    if (!countryId) return;
-
-    const stamp = findCountryStamp(countryId, countryLabels[countryId] || countryId);
-    if (stamp) {
-      journalStampIds.add(stamp.id);
-    }
-  });
-
-  return [...new Set(visitedCountries)]
-    .map((countryId) => {
-      const countryName = getCountryName(countryId, countryLabels);
-      const stamp = findCountryStamp(countryId, countryName);
-
-      if (!stamp || journalStampIds.has(stamp.id)) {
-        return null;
-      }
+  const inboundPreviews = inboundEntries
+    .filter((entry) => entry.sharedBy.id === friend.id || entry.sharedBy.email.toLowerCase() === friend.email.toLowerCase())
+    .map<SharedJournalPreview>((entry) => {
+      const countryId = getEntryCountryId(entry);
 
       return {
-        countryId,
-        countryName,
-        stamp,
+        id: `inbound-${entry.id}`,
+        title: entry.title,
+        countryName: countryId ? getCountryName(countryId, countryLabels) : 'Travel story',
+        detail: `Shared by ${friend.displayName || friend.email}`,
+        sharedAt: entry.sharedAt || entry.updatedAt || entry.createdAt,
+        direction: 'from-friend',
       };
-    })
-    .filter((gap): gap is JournalGap => Boolean(gap))
+    });
+
+  const outboundPreviews = outboundEntries
+    .filter(({ recipients }) => recipients.some((recipient) => isMatchingShareRecipient(recipient, friend)))
+    .map<SharedJournalPreview>(({ entry, recipients }) => {
+      const countryId = getEntryCountryId(entry);
+      const matchingRecipient = recipients.find((recipient) => isMatchingShareRecipient(recipient, friend));
+
+      return {
+        id: `outbound-${entry.id}`,
+        title: entry.title,
+        countryName: countryId ? getCountryName(countryId, countryLabels) : 'Travel story',
+        detail: `Shared with ${friend.displayName || friend.email}`,
+        sharedAt: matchingRecipient?.sharedAt || entry.updatedAt || entry.createdAt,
+        direction: 'from-you',
+      };
+    });
+
+  return [...inboundPreviews, ...outboundPreviews]
+    .sort((first, second) => Date.parse(second.sharedAt) - Date.parse(first.sharedAt))
     .slice(0, 4);
+};
+
+const fetchSharedJournalContext = async () => {
+  const [ownedResponse, inboundResponse] = await Promise.all([
+    fetchJournalEntries({ limit: 50, summary: true }),
+    fetchSharedJournalEntries({ limit: 50, summary: true }),
+  ]);
+
+  const ownedEntries = ownedResponse.success ? ownedResponse.data ?? [] : [];
+  const shareResponses = await Promise.all(
+    ownedEntries.map(async (entry) => ({
+      entry,
+      response: await fetchJournalEntryShares(entry.id),
+    }))
+  );
+  const outboundEntries = shareResponses
+    .filter(({ response }) => response.success)
+    .map<OwnedSharedJournalEntry>(({ entry, response }) => ({
+      entry,
+      recipients: response.data ?? [],
+    }))
+    .filter((item) => item.recipients.length > 0);
+
+  return {
+    inboundEntries: inboundResponse.success ? inboundResponse.data ?? [] : [],
+    outboundEntries,
+    error: ownedResponse.success && inboundResponse.success
+      ? null
+      : inboundResponse.error || ownedResponse.error || 'Unable to load shared journal previews.',
+  };
 };
 
 // Protected page that loads grouped friendship data through the friends service.
@@ -303,9 +350,10 @@ export default function FriendsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
-  const [journalGapsError, setJournalGapsError] = useState<string | null>(null);
-  const [isJournalGapsLoading, setIsJournalGapsLoading] = useState(false);
+  const [inboundSharedEntries, setInboundSharedEntries] = useState<SharedJournalEntry[]>([]);
+  const [outboundSharedEntries, setOutboundSharedEntries] = useState<OwnedSharedJournalEntry[]>([]);
+  const [sharedJournalsError, setSharedJournalsError] = useState<string | null>(null);
+  const [isSharedJournalsLoading, setIsSharedJournalsLoading] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<Friendship | null>(null);
 
   useEffect(() => {
@@ -322,15 +370,15 @@ export default function FriendsPage() {
     const loadFriends = async () => {
       setLoading(true);
       setCompareLoading(true);
-      setIsJournalGapsLoading(true);
-      const [response, countryResponse, journalResponse] = await Promise.all([
+      setIsSharedJournalsLoading(true);
+      const [response, countryResponse, sharedJournalContext] = await Promise.all([
         fetchFriends(),
         fetchFriendCountrySnapshots(),
-        fetchJournalEntries({ limit: 200, summary: true }),
+        fetchSharedJournalContext(),
       ]);
       setLoading(false);
       setCompareLoading(false);
-      setIsJournalGapsLoading(false);
+      setIsSharedJournalsLoading(false);
 
       if (response.success && response.data) {
         setFriendsData(response.data);
@@ -346,13 +394,9 @@ export default function FriendsPage() {
         setCompareError(countryResponse.error || 'Unable to load country comparisons.');
       }
 
-      if (journalResponse.success) {
-        setJournalEntries(journalResponse.data ?? []);
-        setJournalGapsError(null);
-      } else {
-        setJournalEntries([]);
-        setJournalGapsError(journalResponse.error || 'Unable to load journal coverage.');
-      }
+      setInboundSharedEntries(sharedJournalContext.inboundEntries);
+      setOutboundSharedEntries(sharedJournalContext.outboundEntries);
+      setSharedJournalsError(sharedJournalContext.error);
     };
 
     loadFriends();
@@ -390,21 +434,41 @@ export default function FriendsPage() {
     () => buildCountryList(visitedCountries, countryLabels),
     [countryLabels, visitedCountries]
   );
+  const defaultCompareFriendId = useMemo(() => {
+    if (friendCountrySnapshots.length === 0) return null;
+
+    return isDemoMode() && friendCountrySnapshots.some((snapshot) => snapshot.friend.id === DEMO_REMOVABLE_FRIEND_ID)
+      ? DEMO_REMOVABLE_FRIEND_ID
+      : friendCountrySnapshots[0]?.friend.id ?? null;
+  }, [friendCountrySnapshots]);
+  const effectiveSelectedCompareFriendId = useMemo(() => {
+    if (!selectedCompareFriendId) return defaultCompareFriendId;
+
+    return friendCountrySnapshots.some((snapshot) => snapshot.friend.id === selectedCompareFriendId)
+      ? selectedCompareFriendId
+      : defaultCompareFriendId;
+  }, [defaultCompareFriendId, friendCountrySnapshots, selectedCompareFriendId]);
   const selectedCountrySnapshot = useMemo(
     () =>
-      friendCountrySnapshots.find((snapshot) => snapshot.friend.id === selectedCompareFriendId) ??
+      friendCountrySnapshots.find((snapshot) => snapshot.friend.id === effectiveSelectedCompareFriendId) ??
       friendCountrySnapshots[0] ??
       null,
-    [friendCountrySnapshots, selectedCompareFriendId]
+    [effectiveSelectedCompareFriendId, friendCountrySnapshots]
   );
   const countryComparison = useMemo(() => {
     if (!selectedCountrySnapshot) return null;
 
     return compareCountryLists(yourCompareCountries, selectedCountrySnapshot.visitedCountries);
   }, [selectedCountrySnapshot, yourCompareCountries]);
-  const journalGaps = useMemo(
-    () => buildJournalGaps(visitedCountries, countryLabels, journalEntries),
-    [countryLabels, journalEntries, visitedCountries]
+  const sharedJournalPreviews = useMemo(
+    () =>
+      buildSharedJournalPreviews({
+        countryLabels,
+        friend: selectedCountrySnapshot?.friend ?? null,
+        inboundEntries: inboundSharedEntries,
+        outboundEntries: outboundSharedEntries,
+      }),
+    [countryLabels, inboundSharedEntries, outboundSharedEntries, selectedCountrySnapshot?.friend]
   );
 
   if (isLoading || !user) {
@@ -412,10 +476,10 @@ export default function FriendsPage() {
   }
 
   const refreshFriends = async () => {
-    const [response, countryResponse, journalResponse] = await Promise.all([
+    const [response, countryResponse, sharedJournalContext] = await Promise.all([
       fetchFriends(),
       fetchFriendCountrySnapshots(),
-      fetchJournalEntries({ limit: 200, summary: true }),
+      fetchSharedJournalContext(),
     ]);
 
     if (response.success && response.data) {
@@ -429,12 +493,9 @@ export default function FriendsPage() {
       setCompareError(countryResponse.error || 'Unable to load country comparisons.');
     }
 
-    if (journalResponse.success) {
-      setJournalEntries(journalResponse.data ?? []);
-      setJournalGapsError(null);
-    } else {
-      setJournalGapsError(journalResponse.error || 'Unable to load journal coverage.');
-    }
+    setInboundSharedEntries(sharedJournalContext.inboundEntries);
+    setOutboundSharedEntries(sharedJournalContext.outboundEntries);
+    setSharedJournalsError(sharedJournalContext.error);
   };
 
   const handleSendRequest = async (event: React.FormEvent) => {
@@ -529,9 +590,11 @@ export default function FriendsPage() {
                 </div>
                 <div className="border-t border-gold/20 bg-[#21382B] p-6 text-cream lg:border-l lg:border-t-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cream/64">Circle size</p>
-                  <p className="mt-3 text-6xl font-serif font-semibold">{friendsData.friends.length}</p>
+                  <p className="mt-3 text-6xl font-serif font-semibold">{loading ? '-' : friendsData.friends.length}</p>
                   <p className="mt-4 text-sm leading-6 text-cream/74">
-                    {friendsData.friends.length > 0
+                    {loading
+                      ? 'Accepted travel circle.'
+                      : friendsData.friends.length > 0
                       ? 'Accepted friends are ready for future sharing.'
                       : 'Start by sending one friend request.'}
                   </p>
@@ -578,7 +641,7 @@ export default function FriendsPage() {
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
                   <p className="mt-5 text-sm font-semibold uppercase tracking-[0.16em] text-ink/52">{stat.label}</p>
-                  <p className="mt-2 text-3xl font-semibold text-ink">{loading ? '...' : stat.value}</p>
+                  <p className="mt-2 text-3xl font-semibold text-ink">{loading ? '-' : stat.value}</p>
                   <p className="mt-1 text-sm text-ink/62">{stat.detail}</p>
                 </div>
               );
@@ -590,13 +653,11 @@ export default function FriendsPage() {
             compareLoading={compareLoading}
             countryComparison={countryComparison}
             friendSnapshots={friendCountrySnapshots}
-            isJournalGapsLoading={isJournalGapsLoading}
-            journalGaps={journalGaps}
-            journalGapsError={journalGapsError}
             onOpenJournal={() => router.push('/journal')}
-            onOpenMap={() => router.push('/map')}
-            onOpenPassport={(stampId) => router.push(`/passport?stamp=${encodeURIComponent(stampId)}`)}
-            selectedFriendId={selectedCountrySnapshot?.friend.id ?? null}
+            selectedFriendId={effectiveSelectedCompareFriendId}
+            sharedJournalPreviews={sharedJournalPreviews}
+            sharedJournalsError={sharedJournalsError}
+            sharedJournalsLoading={isSharedJournalsLoading}
             onSelectFriend={setSelectedCompareFriendId}
             yourCountryCount={yourCompareCountries.length}
           />
@@ -734,30 +795,27 @@ function CountryCompareSection({
   compareLoading,
   countryComparison,
   friendSnapshots,
-  isJournalGapsLoading,
-  journalGaps,
-  journalGapsError,
   onOpenJournal,
-  onOpenMap,
-  onOpenPassport,
   onSelectFriend,
   selectedFriendId,
+  sharedJournalPreviews,
+  sharedJournalsError,
+  sharedJournalsLoading,
   yourCountryCount,
 }: {
   compareError: string | null;
   compareLoading: boolean;
   countryComparison: ReturnType<typeof compareCountryLists> | null;
   friendSnapshots: FriendCountrySnapshot[];
-  isJournalGapsLoading: boolean;
-  journalGaps: JournalGap[];
-  journalGapsError: string | null;
   onOpenJournal: () => void;
-  onOpenMap: () => void;
-  onOpenPassport: (stampId: string) => void;
   onSelectFriend: (friendId: string) => void;
   selectedFriendId: string | null;
+  sharedJournalPreviews: SharedJournalPreview[];
+  sharedJournalsError: string | null;
+  sharedJournalsLoading: boolean;
   yourCountryCount: number;
 }) {
+  const [countryDrawer, setCountryDrawer] = useState<CountrySpreadDrawer | null>(null);
   const selectedSnapshot = friendSnapshots.find((snapshot) => snapshot.friend.id === selectedFriendId) ?? null;
   const selectedFriendName = selectedSnapshot?.friend.displayName || selectedSnapshot?.friend.email || 'your friend';
   const nextDestination = countryComparison?.nextTripIdeas[0] ?? null;
@@ -768,12 +826,14 @@ function CountryCompareSection({
         countryComparison.sharedCountries
       )
     : [];
-  const travelCircleHighlights = countryComparison ? buildTravelCircleHighlights(countryComparison, selectedFriendName) : [];
-  const travelTwinBadge = countryComparison ? buildTravelTwinBadge(countryComparison, regionOverlap) : null;
+  const travelCircleBadges = countryComparison
+    ? buildTravelCircleBadges(countryComparison, regionOverlap, sharedJournalPreviews)
+    : [];
 
   return (
-    <Card className="overflow-hidden border-gold/28 bg-[#FFF8EA] p-0 shadow-soft">
-      <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
+    <>
+      <Card className="overflow-hidden border-gold/28 bg-[#FFF8EA] p-0 shadow-soft">
+        <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
         <div className="relative overflow-hidden border-b border-gold/18 bg-[#20362B] p-6 text-cream xl:border-b-0 xl:border-r">
           <div className="absolute right-[-46px] top-[-46px] h-32 w-32 rounded-full border border-cream/10" aria-hidden="true" />
           <div className="absolute bottom-5 right-5 text-[6.5rem] font-serif font-semibold leading-none text-cream/[0.04]" aria-hidden="true">
@@ -824,17 +884,6 @@ function CountryCompareSection({
                   <h3 className="mt-1 text-2xl font-serif font-semibold text-ink">
                     You and {selectedFriendName}
                   </h3>
-                  {travelTwinBadge ? (
-                    <div className="mt-3 inline-flex max-w-full items-start gap-3 rounded-lg border border-gold/24 bg-[#F8F1E4] px-3 py-2 text-left shadow-sm">
-                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gold text-ink">
-                        <Sparkles className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-ink">{travelTwinBadge.label}</span>
-                        <span className="mt-0.5 block text-xs leading-5 text-ink/62">{travelTwinBadge.detail}</span>
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {friendSnapshots.map((snapshot) => {
@@ -869,7 +918,7 @@ function CountryCompareSection({
               ) : countryComparison ? (
                 <div className="space-y-4">
                   <div className="relative rounded-lg border border-gold/24 bg-[#EAD8B8] p-3 shadow-inner">
-                    <div className="absolute inset-y-4 left-1/2 hidden w-px -translate-x-1/2 bg-gold/28 lg:block" aria-hidden="true" />
+                    <div className="pointer-events-none absolute inset-y-4 left-1/2 hidden w-px -translate-x-1/2 bg-gold/28 lg:block" aria-hidden="true" />
                     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.82fr)_minmax(0,1fr)]">
                       <CountryListPanel
                         icon={Sparkles}
@@ -878,6 +927,7 @@ function CountryCompareSection({
                         count={countryComparison.onlyYouCountries.length}
                         countries={countryComparison.onlyYouCountries}
                         emptyCopy="No solo discoveries yet."
+                        onViewAll={setCountryDrawer}
                         variant="left"
                       />
                       <CountryListPanel
@@ -887,6 +937,7 @@ function CountryCompareSection({
                         count={countryComparison.sharedCountries.length}
                         countries={countryComparison.sharedCountries}
                         emptyCopy="No shared countries yet."
+                        onViewAll={setCountryDrawer}
                         variant="center"
                       />
                       <CountryListPanel
@@ -896,12 +947,38 @@ function CountryCompareSection({
                         count={countryComparison.onlyFriendCountries.length}
                         countries={countryComparison.onlyFriendCountries}
                         emptyCopy="No friend-only discoveries yet."
+                        onViewAll={setCountryDrawer}
                         variant="right"
                       />
                     </div>
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                  <div className="overflow-hidden rounded-lg border border-gold/24 bg-white shadow-soft">
+                    <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_190px]">
+                      <div className="p-4">
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
+                          <PlaneTakeoff className="h-4 w-4" aria-hidden="true" />
+                          Next destination
+                        </div>
+                        <p className="mt-2 text-2xl font-serif font-semibold text-ink">
+                          {nextDestination ? nextDestination.name : 'Keep exploring together'}
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-ink/62">
+                          {nextDestination
+                            ? `${selectedFriendName} has this on their country map, so it is a gentle place to ask about next.`
+                            : 'Your country lists already overlap here. Add more mapped countries to uncover fresh ideas.'}
+                        </p>
+                      </div>
+                      <div className="relative border-t border-dashed border-gold/34 bg-[#F8F1E4] p-4 md:border-l md:border-t-0">
+                        <div className="absolute bottom-3 right-3 h-12 w-12 rounded-full border border-dashed border-gold/42" aria-hidden="true" />
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/44">Boarding pass</p>
+                        <p className="mt-3 text-sm font-semibold text-ink">TRAVEL CIRCLE</p>
+                        <p className="mt-1 text-xs text-ink/56">Country-only compare</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
                     <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -941,161 +1018,113 @@ function CountryCompareSection({
                       )}
                     </div>
 
-                    <div className="rounded-lg border border-gold/20 bg-[#FFFDF7] p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Travel Circle highlights</p>
-                          <p className="mt-1 text-lg font-serif font-semibold text-ink">What your maps suggest</p>
-                        </div>
-                        <Compass className="h-5 w-5 shrink-0 text-gold-deep" aria-hidden="true" />
-                      </div>
-                      <div className="mt-4 space-y-2">
-                        {travelCircleHighlights.map((highlight) => (
-                          <p key={highlight} className="rounded-lg border border-gold/12 bg-cream/40 px-3 py-2 text-sm leading-6 text-ink/72">
-                            {highlight}
-                          </p>
-                        ))}
-                      </div>
-                    </div>
                   </div>
 
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    <FriendTripIdeasCard
-                      comparison={countryComparison}
-                      friendName={selectedFriendName}
-                      onOpenMap={onOpenMap}
-                      onOpenPassport={onOpenPassport}
-                    />
-                    <JournalGapsCard
-                      error={journalGapsError}
-                      gaps={journalGaps}
-                      isLoading={isJournalGapsLoading}
+                  <div className="grid gap-4">
+                    <SharedJournalsCard
+                      entries={sharedJournalPreviews}
+                      error={sharedJournalsError}
+                      isLoading={sharedJournalsLoading}
                       onOpenJournal={onOpenJournal}
+                      selectedFriendName={selectedFriendName}
                     />
                   </div>
 
-                  <div className="overflow-hidden rounded-lg border border-gold/24 bg-white shadow-soft">
-                    <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_190px]">
-                      <div className="p-4">
-                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
-                          <PlaneTakeoff className="h-4 w-4" aria-hidden="true" />
-                          Next destination
-                        </div>
-                        <p className="mt-2 text-2xl font-serif font-semibold text-ink">
-                          {nextDestination ? nextDestination.name : 'Keep exploring together'}
-                        </p>
-                        <p className="mt-1 text-sm leading-6 text-ink/62">
-                          {nextDestination
-                            ? `${selectedFriendName} has this on their country map, so it is a gentle place to ask about next.`
-                            : 'Your country lists already overlap here. Add more mapped countries to uncover fresh ideas.'}
-                        </p>
-                      </div>
-                      <div className="relative border-t border-dashed border-gold/34 bg-[#F8F1E4] p-4 md:border-l md:border-t-0">
-                        <div className="absolute bottom-3 right-3 h-12 w-12 rounded-full border border-dashed border-gold/42" aria-hidden="true" />
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/44">Boarding pass</p>
-                        <p className="mt-3 text-sm font-semibold text-ink">TRAVEL CIRCLE</p>
-                        <p className="mt-1 text-xs text-ink/56">Country-only compare</p>
-                      </div>
+                  <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">
+                      Travel circle badges
                     </div>
+                    <TravelCircleBadgeProgress
+                      key={selectedFriendId ?? 'friend-badges'}
+                      badges={travelCircleBadges}
+                    />
                   </div>
                 </div>
               ) : null}
             </div>
           )}
         </div>
-      </div>
-    </Card>
+        </div>
+      </Card>
+      {countryDrawer ? (
+        <CountrySpreadDrawer drawer={countryDrawer} onClose={() => setCountryDrawer(null)} />
+      ) : null}
+    </>
   );
 }
 
-function FriendTripIdeasCard({
-  comparison,
-  friendName,
-  onOpenMap,
-  onOpenPassport,
+function CountrySpreadDrawer({
+  drawer,
+  onClose,
 }: {
-  comparison: ReturnType<typeof compareCountryLists>;
-  friendName: string;
-  onOpenMap: () => void;
-  onOpenPassport: (stampId: string) => void;
+  drawer: CountrySpreadDrawer;
+  onClose: () => void;
 }) {
-  const tripIdeas = comparison.onlyFriendCountries.slice(0, 3);
+  const isCenter = drawer.variant === 'center';
 
   return (
-    <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Friend trip ideas</p>
-          <p className="mt-1 text-lg font-serif font-semibold text-ink">Ask about their map</p>
+    <div className="fixed inset-0 z-50 flex justify-end bg-ink/45 backdrop-blur-sm" role="presentation" onClick={onClose}>
+      <aside
+        aria-label={`${drawer.title} countries`}
+        aria-modal="true"
+        className="h-full w-full max-w-[520px] overflow-y-auto bg-[#FFF8EA] shadow-[-18px_0_40px_rgba(61,43,14,0.24)]"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className={`sticky top-0 z-10 border-b border-gold/20 px-5 py-4 ${isCenter ? 'bg-[#FFFDF7]' : 'bg-[#FFF8EA]'}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">{drawer.eyebrow}</p>
+              <h3 className="mt-1 text-2xl font-serif font-semibold text-ink">{drawer.title}</h3>
+              <p className="mt-1 text-sm text-ink/58">
+                {drawer.countries.length} countr{drawer.countries.length === 1 ? 'y' : 'ies'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gold/24 bg-white text-ink transition hover:border-gold/50 hover:text-gold-deep"
+              aria-label="Close country list"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
         </div>
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#F8F1E4] text-gold-deep">
-          <PlaneTakeoff className="h-5 w-5" aria-hidden="true" />
-        </span>
-      </div>
 
-      {tripIdeas.length > 0 ? (
-        <div className="mt-4 space-y-2">
-          {tripIdeas.map((country) => {
-            const stamp = findCountryStamp(country.id, country.name);
-
-            return (
-              <div key={country.id} className="rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-ink">{country.name}</p>
-                    <p className="mt-1 text-xs leading-5 text-ink/58">{friendName} has this country on their map.</p>
-                  </div>
-                  {stamp ? (
-                    <span className="shrink-0 rounded-full border border-gold/20 bg-cream px-2 py-1 text-xs font-semibold text-ink/55">
-                      {stamp.region}
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button type="button" size="sm" variant="secondary" onClick={onOpenMap} className="gap-2">
-                    <MapPinned className="h-4 w-4" aria-hidden="true" />
-                    Map
-                  </Button>
-                  {stamp ? (
-                    <Button type="button" size="sm" variant="ghost" onClick={() => onOpenPassport(stamp.id)} className="gap-2">
-                      <Stamp className="h-4 w-4" aria-hidden="true" />
-                      Passport
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-2 gap-3 p-5 sm:grid-cols-3">
+          {drawer.countries.map((country) => (
+            <div key={country.id} className="rounded-lg border border-gold/18 bg-white/82 p-2 shadow-sm">
+              <CountryPassportStamp country={country} featured={isCenter} />
+              <p className="mt-2 truncate text-sm font-semibold text-ink" title={country.name}>
+                {country.name}
+              </p>
+            </div>
+          ))}
         </div>
-      ) : (
-        <EmptyState
-          icon={PlaneTakeoff}
-          title="No friend-only countries yet"
-          description="When this friend has mapped countries you have not visited, trip ideas will appear here."
-          compact
-        />
-      )}
+      </aside>
     </div>
   );
 }
 
-function JournalGapsCard({
+function SharedJournalsCard({
+  entries,
   error,
-  gaps,
   isLoading,
   onOpenJournal,
+  selectedFriendName,
 }: {
+  entries: SharedJournalPreview[];
   error: string | null;
-  gaps: JournalGap[];
   isLoading: boolean;
   onOpenJournal: () => void;
+  selectedFriendName: string;
 }) {
   return (
     <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Journal gaps</p>
-          <p className="mt-1 text-lg font-serif font-semibold text-ink">Stamped, not written</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Shared journals</p>
+          <p className="mt-1 text-lg font-serif font-semibold text-ink">Stories in this circle</p>
         </div>
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8F1EA] text-[#315F43]">
           <BookOpen className="h-5 w-5" aria-hidden="true" />
@@ -1112,36 +1141,90 @@ function JournalGapsCard({
             <div key={item} className="h-20 animate-pulse rounded-lg bg-cream/60" />
           ))}
         </div>
-      ) : gaps.length > 0 ? (
+      ) : entries.length > 0 ? (
         <div className="mt-4 space-y-2">
-          {gaps.map((gap) => (
-            <div key={`${gap.countryId}-${gap.stamp.id}`} className="rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
+          {entries.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              onClick={onOpenJournal}
+              className="group w-full rounded-lg border border-gold/16 bg-[#FFF8EA] p-3 text-left transition hover:border-gold/45 hover:bg-cream/70"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ink">{gap.countryName}</p>
-                  <p className="mt-1 text-xs leading-5 text-ink/58">
-                    {gap.countryName} has a stamp but no story yet.
-                  </p>
+                  <p className="truncate text-sm font-semibold text-ink">{entry.title}</p>
+                  <p className="mt-1 truncate text-xs leading-5 text-ink/58">{entry.countryName}</p>
+                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-ink/42">{entry.detail}</p>
                 </div>
                 <span className="shrink-0 rounded-full border border-gold/20 bg-cream px-2 py-1 text-xs font-semibold text-ink/55">
-                  {gap.stamp.region}
+                  {entry.direction === 'from-you' ? 'You shared' : 'Shared with you'}
                 </span>
               </div>
-              <Button type="button" size="sm" variant="ghost" onClick={onOpenJournal} className="mt-3 gap-2">
-                <BookOpen className="h-4 w-4" aria-hidden="true" />
-                Write story
-              </Button>
-            </div>
+              <span className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-gold-deep transition group-hover:translate-x-1">
+                Open journal
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </span>
+            </button>
           ))}
         </div>
       ) : (
         <EmptyState
           icon={BookOpen}
-          title="No journal gaps"
-          description="Every mapped stamp currently has a journal story attached."
+          title="No shared journals yet"
+          description={`Share an entry with ${selectedFriendName}, or open one they share with you, and it will preview here.`}
           compact
         />
       )}
+    </div>
+  );
+}
+
+function TravelCircleBadgeProgress({ badges }: { badges: TravelTwinBadge[] }) {
+  if (badges.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+      <div className="mt-3 flex flex-col gap-2 md:flex-row md:flex-wrap xl:flex-nowrap">
+        {badges
+          .slice()
+          .sort((a, b) => Number(b.unlocked) - Number(a.unlocked))
+          .map((badge) => (
+            <div
+              key={badge.id}
+              className={`rounded-2xl border px-3 py-4 xl:flex-1 ${
+                badge.unlocked
+                  ? 'border-[#315F43] bg-[#E8F1EA] shadow-sm shadow-[#315F43]/10'
+                  : 'border-gold/20 bg-[#FCF8EE] text-ink/60'
+              }`}
+            >
+              <div className="flex flex-col items-center gap-2 text-center">
+                <span
+                  className={`relative flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] p-3 ${
+                    badge.unlocked ? 'bg-white shadow-sm shadow-[#315F43]/10' : 'bg-[#ECECEC]'
+                  }`}
+                >
+                  <span className={`absolute inset-0 rounded-[1.75rem] ${badge.unlocked ? 'bg-[radial-gradient(circle_at_top_left,_rgba(255,223,102,0.18),_transparent_60%)]' : ''}`} />
+                  <Image
+                    src={badge.imageSrc}
+                    alt={`${badge.label} badge`}
+                    width={128}
+                    height={128}
+                    className={`h-full w-full rounded-[1.25rem] object-contain ${badge.unlocked ? '' : 'grayscale'}`}
+                  />
+                </span>
+                <span className="text-sm font-semibold text-ink">{badge.label}</span>
+                {badge.unlocked ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#315F43]/80">
+                    Accomplished
+                  </span>
+                ) : null}
+                <span className={`text-xs leading-5 ${badge.unlocked ? 'text-ink/70' : 'text-ink/55'}`}>
+                  {badge.unlocked ? badge.detail : badge.earnLabel}
+                </span>
+              </div>
+            </div>
+          ))}
+      </div>
     </div>
   );
 }
@@ -1152,6 +1235,7 @@ function CountryListPanel({
   emptyCopy,
   eyebrow,
   icon: Icon,
+  onViewAll,
   title,
   variant,
 }: {
@@ -1160,6 +1244,7 @@ function CountryListPanel({
   emptyCopy: string;
   eyebrow: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  onViewAll: (drawer: CountrySpreadDrawer) => void;
   title: string;
   variant: 'left' | 'center' | 'right';
 }) {
@@ -1174,13 +1259,13 @@ function CountryListPanel({
       }`}
     >
       <div
-        className={`absolute inset-3 rounded-lg border ${
+        className={`pointer-events-none absolute inset-3 rounded-lg border ${
           isCenter ? 'border-dashed border-gold/34' : 'border-gold/10'
         }`}
         aria-hidden="true"
       />
-      <div className="absolute -bottom-10 -right-8 h-28 w-28 rounded-full border border-gold/12" aria-hidden="true" />
-      <div className="flex items-start justify-between gap-3">
+      <div className="pointer-events-none absolute -bottom-10 -right-8 h-28 w-28 rounded-full border border-gold/12" aria-hidden="true" />
+      <div className="relative z-10 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">{eyebrow}</p>
           <p className="mt-1 text-lg font-serif font-semibold text-ink">{title}</p>
@@ -1197,14 +1282,23 @@ function CountryListPanel({
         </span>
       </div>
       {countries.length > 0 ? (
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="relative z-10 mt-4 flex flex-wrap gap-2">
           {countries.slice(0, 8).map((country) => (
             <CountryPassportStamp key={country.id} country={country} featured={isCenter} />
           ))}
           {countries.length > 8 ? (
-            <span className="rounded-md border border-dashed border-gold/28 bg-white/80 px-3 py-2 text-xs font-semibold text-ink/58">
-              +{countries.length - 8} more
-            </span>
+            <button
+              type="button"
+              onClick={() => onViewAll({ countries, eyebrow, title, variant })}
+              className={`group flex h-[142px] w-[112px] flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gold/30 bg-white/80 px-3 py-3 text-center text-ink/62 transition hover:border-gold/60 hover:bg-white hover:text-ink ${
+                isCenter ? 'shadow-[0_12px_24px_rgba(61,43,14,0.12)]' : 'shadow-sm'
+              }`}
+              title={`View all ${countries.length} countries`}
+            >
+              <span className="text-2xl font-serif font-semibold text-ink">+{countries.length - 8}</span>
+              <span className="text-xs font-semibold uppercase tracking-[0.12em]">more</span>
+              <Stamp className="h-4 w-4 text-gold-deep transition group-hover:scale-110" aria-hidden="true" />
+            </button>
           ) : null}
         </div>
       ) : (
@@ -1245,27 +1339,28 @@ function CountryPassportStamp({ country, featured = false }: { country: FriendCo
     <span
       aria-label={`${country.name} passport stamp`}
       title={country.name}
-      className={`relative inline-flex min-h-20 min-w-[96px] flex-col justify-between overflow-hidden rounded-md border px-3 py-2 text-left ${
-        featured
-          ? 'border-gold/48 bg-[#F8F1E4] text-ink shadow-[0_8px_18px_rgba(61,43,14,0.12)]'
-          : 'border-gold/30 bg-white/80 text-ink/76 shadow-sm'
+      className={`relative block h-[142px] w-[112px] overflow-hidden rounded-lg ${
+        featured ? 'shadow-[0_12px_24px_rgba(61,43,14,0.18)]' : 'shadow-sm'
       }`}
     >
-      <span className="absolute inset-1 rounded border border-dashed border-current/24" aria-hidden="true" />
-      <span className="absolute -right-5 -top-5 h-16 w-16 rounded-full border border-current/14" aria-hidden="true" />
-      <span className="relative flex items-center justify-between gap-3">
-        <span className="text-[0.58rem] font-bold uppercase tracking-[0.14em] text-current/56">Passport</span>
-        <span className="text-base leading-none" aria-hidden="true">TJ</span>
+      <Image
+        className="h-full w-full object-cover"
+        src="/stamps/countries/placeholder.png"
+        alt=""
+        aria-hidden="true"
+        width={1024}
+        height={1024}
+        unoptimized
+        draggable={false}
+      />
+      <span className="absolute inset-0 bg-gradient-to-b from-cream/20 via-transparent to-ink/58" aria-hidden="true" />
+      <span className="absolute inset-x-2 top-2 flex items-center justify-between gap-2 text-[0.55rem] font-bold uppercase tracking-[0.12em] text-ink/58">
+        <span>Pending</span>
+        <span>{countryCode}</span>
       </span>
-      <span className="relative mt-2 flex items-end justify-between gap-3">
-        <span className="text-3xl font-serif font-semibold leading-none">{countryCode}</span>
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-current/40 text-[0.52rem] font-bold uppercase tracking-[0.08em]">
-          Visited
-        </span>
-      </span>
-      <span className="relative mt-2 flex items-center justify-between gap-3 border-t border-dashed border-current/20 pt-2 text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-current/58">
-        <span className="truncate">Travel archive</span>
-        <span className="shrink-0">TJ</span>
+      <span className="absolute inset-x-2 bottom-2 rounded bg-cream/88 px-2 py-1.5 text-center shadow-sm">
+        <span className="block truncate text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-gold-deep">Placeholder</span>
+        <span className="block truncate text-xs font-serif font-semibold leading-tight text-ink">{country.name}</span>
       </span>
     </span>
   );

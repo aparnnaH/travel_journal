@@ -35,7 +35,7 @@ Recommended file name:
 public/stamps/countries/[stamp-id].png
 ```
 
-PNG is the default export format. SVG is also supported; the current Iceland asset is configured as `iceland.svg`, so keep that name unless the stamp metadata is changed. For placeholder countries, generate the file first, then point that country stamp metadata at the new asset instead of `placeholder.png`.
+PNG is the default export format. SVG is also supported for legacy assets. For placeholder countries, generate the file first, then point that country stamp metadata at the new asset instead of `placeholder.png`.
 
 ## Country Prompt Matrix
 
