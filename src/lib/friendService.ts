@@ -43,16 +43,21 @@ function getDemoFriendCountrySnapshots(): FriendCountrySnapshotsResponse {
   const countrySnapshots: Record<string, FriendCountrySnapshotsResponse['friends'][number]['visitedCountries']> = {
     [DEMO_SHARE_RECIPIENT_ID]: [
       { id: 'CA', name: 'Canada' },
+      { id: 'DO', name: 'Dominican Republic' },
       { id: 'JP', name: 'Japan' },
       { id: 'KR', name: 'South Korea' },
       { id: 'PT', name: 'Portugal' },
+      { id: 'UY', name: 'Uruguay' },
       { id: 'US', name: 'United States' },
     ],
     'demo-friend-sofia-rivera': [
+      { id: 'CO', name: 'Colombia' },
       { id: 'ES', name: 'Spain' },
+      { id: 'FJ', name: 'Fiji' },
       { id: 'FR', name: 'France' },
       { id: 'MX', name: 'Mexico' },
       { id: 'PT', name: 'Portugal' },
+      { id: 'TZ', name: 'Tanzania' },
       { id: 'US', name: 'United States' },
     ],
   };

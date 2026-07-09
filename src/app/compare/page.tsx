@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton from '@/components/loading/PageSkeletons';
+import StampRenderer from '@/components/stamps/StampRenderer';
 import { Button, Card } from '@/components/ui';
 import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import { fetchFriendCountrySnapshots } from '@/lib/friendService';
@@ -131,7 +132,8 @@ const buildTravelMomentum = (comparison: ReturnType<typeof comparePassportStamps
       : Math.max(1, Math.ceil((stampTotal * nextMilestone) / 100) - unlockedCount);
 
   return {
-    recentMatches: comparison.matched.slice(-3).reverse(),
+    currentCompletion: comparison.passportCompletionPercent,
+    recentMatches: comparison.matched.slice(-5).reverse(),
     nextMilestone,
     stampsNeededForMilestone,
   };
@@ -161,7 +163,7 @@ const buildJournalGaps = (
       countryName: match.countryName,
       stamp: match.stamp,
     }))
-    .slice(0, 4);
+    .slice(0, 6);
 };
 
 const countStampedCountriesWithStories = (
@@ -341,8 +343,8 @@ export default function ComparePage() {
       >
         <div className="space-y-6">
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <Card className="overflow-hidden border-gold/30 bg-[#fff8ea] p-0" variant="elevated">
-              <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <Card className="h-full overflow-hidden border-gold/30 bg-[#fff8ea] p-0" variant="elevated">
+              <div className="grid h-full gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="p-6 sm:p-8">
                   <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
                     <Compass className="h-4 w-4" aria-hidden="true" />
@@ -378,7 +380,7 @@ export default function ComparePage() {
                     />
                   </div>
                 </div>
-                <div className="border-t border-gold/20 bg-[#21382B] p-6 text-cream lg:border-l lg:border-t-0">
+                <div className="h-full border-t border-gold/20 bg-[#21382B] p-6 text-cream lg:border-l lg:border-t-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cream/64">Passport completion</p>
                   <p className="mt-3 text-6xl font-serif font-semibold">{comparison.passportCompletionPercent}%</p>
                   <p className="mt-4 text-sm leading-6 text-cream/74">
@@ -452,23 +454,7 @@ export default function ComparePage() {
                 ) : journalGaps.length > 0 ? (
                   <div className="grid gap-3 md:grid-cols-2">
                     {journalGaps.map((gap) => (
-                      <div key={`${gap.countryId}-${gap.stamp.id}`} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-ink">{gap.countryName}</p>
-                            <p className="mt-1 text-sm leading-5 text-ink/62">
-                              {gap.countryName} has a stamp but no story yet.
-                            </p>
-                          </div>
-                          <span className="shrink-0 rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-ink/55">
-                            {gap.stamp.region}
-                          </span>
-                        </div>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => router.push('/journal')} className="mt-3 gap-2">
-                          <BookOpen className="h-4 w-4" aria-hidden="true" />
-                          Write story
-                        </Button>
-                      </div>
+                      <JournalGapCard key={`${gap.countryId}-${gap.stamp.id}`} gap={gap} onWriteStory={() => router.push('/journal')} />
                     ))}
                   </div>
                 ) : (
@@ -478,12 +464,15 @@ export default function ComparePage() {
                   />
                 )}
 
-                <div className="rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
+                <div className="flex h-full flex-col rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
                   <div className="mb-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">Still locked</p>
                     <h3 className="mt-1 text-lg font-serif font-semibold text-ink">Stamp goals</h3>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">
+                      Passport countries still waiting for a mapped visit.
+                    </p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="flex-1 space-y-1.5">
                     {lockedPreview.map((stamp) => (
                       <StampGoalRow
                         key={stamp.id}
@@ -601,19 +590,21 @@ function TravelCircleCompareCard({
           <div className="grid gap-3 sm:grid-cols-3">
             <FriendCompareStat label="Shared" value={comparison.sharedCountries.length} />
             <FriendCompareStat label="You can share" value={comparison.onlyYouCountries.length} />
-            <FriendCompareStat label="Ask about" value={comparison.onlyFriendCountries.length} />
+            <FriendCompareStat label="Friend-only" value={comparison.onlyFriendCountries.length} />
           </div>
 
           <div className="rounded-lg border border-gold/16 bg-white/70 px-3 py-3">
             <p className="text-sm font-semibold text-ink">
-              {comparison.sharedCountries.length > 0
-                ? `You and ${selectedFriendName} both know ${comparison.sharedCountries[0].name}.`
-                : firstFriendOnlyCountry
-                  ? `Ask ${selectedFriendName} about ${firstFriendOnlyCountry.name}.`
+              {firstFriendOnlyCountry
+                ? `Ask ${selectedFriendName} about ${firstFriendOnlyCountry.name}.`
+                : comparison.sharedCountries.length > 0
+                  ? `You and ${selectedFriendName} already overlap on ${comparison.sharedCountries.length} countr${
+                      comparison.sharedCountries.length === 1 ? 'y' : 'ies'
+                    }, including ${comparison.sharedCountries[0].name}.`
                   : `You can recommend ${comparison.onlyYouCountries[0]?.name ?? 'a mapped country'} to ${selectedFriendName}.`}
             </p>
             <p className="mt-1 text-sm leading-6 text-ink/62">
-              This replaces stamp gap checking now that every mapped country resolves to a passport stamp.
+              Friend-only counts places they have mapped that are not on your map yet.
             </p>
           </div>
         </div>
@@ -690,6 +681,10 @@ function TravelMomentumCard({
     momentum.stampsNeededForMilestone === 0
       ? 'Passport completion is fully unlocked from your map.'
       : `${momentum.stampsNeededForMilestone} more mapped stamp${momentum.stampsNeededForMilestone === 1 ? '' : 's'} to reach ${momentum.nextMilestone}% passport completion.`;
+  const milestoneProgress =
+    momentum.nextMilestone === 0
+      ? 100
+      : Math.min(100, Math.round((momentum.currentCompletion / momentum.nextMilestone) * 100));
 
   return (
     <Card className="bg-[#FFF8EA]">
@@ -704,7 +699,19 @@ function TravelMomentumCard({
       </div>
 
       <div className="rounded-lg border border-gold/18 bg-white/70 px-4 py-3">
-        <p className="text-sm font-semibold text-ink">{milestoneCopy}</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm font-semibold leading-5 text-ink">{milestoneCopy}</p>
+          <span className="shrink-0 rounded-full border border-gold/18 bg-[#FFF8EA] px-2 py-1 text-xs font-semibold text-gold-deep">
+            {momentum.currentCompletion}%
+          </span>
+        </div>
+        <div className="mt-3 h-3 overflow-hidden rounded-full bg-cream">
+          <div className="h-full rounded-full bg-[#315F43]" style={{ width: `${milestoneProgress}%` }} />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs font-semibold text-ink/50">
+          <span>{momentum.currentCompletion}% now</span>
+          <span>{momentum.nextMilestone}% goal</span>
+        </div>
       </div>
 
       <div className="mt-4 space-y-2">
@@ -796,6 +803,46 @@ function StampGoalRow({ onClick, stamp }: { onClick: () => void; stamp: CountryS
       </span>
       <TicketCheck className="h-4 w-4 shrink-0 text-gold-deep transition group-hover:scale-110" aria-hidden="true" />
     </button>
+  );
+}
+
+function JournalGapCard({ gap, onWriteStory }: { gap: JournalGap; onWriteStory: () => void }) {
+  const copyVariants = [
+    `${gap.countryName} has the stamp. Add the memory that belongs with it.`,
+    `Turn this ${gap.stamp.region} stamp into a place note while it is fresh.`,
+    `Give ${gap.countryName} a short story, favorite meal, or arrival detail.`,
+    `This stamp is collected; the journal page is still open.`,
+    `Capture one scene from ${gap.countryName} to complete the archive.`,
+    `Add the people, route, or small moment behind this stamp.`,
+  ];
+  const copyIndex =
+    gap.countryName.split('').reduce((total, character) => total + character.charCodeAt(0), 0) % copyVariants.length;
+
+  return (
+    <div className="flex min-h-40 flex-col rounded-lg border border-gold/16 bg-cream/36 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-lg font-serif font-semibold text-ink">{gap.countryName}</p>
+          <p className="mt-1 text-sm leading-5 text-ink/62">{copyVariants[copyIndex]}</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-gold/20 bg-white px-2 py-1 text-xs font-semibold text-ink/55">
+          {gap.stamp.region}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-1 items-center justify-center overflow-hidden rounded-lg border border-gold/12 bg-white/52 py-3">
+        <span aria-label={`${gap.countryName} passport stamp`} className="block h-[150px] w-[130px] overflow-hidden rounded-lg shadow-sm">
+          <span className="block origin-top-left scale-[0.68]">
+            <StampRenderer stamp={gap.stamp} />
+          </span>
+        </span>
+      </div>
+
+      <Button type="button" size="sm" variant="ghost" onClick={onWriteStory} className="mt-3 w-full justify-center gap-2">
+        <BookOpen className="h-4 w-4" aria-hidden="true" />
+        Write story
+      </Button>
+    </div>
   );
 }
 
