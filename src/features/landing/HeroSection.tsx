@@ -62,7 +62,7 @@ export function HeroSection() {
           variants={itemVariants}
           className="text-lg sm:text-xl text-ink/70 text-center mb-8 max-w-2xl mx-auto"
         >
-          Travel Journal is your personal scrapbook for the world. Scratch off countries as you visit them, collect passport stamps, and share your adventures with friends in real-time.
+          Travel Journal is your personal scrapbook for the world. Scratch off countries as you visit them, collect passport stamps, and share the stories behind your travels with friends.
         </motion.p>
 
         <motion.div
