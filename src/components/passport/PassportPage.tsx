@@ -75,7 +75,6 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
         transition={{ duration: 0.55, ease: 'easeOut' }}
       >
         <div className={styles.mastheadCopy}>
-          <p className={styles.kicker}>Passport Archive</p>
           <h1 className={styles.pageTitle}>Collectible Passport</h1>
           <p className={styles.pageDescription}>
             A tactile archive of borders crossed, marks earned, and places that stayed with you.
@@ -87,18 +86,6 @@ export const PassportPageComponent: React.FC<PassportPageComponentProps> = ({
           </div>
         </div>
 
-        <div className={styles.passportCover} aria-hidden="true">
-          <div className={styles.coverBadge}>
-            <span>TRV</span>
-            <strong>{stats.completion_percentage}%</strong>
-          </div>
-          <div className={styles.coverLines}>
-            <span />
-            <span />
-            <span />
-          </div>
-          <p>Collected<br />Memories</p>
-        </div>
       </motion.section>
 
       <motion.section

@@ -183,8 +183,26 @@ export const demoMapState: ScratchMapState = {
       { id: 'demo-florence', name: 'Florence', region: 'Tuscany', visited: true, coordinates: [11.2558, 43.7696], createdAt: demoNow },
     ],
     CA: [{ id: 'demo-montreal', name: 'Montreal', region: 'Quebec', visited: true, coordinates: [-73.5673, 45.5017], createdAt: demoNow }],
-    GB: [{ id: 'demo-london', name: 'London', region: 'England', visited: true, coordinates: [-0.1276, 51.5072], createdAt: demoNow }],
-    US: [{ id: 'demo-new-york', name: 'New York', region: 'New York', visited: true, coordinates: [-74.006, 40.7128], createdAt: demoNow }],
+    GB: [
+      { id: 'demo-london', name: 'London', region: 'England', visited: true, coordinates: [-0.1276, 51.5072], createdAt: demoNow },
+      { id: 'demo-edinburgh', name: 'Edinburgh', region: 'Scotland', visited: true, coordinates: [-3.1883, 55.9533], createdAt: demoNow },
+    ],
+    US: [
+      { id: 'demo-new-york', name: 'New York', region: 'New York', visited: true, coordinates: [-74.006, 40.7128], createdAt: demoNow },
+      { id: 'demo-san-francisco', name: 'San Francisco', region: 'California', visited: true, coordinates: [-122.4194, 37.7749], createdAt: demoNow },
+    ],
+    VN: [
+      { id: 'demo-hanoi', name: 'Hanoi', region: 'Northern Vietnam', visited: true, coordinates: [105.8342, 21.0278], createdAt: demoNow },
+      { id: 'demo-ho-chi-minh-city', name: 'Ho Chi Minh City', region: 'Southern Vietnam', visited: true, coordinates: [106.6297, 10.8231], createdAt: demoNow },
+    ],
+    AE: [
+      { id: 'demo-dubai', name: 'Dubai', region: 'Dubai', visited: true, coordinates: [55.2708, 25.2048], createdAt: demoNow },
+      { id: 'demo-abu-dhabi', name: 'Abu Dhabi', region: 'Abu Dhabi', visited: true, coordinates: [54.3773, 24.4539], createdAt: demoNow },
+    ],
+    TR: [
+      { id: 'demo-istanbul', name: 'Istanbul', region: 'Marmara', visited: true, coordinates: [28.9784, 41.0082], createdAt: demoNow },
+      { id: 'demo-cappadocia', name: 'Cappadocia', region: 'Central Anatolia', visited: true, coordinates: [34.8297, 38.6431], createdAt: demoNow },
+    ],
   },
   lastUpdated: demoNow,
 };

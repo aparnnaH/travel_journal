@@ -272,6 +272,13 @@ export default function DashboardPage() {
       tone: 'bg-[#F8E6D8] text-[#884E29] border-[#DEB595]',
     },
     {
+      title: 'Review recent activity',
+      description: 'Jump back into your latest entries, pins, and shared updates.',
+      href: '/journal/entries',
+      icon: BookOpen,
+      tone: 'bg-[#FFF8EA] text-gold-deep border-gold/35',
+    },
+    {
       title: 'Ask for a story thread',
       description: 'Turn scattered memories into a stronger draft.',
       href: '/companion',
@@ -305,8 +312,8 @@ export default function DashboardPage() {
       >
         <div className="space-y-6">
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
-            <Card className="overflow-hidden border-gold/30 bg-[#fff8ea] p-0" variant="elevated">
-              <div className="grid min-h-[320px] gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <Card className="h-full overflow-hidden border-gold/30 bg-[#fff8ea] p-0" variant="elevated">
+              <div className="grid h-full min-h-[320px] items-stretch gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
                   <div>
                     <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/70 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
@@ -434,7 +441,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-gold/20 bg-[#1F3328] p-6 text-cream lg:border-l lg:border-t-0">
+                <div className="h-full self-stretch border-t border-gold/20 bg-[#1F3328] p-6 text-cream lg:border-l lg:border-t-0">
                   <div className="flex h-full flex-col justify-between gap-8">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cream/64">Atlas reveal</p>
