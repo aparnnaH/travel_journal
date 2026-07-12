@@ -8,13 +8,13 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 
 - `/` - public landing page with feature sections and visual previews
 - `/login` and `/signup` - Supabase-backed authentication
-- `/dashboard` - signed-in command center with map, journal, passport, profile, and Travel Circle shortcuts
+- `/dashboard` - signed-in command center with atlas reveal progress, map, journal, passport, recent activity, profile, and Travel Circle shortcuts
 - `/profile` - editable profile details, avatar display, profile completeness, and account shortcuts
 - `/map` - scratch-map experience with visited countries, country explorer, city pins, and atlas controls
 - `/journal` - Canva journal studio, journal entries, scrapbook canvas, trip import, entry sharing, shared entries, and comments
-- `/passport` - passport stamp collection, locked/unlocked stamp states, and map-to-stamp reveal links
-- `/compare` - user-facing **Travel Audit** page that compares map visits with passport stamp coverage
-- `/friends` - **Travel Circle** friend requests, accepted friends, blocked users, and friend discovery by email
+- `/passport` - passport stamp collection with Collection Ledger progress, locked/unlocked stamp states, and map-to-stamp reveal links
+- `/compare` - user-facing **Travel Audit** page that compares map visits with passport stamp coverage and can pass a selected friend into Travel Circle
+- `/friends` - **Travel Circle** friend requests, accepted friends, blocked users, friend discovery by email, private sharing, comments, and friend-specific compare context
 - `/companion` and `/ai-companion` - AI travel-memory assistant and journal draft workflow
 
 ### Recent product additions
@@ -25,7 +25,9 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 - Dashboard and Profile now surface Travel Circle without keeping Friends in the main header nav.
 - Canva Connect lets users create Canva journal pages, import finished designs, save Canva previews, and organize created designs in a Travel Journal Canva folder.
 - Journal sharing prompts users to open Travel Circle when no friends exist.
-- Travel Audit compares visited countries with passport stamp matches, missing map-stamp links, and still-locked stamp goals.
+- Dashboard next-best moves include a Review recent activity shortcut into the journal archive.
+- Passport centers collection progress in the Collection Ledger with collected, unissued, region, and seal counts.
+- Travel Audit compares visited countries with passport stamp matches, missing map-stamp links, still-locked stamp goals, and friend-specific detail handoff into Travel Circle.
 - Signed-in header shows the profile image or initials beside the account label.
 - Profile completeness is hidden once the profile is complete.
 
@@ -58,6 +60,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 ### Passport Stamps
 
 - Digital passport collection driven by country stamp metadata.
+- Collection Ledger progress with collected, unissued, region, and seal counts.
 - Locked and unlocked stamp states.
 - Asset-ready stamp rendering with SVG/PNG artwork and texture layers.
 - Deep links such as `/passport?stamp=...` can highlight a specific stamp.
@@ -66,6 +69,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 
 - Compares `visitedCountries` from the map store with the passport stamp catalog.
 - Shows matched countries, mapped countries without stamp matches, and passport stamps not yet unlocked by the map.
+- Compares friend country overlap and passes the selected friend to Travel Circle for more detail.
 - Links back to Map, Passport, and Journal for follow-up work.
 
 ### Friends / Travel Circle
@@ -73,6 +77,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 - Friend request flow with pending, accepted, and blocked states.
 - Journal sharing to accepted friends.
 - View/comment access for shared entries.
+- Friend-specific context from Travel Audit can open the matching accepted friend in Travel Circle.
 - Supabase RLS policies for friendships, journal shares, and comments.
 
 ### AI Companion
@@ -206,7 +211,7 @@ Instagram OAuth variables are not needed for the active embed flow. The paused `
 
 - Share `/demo` when you want someone to explore the signed-in product without creating an account.
 - Demo mode uses seeded session data, not a real Supabase user. Closing the browser session clears the demo identity, temporary journal edits, and browser-scoped Canva connection.
-- The seed data includes map progress, passport stamps, Canva-backed journal examples, and an imported-trip journal entry with memory photos plus a public Instagram embed URL.
+- The seed data includes map progress, passport stamps, saved city pins for Vietnam, the United States, the United Kingdom, the United Arab Emirates, and Turkey, Canva-backed journal examples, and an imported-trip journal entry with memory photos plus a public Instagram embed URL.
 - Temporary demo journal entries can be created, edited, deleted, and shown in the journal/archive UI during the session. They stay in that browser session only and do not write to Supabase/cloud.
 - Canva connections in demo mode are scoped to that browser session only and are not stored in Supabase/cloud. This keeps visitor OAuth tokens out of the project database and prevents someone else's Canva account from being attached to the shared portfolio demo.
 - Signing out of the demo clears browser demo storage, resets the local map state, and removes demo/Canva cookies. The `Reset demo` banner button also restores the polished seed state.
