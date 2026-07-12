@@ -77,7 +77,7 @@ export function HeroSection() {
           {showDemo ? (
             <Link href="/demo">
               <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                View Demo
+                Explore the Demo
               </Button>
             </Link>
           ) : null}

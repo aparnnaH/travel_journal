@@ -111,10 +111,12 @@ export default function LoginPage() {
         </form>
 
           <div className="mt-6 border-t border-gold/16 pt-5">
-            <p className="text-sm text-ink/65">No account needed for the portfolio version.</p>
+            <p className="text-sm text-ink/65">
+              Want to peek first? Explore the portfolio demo with sample maps, stamps, journals, and friends.
+            </p>
             <Link href="/demo" className="mt-3 inline-flex w-full">
               <Button variant="secondary" className="w-full">
-                View Demo
+                Explore the Demo
               </Button>
             </Link>
           </div>

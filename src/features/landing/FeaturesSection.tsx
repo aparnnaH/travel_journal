@@ -80,7 +80,7 @@ const features: FeatureCard[] = [
     badgeColor: '#E86AA8',
     title: 'Travel Circle',
     description:
-      'Invite friends, manage requests, share journal entries privately, and keep conversations with comments on shared memories.',
+      'Manage accepted friends, share journal entries privately, keep comments with shared memories, and continue friend-specific compare context.',
     ctaText: 'Open friends',
     ctaHref: '/friends',
     imageUrl: '/images/features/travel_circle.png',
@@ -91,7 +91,7 @@ const features: FeatureCard[] = [
     badgeColor: '#6E9EF6',
     title: 'Travel Audit',
     description:
-      'Compare your scratch map with passport coverage, find countries that need stamp matches, and spot goals still waiting on the map.',
+      'Compare map and passport coverage, review country gaps, and send the selected friend into Travel Circle for more detail.',
     ctaText: 'Run audit',
     ctaHref: '/compare',
     imageUrl: '/images/features/travel_audit.png',
