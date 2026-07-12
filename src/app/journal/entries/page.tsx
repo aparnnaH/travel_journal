@@ -4,7 +4,7 @@
 'use client';
 
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Check, MessageCircle, PencilLine, Search, Send, Share2, Star, UserRoundCheck, UsersRound, X } from 'lucide-react';
+import { CalendarDays, Check, Download, MessageCircle, PencilLine, Search, Send, Share2, Star, UserRoundCheck, UsersRound, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
@@ -141,11 +141,154 @@ const getEntryInstagramEmbeds = (entry: EntryCardData) =>
   sanitizeInstagramEmbedUrls(
     decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? entry.instagramEmbeds ?? []
   );
+const getEntryCanvaDesignTitle = (entry: EntryCardData) =>
+  entry.canvaDesignTitle ||
+  entry.canva_design_title ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.designTitle ||
+  '';
+const getEntryCanvaDesignEditUrl = (entry: EntryCardData) =>
+  entry.canvaDesignEditUrl ||
+  entry.canva_design_edit_url ||
+  decodeJournalContentWithCanva(String(entry.content || '')).canva?.designEditUrl ||
+  '';
 // Summary list responses omit heavy image payloads, so entries may need a full
 // hydration fetch before showing a cover.
 const needsEntryCoverHydration = (entry: EntryCardData) =>
   !getEntryCoverPhoto(entry) &&
   (isSummaryEntry(entry) || typeof entry.content !== 'string' || entry.content.length === 0);
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const getInstagramPostLabel = (url: string, index: number) => {
+  try {
+    const parsedUrl = new URL(url);
+    const pathParts = parsedUrl.pathname.split('/').filter(Boolean);
+    const postId = pathParts.find((part, partIndex) => ['p', 'reel', 'tv'].includes(pathParts[partIndex - 1] || ''));
+
+    return postId ? `Instagram ${postId}` : `Instagram post ${index + 1}`;
+  } catch {
+    return `Instagram post ${index + 1}`;
+  }
+};
+
+const createStandaloneJournalHtml = (entry: EntryCardData, options?: { sharedBy?: string }) => {
+  const title = entry.title.trim() || 'Travel Journal Entry';
+  const countryLabel = getEntryCountryLabel(entry);
+  const dateRange = formatJournalDateRange(getEntryTripStartDate(entry), getEntryTripEndDate(entry));
+  const exportedAt = new Date().toLocaleDateString();
+  const canvaPages = getEntryCanvaPages(entry);
+  const insertedPhotos = getEntryInsertedPhotos(entry);
+  const instagramEmbeds = getEntryInstagramEmbeds(entry);
+  const story = getEntryContent(entry).trim();
+  const tags = getVisibleEntryTags(entry);
+  const canvaDesignTitle = getEntryCanvaDesignTitle(entry);
+  const canvaDesignEditUrl = getEntryCanvaDesignEditUrl(entry);
+  const metaItems = [
+    countryLabel,
+    dateRange,
+    entry.mood ? entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1) : '',
+    options?.sharedBy ? `Shared by ${options.sharedBy}` : '',
+  ].filter(Boolean);
+  const renderImageFigure = (src: string, label: string, caption?: string) => `
+    <figure class="memory-figure">
+      <img src="${src}" alt="${escapeHtml(label)}" />
+      ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ''}
+    </figure>`;
+  const renderInstagramPreviewCard = (url: string, index: number) => {
+    const label = getInstagramPostLabel(url, index);
+    const safeUrl = escapeHtml(url);
+
+    return `
+    <blockquote class="instagram-media instagram-embed-shell" data-instgrm-permalink="${safeUrl}" data-instgrm-version="14">
+      <article class="instagram-card">
+        <div class="instagram-visual" aria-hidden="true">
+          <span class="instagram-lens"></span>
+          <span class="instagram-dot"></span>
+        </div>
+        <div class="instagram-copy">
+          <p class="instagram-kicker">Instagram memory</p>
+          <h3>${escapeHtml(label)}</h3>
+          <p>${safeUrl}</p>
+          <a href="${safeUrl}" target="_blank" rel="noreferrer">Open on Instagram</a>
+        </div>
+      </article>
+    </blockquote>`;
+  };
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)} - Travel Journal</title>
+  <style>
+    :root { color-scheme: light; --ink: #2f271f; --muted: #765f45; --paper: #fffaf0; --line: #e8d8b8; --gold: #b6842d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f7f0df; color: var(--ink); font-family: Georgia, 'Times New Roman', serif; }
+    main { width: min(920px, calc(100% - 32px)); margin: 32px auto; border: 1px solid var(--line); background: var(--paper); padding: clamp(22px, 4vw, 44px); box-shadow: 0 24px 70px rgba(47, 39, 31, 0.14); }
+    .eyebrow { margin: 0 0 10px; color: var(--gold); font: 700 12px/1.4 Arial, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 7vw, 68px); line-height: 0.96; letter-spacing: 0; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 0; padding: 0; list-style: none; font: 700 13px/1.4 Arial, sans-serif; color: var(--muted); }
+    .meta li, .tag { border: 1px solid var(--line); border-radius: 999px; background: #fffdf7; padding: 7px 10px; }
+    section { margin-top: 30px; }
+    h2 { margin: 0 0 14px; font: 700 18px/1.2 Arial, sans-serif; color: var(--ink); }
+    .story { white-space: pre-wrap; font-size: 18px; line-height: 1.8; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .memory-figure { margin: 0; overflow: hidden; border: 1px solid var(--line); background: #fffdf7; }
+    .memory-figure img { display: block; width: 100%; height: auto; }
+    figcaption { padding: 10px 12px; font: 700 13px/1.4 Arial, sans-serif; color: var(--muted); }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .links { margin: 0; padding-left: 20px; font: 15px/1.7 Arial, sans-serif; }
+    .instagram-list { display: grid; gap: 14px; }
+    .instagram-embed-shell { margin: 0; min-width: 0 !important; max-width: 540px !important; width: 100% !important; border: 0; background: transparent; }
+    .instagram-card { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; align-items: center; border: 1px solid var(--line); background: #fffdf7; padding: 14px; }
+    .instagram-visual { position: relative; aspect-ratio: 1; border-radius: 24px; background: linear-gradient(135deg, #f9ce34 0%, #ee2a7b 45%, #6228d7 100%); box-shadow: inset 0 0 0 7px rgba(255, 255, 255, 0.76); }
+    .instagram-lens { position: absolute; inset: 29%; border: 6px solid #fff; border-radius: 999px; }
+    .instagram-dot { position: absolute; right: 25%; top: 24%; width: 11px; height: 11px; border-radius: 999px; background: #fff; }
+    .instagram-copy { min-width: 0; font-family: Arial, sans-serif; }
+    .instagram-kicker { margin: 0 0 4px; color: var(--gold); font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+    .instagram-copy h3 { margin: 0; font-size: 18px; line-height: 1.25; }
+    .instagram-copy p { margin: 6px 0 10px; overflow-wrap: anywhere; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .instagram-copy a { display: inline-flex; border: 1px solid var(--line); background: #fff7e6; padding: 8px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; text-decoration: none; }
+    a { color: #7a4c09; }
+    footer { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font: 13px/1.6 Arial, sans-serif; }
+    @media (max-width: 560px) { .instagram-card { grid-template-columns: 72px minmax(0, 1fr); } .instagram-visual { border-radius: 18px; } }
+    @media print { body { background: #fff; } main { width: 100%; margin: 0; border: 0; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Travel Journal Memory</p>
+    <h1>${escapeHtml(title)}</h1>
+    ${metaItems.length ? `<ul class="meta">${metaItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+    ${canvaPages.length ? `<section><h2>Canva Pages</h2><div class="grid">${canvaPages.map((page, index) => renderImageFigure(page, `Canva page ${index + 1}`)).join('')}</div></section>` : ''}
+    ${insertedPhotos.length ? `<section><h2>Memory Photos</h2><div class="grid">${insertedPhotos.map((photo, index) => renderImageFigure(photo.src, photo.alt || `Memory photo ${index + 1}`, photo.caption)).join('')}</div></section>` : ''}
+    ${instagramEmbeds.length ? `<section><h2>Instagram Posts</h2><div class="instagram-list">${instagramEmbeds.map((embed, index) => renderInstagramPreviewCard(embed.url, index)).join('')}</div></section>` : ''}
+    ${story ? `<section><h2>Story</h2><div class="story">${escapeHtml(story)}</div></section>` : ''}
+    ${tags.length ? `<section><h2>Tags</h2><div class="tags">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div></section>` : ''}
+    ${canvaDesignEditUrl ? `<section><h2>Saved Links</h2><ul class="links"><li><a href="${escapeHtml(canvaDesignEditUrl)}">${escapeHtml(canvaDesignTitle || 'Open Canva design')}</a></li></ul></section>` : ''}
+    <footer>Exported from Travel Journal on ${escapeHtml(exportedAt)}. This file is a standalone memory snapshot; live Canva editing still requires Canva.</footer>
+  </main>
+  ${instagramEmbeds.length ? '<script async src="https://www.instagram.com/embed.js"></script>' : ''}
+</body>
+</html>`;
+};
+
+const createJournalExportFileName = (entry: EntryCardData) => {
+  const cleanTitle = (entry.title || 'travel-journal-entry')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 72);
+
+  return `${cleanTitle || 'travel-journal-entry'}.html`;
+};
 
 const readCountryExplorerEntryHandoff = (entryId: string) => {
   try {
@@ -218,6 +361,7 @@ export default function JournalEntriesPage() {
   const [demoCopyNotice, setDemoCopyNotice] = useState<{ title: string } | null>(null);
   const [demoCopySaving, setDemoCopySaving] = useState(false);
   const [demoSharedCopySaving, setDemoSharedCopySaving] = useState(false);
+  const [exportingEntryId, setExportingEntryId] = useState<string | null>(null);
   const [demoPublishAccess, setDemoPublishAccess] = useState<{ userId: string; canPublish: boolean } | null>(null);
   const openedDeepLinkEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -886,6 +1030,30 @@ export default function JournalEntriesPage() {
     }));
   };
 
+  const downloadStandaloneHtml = async (entry: EntryCardData, options?: { sharedBy?: string }) => {
+    setExportingEntryId(entry.id);
+    setNotice(null);
+
+    try {
+      const html = createStandaloneJournalHtml(entry, options);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = createJournalExportFileName(entry);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice(`Exported "${entry.title}" as standalone HTML.`);
+    } catch {
+      setNotice('Could not export this journal entry.');
+    } finally {
+      setExportingEntryId(null);
+    }
+  };
+
   // Loads comments for the selected owned/shared entry.
   const openCommentPanel = async (entryId: string) => {
     setCommentEntryId(entryId);
@@ -1334,6 +1502,16 @@ export default function JournalEntriesPage() {
               <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
               Share
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              isLoading={exportingEntryId === openedEntry.id}
+              onClick={() => void downloadStandaloneHtml(openedEntry)}
+            >
+              <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+              Export HTML
+            </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFavoriteEntry(openedEntry)}>
               <Star className={isFavoriteEntry(openedEntry) ? 'mr-2 h-4 w-4 fill-current' : 'mr-2 h-4 w-4'} aria-hidden="true" />
               {isFavoriteEntry(openedEntry) ? 'Favorited' : 'Favorite'}
@@ -1522,6 +1700,20 @@ export default function JournalEntriesPage() {
 	              <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
 	              Comments
 	            </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                isLoading={exportingEntryId === openedSharedEntry.id}
+                onClick={() =>
+                  void downloadStandaloneHtml(openedSharedEntry, {
+                    sharedBy: openedSharedEntry.sharedBy.displayName || openedSharedEntry.sharedBy.email,
+                  })
+                }
+              >
+                <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+                Export HTML
+              </Button>
 	          </div>
 	          {renderCommentPanel(openedSharedEntry.id)}
 	        </article>

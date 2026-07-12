@@ -27,7 +27,7 @@ const features: FeatureCard[] = [
     badgeColor: '#FF9F6B',
     title: 'Scrapbook Journals',
     description:
-      'Document trips with flexible scrapbook pages, photos, stickers, notes, imported memories, Instagram embeds, and saved entries.',
+      'Document trips with flexible scrapbook pages, photos, stickers, notes, imported memories, Instagram embeds, saved entries, and standalone HTML exports.',
     ctaText: 'Open journal',
     ctaHref: '/journal',
     imageUrl: '/images/features/journal.png',

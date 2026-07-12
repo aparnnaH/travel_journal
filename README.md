@@ -11,7 +11,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 - `/dashboard` - signed-in command center with atlas reveal progress, map, journal, passport, recent activity, profile, and Travel Circle shortcuts
 - `/profile` - editable profile details, avatar display, profile completeness, and account shortcuts
 - `/map` - scratch-map experience with visited countries, country explorer, city pins, and atlas controls
-- `/journal` - Canva journal studio, journal entries, scrapbook canvas, trip import, entry sharing, shared entries, and comments
+- `/journal` - Canva journal studio, journal entries, scrapbook canvas, trip import, standalone HTML export, entry sharing, shared entries, and comments
 - `/passport` - passport stamp collection with Collection Ledger progress, locked/unlocked stamp states, and map-to-stamp reveal links
 - `/compare` - user-facing **Travel Audit** page that compares map visits with passport stamp coverage and can pass a selected friend into Travel Circle
 - `/friends` - **Travel Circle** friend requests, accepted friends, blocked users, friend discovery by email, private sharing, comments, and friend-specific compare context
@@ -24,6 +24,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 - `Account` dropdown includes Profile, Friends / Travel Circle, and Sign out.
 - Dashboard and Profile now surface Travel Circle without keeping Friends in the main header nav.
 - Canva Connect lets users create Canva journal pages, import finished designs, save Canva previews, and organize created designs in a Travel Journal Canva folder.
+- Journal entries can export standalone HTML memory snapshots with saved Canva pages, photos, story text, tags, Canva links, and Instagram preview cards that can hydrate into official embeds when opened online.
 - Journal sharing prompts users to open Travel Circle when no friends exist.
 - Dashboard next-best moves include a Review recent activity shortcut into the journal archive.
 - Passport centers collection progress in the Collection Ledger with collected, unissued, region, and seal counts.
@@ -47,6 +48,7 @@ A Next.js travel archive for mapping visited countries, building Canva-backed sc
 - Canva Connect workspace for creating new journal pages, browsing Canva designs, exporting/importing pages, saving page previews, and reopening saved Canva-backed entries.
 - Scrapbook canvas with draggable memories, rotatable photos, decorations, and page themes.
 - Trip import components for parsing itinerary-like content into draft journal material.
+- Standalone HTML export for owned and shared entries, preserving saved Canva pages, memory photos, story text, tags, Canva design links, and Instagram preview/embed fallbacks.
 - Shared journal section for entries shared with the current user.
 - Comments on accessible shared journal entries.
 
@@ -196,7 +198,7 @@ CANVA_RETURN_URL=<your-app-journal-return-url>
 CANVA_TOKEN_ENCRYPTION_KEY=<your-32-byte-token-encryption-key>
 ```
 
-The active Instagram journal flow uses public post/Reel embed URLs and does not require Instagram OAuth environment variables. The old OAuth media-import path is paused; keep these only if you intentionally re-enable that legacy picker:
+The active Instagram journal flow uses public post/Reel embed URLs and does not require Instagram OAuth environment variables. Exported journal HTML preserves those URLs as preview cards and can hydrate public posts into official Instagram embeds when opened online. The old OAuth media-import path is paused; keep these only if you intentionally re-enable that legacy picker:
 
 ```env
 NEXT_PUBLIC_INSTAGRAM_APP_ID=<your-instagram-app-id>
