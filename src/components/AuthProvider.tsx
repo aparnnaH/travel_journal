@@ -4,11 +4,11 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
 import { getSupabaseClient, syncAuthCookie } from '@/lib/supabase';
 import { fetchProfile } from '@/lib/profileService';
-import { demoUser, enableDemoMode, isDemoMode, isLocalDemoHost, readDemoMapState, seedDemoLocalContext } from '@/lib/demoMode';
+import { demoUser, enableDemoMode, isDemoMode, readDemoMapState, seedDemoLocalContext } from '@/lib/demoMode';
 import { useAuthStore } from '@/store/authStore';
 import { useMapStore } from '@/store/mapStore';
 import type { AuthUser } from '@/types';
@@ -86,11 +86,9 @@ export default function AuthProvider({ children }: AuthProviderProps) {
   const logout = useAuthStore((state) => state.logout);
   const replaceMapState = useMapStore((state) => state.replaceMapState);
   const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
     let subscription: { unsubscribe?: () => void } | null = null;
-    const isAuthRoute = pathname === '/login' || pathname === '/signup';
 
     const initializeDemo = async () => {
       setLoading(true);
@@ -126,20 +124,14 @@ export default function AuthProvider({ children }: AuthProviderProps) {
         const user = data?.user;
         if (user) {
           setUser(await buildAuthUser(user));
-        } else if (!isAuthRoute && isLocalDemoHost()) {
-          await initializeDemo();
         } else {
           await syncAuthCookie(null);
           logout();
         }
       } catch (error) {
         console.warn('Unable to initialize authentication.', error);
-        if (!isAuthRoute && isLocalDemoHost()) {
-          await initializeDemo();
-        } else {
-          await syncAuthCookie(null);
-          logout();
-        }
+        await syncAuthCookie(null);
+        logout();
       } finally {
         setLoading(false);
       }
@@ -178,7 +170,7 @@ export default function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       subscription?.unsubscribe?.();
     };
-  }, [setUser, setLoading, logout, router, replaceMapState, pathname]);
+  }, [setUser, setLoading, logout, router, replaceMapState]);
 
   return (
     <>
