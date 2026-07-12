@@ -533,19 +533,29 @@ function CompareSkeleton() {
   return (
     <div className="space-y-6">
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <CardSkeleton className="overflow-hidden bg-[#fff8ea] p-0">
-          <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
+        <CardSkeleton className="h-full overflow-hidden bg-[#fff8ea] p-0">
+          <div className="grid h-full gap-0 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="p-6 sm:p-8">
               <SkeletonLine className="h-7 w-52 rounded-full bg-white/70" />
-              <SkeletonLine className="mt-5 h-14 w-full max-w-2xl" />
-              <SkeletonLine className="mt-3 h-14 w-4/5 max-w-xl" />
-              <SkeletonLine className="mt-5 w-full max-w-lg" />
+              <SkeletonLine className="mt-5 h-12 w-full max-w-2xl sm:h-14" />
+              <SkeletonLine className="mt-3 h-12 w-4/5 max-w-xl sm:h-14" />
+              <SkeletonLine className="mt-5 h-5 w-full max-w-lg" />
+              <SkeletonLine className="mt-2 h-5 w-4/5 max-w-md" />
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <div key={index} className="rounded-lg border border-gold/16 bg-white/70 p-4">
+                    <SkeletonLine className="h-3 w-28 bg-gold/20" />
+                    <SkeletonLine className="mt-3 h-8 w-24" />
+                    <SkeletonLine className="mt-2 h-4 w-full" />
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="border-t border-gold/20 bg-[#21382B] p-6 lg:border-l lg:border-t-0">
+            <div className="h-full border-t border-gold/20 bg-[#21382B] p-6 lg:border-l lg:border-t-0">
               <SkeletonLine className="h-3 w-40 bg-white/25" />
-              <SkeletonLine className="mt-5 h-16 w-28 bg-white/25" />
-              <div className="mt-5 h-2.5 rounded-full bg-white/18" />
-              <SkeletonLine className="mt-5 w-full bg-white/25" />
+              <SkeletonLine className="mt-5 h-16 w-24 bg-white/25" />
+              <SkeletonLine className="mt-5 h-4 w-full bg-white/25" />
+              <SkeletonLine className="mt-2 h-4 w-4/5 bg-white/25" />
             </div>
           </div>
         </CardSkeleton>
@@ -559,7 +569,45 @@ function CompareSkeleton() {
         </CardSkeleton>
       </section>
 
-      <MetricSkeletonRow />
+      <section className="grid gap-6 lg:grid-cols-2">
+        {Array.from({ length: 2 }).map((_, index) => (
+          <CardSkeleton key={index} className={index === 0 ? 'bg-white/90' : 'bg-[#FFF8EA]'}>
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <SkeletonLine className="h-3 w-36 bg-gold/20" />
+                <SkeletonLine className="mt-3 h-8 w-56" />
+              </div>
+              <div className="h-10 w-10 shrink-0 rounded-lg bg-gold/20" />
+            </div>
+            {index === 0 ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <SkeletonLine className="h-3 w-24 bg-ink/10" />
+                  <RowListSkeleton rows={3} />
+                </div>
+                <div className="space-y-2">
+                  <SkeletonLine className="h-3 w-32 bg-ink/10" />
+                  <RowListSkeleton rows={3} />
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="rounded-lg border border-gold/18 bg-white/70 px-4 py-3">
+                  <SkeletonLine className="h-5 w-full" />
+                  <div className="mt-3 h-3 rounded-full bg-cream" />
+                  <div className="mt-2 flex items-center justify-between">
+                    <SkeletonLine className="h-3 w-16" />
+                    <SkeletonLine className="h-3 w-16" />
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <RowListSkeleton rows={3} />
+                </div>
+              </>
+            )}
+          </CardSkeleton>
+        ))}
+      </section>
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]">
         <CardSkeleton className="bg-white/90">
@@ -570,14 +618,29 @@ function CompareSkeleton() {
             </div>
             <SkeletonButton className="w-24 bg-ink/10" />
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className="rounded-lg border border-gold/16 bg-cream/36 p-4">
-                <SkeletonLine className="h-5 w-3/5" />
-                <SkeletonLine className="mt-2 w-4/5" />
-                <SkeletonLine className="mt-4 h-3 w-28 bg-gold/20" />
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_240px]">
+            <div className="grid gap-3 md:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-28 rounded-lg border border-gold/16 bg-cream/36 p-4">
+                  <SkeletonLine className="h-5 w-3/5" />
+                  <SkeletonLine className="mt-2 w-4/5" />
+                  <SkeletonLine className="mt-4 h-3 w-28 bg-gold/20" />
+                </div>
+              ))}
+            </div>
+            <div className="flex h-full min-h-80 flex-col rounded-lg border border-gold/16 bg-[#FFF8EA] p-3">
+              <SkeletonLine className="h-3 w-24 bg-gold/20" />
+              <SkeletonLine className="mt-3 h-7 w-32" />
+              <SkeletonLine className="mt-2 h-4 w-full" />
+              <div className="mt-4 flex-1 space-y-1.5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between gap-2 rounded-lg border border-gold/12 bg-white/70 px-2.5 py-2">
+                    <SkeletonLine className="h-4 w-28" />
+                    <div className="h-6 w-6 rounded-md bg-gold/20" />
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </CardSkeleton>
 
@@ -710,7 +773,7 @@ export default function AppPageSkeleton({ variant = 'generic' }: AppPageSkeleton
     <div className="min-h-screen bg-cream text-ink" aria-busy="true">
       <AppHeader />
       <main className="container mx-auto px-4 py-16">
-        <PageHeadingSkeleton actions={variant === 'profile' || variant === 'compare' ? 1 : 2} />
+        <PageHeadingSkeleton actions={variant === 'profile' ? 1 : 2} />
         <SkeletonBody variant={variant} />
       </main>
     </div>

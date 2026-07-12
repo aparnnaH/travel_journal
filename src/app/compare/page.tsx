@@ -491,7 +491,7 @@ export default function ComparePage() {
                 error={friendCompareError}
                 friendSnapshots={friendSnapshots}
                 isLoading={isFriendCompareLoading}
-                onOpenFriends={() => router.push('/friends')}
+                onOpenFriends={(friendId) => router.push(`/friends?friendId=${encodeURIComponent(friendId)}`)}
                 onSelectFriend={setSelectedFriendId}
                 selectedFriendId={selectedFriendSnapshot?.friend.id ?? null}
                 yourCountryCount={yourCompareCountries.length}
@@ -519,7 +519,7 @@ function TravelCircleCompareCard({
   error: string | null;
   friendSnapshots: FriendCountrySnapshot[];
   isLoading: boolean;
-  onOpenFriends: () => void;
+  onOpenFriends: (friendId: string) => void;
   onSelectFriend: (friendId: string) => void;
   selectedFriendId: string | null;
   yourCountryCount: number;
@@ -587,16 +587,10 @@ function TravelCircleCompareCard({
             })}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
-            <FriendCompareStat label="Shared" value={comparison.sharedCountries.length} />
-            <FriendCompareStat label="You can share" value={comparison.onlyYouCountries.length} />
-            <FriendCompareStat label="Friend-only" value={comparison.onlyFriendCountries.length} />
-          </div>
-
           <FriendCompareDonut
-            friendOnlyCount={comparison.onlyFriendCountries.length}
-            sharedCount={comparison.sharedCountries.length}
-            youOnlyCount={comparison.onlyYouCountries.length}
+            friendOnlyCountries={comparison.onlyFriendCountries}
+            sharedCountries={comparison.sharedCountries}
+            youOnlyCountries={comparison.onlyYouCountries}
           />
 
           <div className="rounded-lg border border-gold/16 bg-white/70 px-3 py-3">
@@ -616,8 +610,15 @@ function TravelCircleCompareCard({
         </div>
       ) : null}
 
-      <Button type="button" variant="ghost" size="sm" onClick={onOpenFriends} className="mt-4 gap-2">
-        Manage friends
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => selectedFriendId && onOpenFriends(selectedFriendId)}
+        disabled={!selectedFriendId}
+        className="mt-4 gap-2"
+      >
+        See more details
         <ArrowRight className="h-4 w-4" aria-hidden="true" />
       </Button>
     </Card>
@@ -741,30 +742,22 @@ function TravelMomentumCard({
   );
 }
 
-function FriendCompareStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-gold/16 bg-white/72 px-3 py-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/46">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-ink">{value}</p>
-    </div>
-  );
-}
-
 function FriendCompareDonut({
-  friendOnlyCount,
-  sharedCount,
-  youOnlyCount,
+  friendOnlyCountries,
+  sharedCountries,
+  youOnlyCountries,
 }: {
-  friendOnlyCount: number;
-  sharedCount: number;
-  youOnlyCount: number;
+  friendOnlyCountries: FriendCountry[];
+  sharedCountries: FriendCountry[];
+  youOnlyCountries: FriendCountry[];
 }) {
   const segments = [
-    { label: 'Shared', value: sharedCount, color: '#315F43' },
-    { label: 'You can share', value: youOnlyCount, color: '#C9A96A' },
-    { label: 'Friend-only', value: friendOnlyCount, color: '#7FA6C5' },
+    { label: 'Shared', value: sharedCountries.length, color: '#315F43', countries: sharedCountries },
+    { label: 'You can share', value: youOnlyCountries.length, color: '#C9A96A', countries: youOnlyCountries },
+    { label: 'Friend-only', value: friendOnlyCountries.length, color: '#7FA6C5', countries: friendOnlyCountries },
   ];
   const total = Math.max(1, segments.reduce((sum, segment) => sum + segment.value, 0));
+  const totalCountries = sharedCountries.length + youOnlyCountries.length + friendOnlyCountries.length;
   let runningPercent = 0;
   const donutStops = segments
     .map((segment) => {
@@ -776,22 +769,22 @@ function FriendCompareDonut({
     .join(', ');
 
   return (
-    <div className="rounded-lg border border-gold/16 bg-white/70 p-3">
-      <div className="grid gap-4 sm:grid-cols-[112px_minmax(0,1fr)] sm:items-center">
+    <div className="rounded-lg border border-gold/16 bg-white/70 p-4">
+      <div className="grid justify-items-center gap-4">
         <div
-          aria-label={`Friend comparison donut: ${sharedCount} shared, ${youOnlyCount} you can share, ${friendOnlyCount} friend-only.`}
-          className="grid h-28 w-28 place-items-center rounded-full"
+          aria-label={`Friend comparison donut: ${sharedCountries.length} shared, ${youOnlyCountries.length} you can share, ${friendOnlyCountries.length} friend-only.`}
+          className="grid h-32 w-32 place-items-center rounded-full"
           style={{ background: `conic-gradient(${donutStops})` }}
-          title={`${sharedCount} shared, ${youOnlyCount} you can share, ${friendOnlyCount} friend-only`}
+          title={`${sharedCountries.length} shared, ${youOnlyCountries.length} you can share, ${friendOnlyCountries.length} friend-only`}
         >
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-[#F8F1E4] text-center">
+          <div className="grid h-20 w-20 place-items-center rounded-full bg-[#F8F1E4] text-center">
             <div>
-              <span className="block text-lg font-semibold leading-none text-ink">{sharedCount + youOnlyCount + friendOnlyCount}</span>
+              <span className="block text-xl font-semibold leading-none text-ink">{totalCountries}</span>
               <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/48">total</span>
             </div>
           </div>
         </div>
-        <div>
+        <div className="w-full">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink/46">Country split</p>
           <p className="mt-1 text-sm font-semibold text-ink">How your maps overlap</p>
           <FriendCompareLegend segments={segments} total={total} />
@@ -805,7 +798,7 @@ function FriendCompareLegend({
   segments,
   total,
 }: {
-  segments: Array<{ label: string; value: number; color: string }>;
+  segments: Array<{ label: string; value: number; color: string; countries: FriendCountry[] }>;
   total: number;
 }) {
   return (
@@ -813,15 +806,16 @@ function FriendCompareLegend({
       {segments.map((segment) => (
         <div
           key={segment.label}
-          className="grid grid-cols-[minmax(0,1fr)_2.5rem_3rem] items-center gap-2 rounded-md bg-white/52 px-2 py-1.5 text-xs text-ink/62"
-          title={`${segment.label}: ${segment.value}`}
+          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-white/60 px-3 py-2 text-sm text-ink/62"
+          title={`${segment.label}: ${segment.countries.map((country) => country.name).join(', ') || 'No countries yet'}`}
         >
           <span className="flex min-w-0 items-center gap-2">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: segment.color }} aria-hidden="true" />
-            <span className="truncate font-semibold">{segment.label}</span>
+            <span className="font-semibold">{segment.label}</span>
           </span>
-          <span className="text-right font-semibold tabular-nums text-ink/72">{segment.value}</span>
-          <span className="text-right font-semibold tabular-nums text-ink/54">{Math.round((segment.value / total) * 100)}%</span>
+          <span className="text-right font-semibold tabular-nums text-ink/72">
+            {segment.value} <span className="text-ink/48">({Math.round((segment.value / total) * 100)}%)</span>
+          </span>
         </div>
       ))}
     </div>

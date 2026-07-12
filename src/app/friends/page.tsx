@@ -343,6 +343,9 @@ export default function FriendsPage() {
   const [friendsData, setFriendsData] = useState<FriendsResponse>(emptyFriends);
   const [friendCountrySnapshots, setFriendCountrySnapshots] = useState<FriendCountrySnapshot[]>([]);
   const [selectedCompareFriendId, setSelectedCompareFriendId] = useState<string | null>(null);
+  const [initialCompareFriendId] = useState(() =>
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('friendId')
+  );
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -442,12 +445,13 @@ export default function FriendsPage() {
       : friendCountrySnapshots[0]?.friend.id ?? null;
   }, [friendCountrySnapshots]);
   const effectiveSelectedCompareFriendId = useMemo(() => {
-    if (!selectedCompareFriendId) return defaultCompareFriendId;
+    const requestedFriendId = selectedCompareFriendId ?? initialCompareFriendId;
+    if (!requestedFriendId) return defaultCompareFriendId;
 
-    return friendCountrySnapshots.some((snapshot) => snapshot.friend.id === selectedCompareFriendId)
-      ? selectedCompareFriendId
+    return friendCountrySnapshots.some((snapshot) => snapshot.friend.id === requestedFriendId)
+      ? requestedFriendId
       : defaultCompareFriendId;
-  }, [defaultCompareFriendId, friendCountrySnapshots, selectedCompareFriendId]);
+  }, [defaultCompareFriendId, friendCountrySnapshots, initialCompareFriendId, selectedCompareFriendId]);
   const selectedCountrySnapshot = useMemo(
     () =>
       friendCountrySnapshots.find((snapshot) => snapshot.friend.id === effectiveSelectedCompareFriendId) ??
