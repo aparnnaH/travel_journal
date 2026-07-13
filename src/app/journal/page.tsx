@@ -993,8 +993,6 @@ export default function JournalPage() {
   }, []);
 
   const defaultDraftDate = getTodayJournalDate();
-  const warningDraftPage = scrapbookPages.find((page) => page.id === activePageId) || scrapbookPages[0];
-  const hasPageContentForWarning = (warningDraftPage?.items.length || 0) > 0 || (warningDraftPage?.drawings.length || 0) > 0;
   const workspaceEditingBaselineChanged = workspaceEditingEntry
     ? form.title.trim() !== workspaceEditingEntry.title.trim() ||
       form.content.trim() !== getEntryContent(workspaceEditingEntry).trim() ||
@@ -1021,8 +1019,7 @@ export default function JournalPage() {
           form.tripStartDate !== defaultDraftDate ||
           form.tripEndDate !== defaultDraftDate ||
           insertedJournalPhotos.length ||
-          instagramEmbedUrl.trim() ||
-          hasPageContentForWarning)
+          instagramEmbedUrl.trim())
   );
   const confirmLeaveWithUnsavedDraft = useCallback(() => {
     if (!hasUnsavedJournalDraftProgress) {
