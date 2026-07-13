@@ -49,6 +49,7 @@ import type { SharedJournalEntry } from '@/types/journalSharing';
 type SavedEntry = JournalEntry & {
   country_id?: string;
   created_at?: string;
+  cover_photo?: string | null;
   isSummary?: boolean;
 };
 
@@ -124,9 +125,14 @@ const getEntryCoverPageIndex = (entry: EntryCardData) => {
 const getEntryCoverPhoto = (entry: EntryCardData) => {
   const decodedCanva = decodeJournalContentWithCanva(String(entry.content || '')).canva;
   const pages = getEntryCanvaPages(entry);
+  const insertedPhotos = decodedCanva?.insertedPhotos ?? entry.insertedPhotos ?? [];
+  const insertedCoverPhoto = Array.isArray(insertedPhotos)
+    ? insertedPhotos.find((photo) => photo?.src?.startsWith('data:image/'))?.src
+    : null;
+  const snakeCaseCoverPhoto = (entry as { cover_photo?: string | null }).cover_photo;
   const coverPageIndex = Math.min(Math.max(getEntryCoverPageIndex(entry), 0), Math.max(0, pages.length - 1));
 
-  return entry.coverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || null;
+  return entry.coverPhoto || snakeCaseCoverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || insertedCoverPhoto || null;
 };
 const getEntryInsertedPhotos = (entry: EntryCardData) => {
   const decodedPhotos = decodeJournalContentWithCanva(String(entry.content || '')).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];

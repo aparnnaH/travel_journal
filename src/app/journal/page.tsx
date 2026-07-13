@@ -40,6 +40,7 @@ import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { normalizeInstagramEmbedUrl, sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
 import { DEMO_TRIP_IMPORT_SAMPLE_STORAGE_KEY, DEMO_TRIP_IMPORT_SAMPLE_TEXT, isDemoUserId } from '@/lib/demoMode';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
+import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
 import {
   formatJournalDateRange,
   getJournalDateRangeError,
@@ -303,9 +304,14 @@ const getEntryCoverPageIndex = (entry: SavedEntry | SharedJournalEntry) => {
 const getEntryCoverPhoto = (entry: SavedEntry | SharedJournalEntry) => {
   const decodedCanva = decodeJournalContentWithCanva(String(entry.content || '')).canva;
   const pages = getEntryCanvaPages(entry);
+  const insertedPhotos = decodedCanva?.insertedPhotos ?? entry.insertedPhotos ?? [];
+  const insertedCoverPhoto = Array.isArray(insertedPhotos)
+    ? insertedPhotos.find((photo) => photo?.src?.startsWith('data:image/'))?.src
+    : null;
+  const snakeCaseCoverPhoto = (entry as { cover_photo?: string | null }).cover_photo;
   const coverPageIndex = clamp(getEntryCoverPageIndex(entry), 0, Math.max(0, pages.length - 1));
 
-  return entry.coverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || null;
+  return entry.coverPhoto || snakeCaseCoverPhoto || decodedCanva?.coverPhoto || pages[coverPageIndex] || pages[0] || insertedCoverPhoto || null;
 };
 const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
   const decodedPhotos = decodeJournalContentWithCanva(String(entry.content || '')).canva?.insertedPhotos ?? entry.insertedPhotos ?? [];
@@ -450,6 +456,35 @@ const getImportedTripCountryNames = (result: TripImportResult) => {
   return Array.from(new Set(countryNames));
 };
 
+const resolveImportedCountryOption = (countryName: string) => {
+  const normalizedCountryName = normalizeCountryMatchText(countryName);
+  const placeholderCountry = placeholderCountries.find(
+    (country) =>
+      normalizeCountryMatchText(country.name) === normalizedCountryName ||
+      normalizeCountryMatchText(country.id) === normalizedCountryName ||
+      normalizeCountryMatchText(country.code) === normalizedCountryName
+  );
+
+  if (placeholderCountry) {
+    return {
+      id: placeholderCountry.id,
+      name: placeholderCountry.name,
+    };
+  }
+
+  const atlasCountry = ATLAS_STAMP_COUNTRIES.find((country) => {
+    const names = [country.name, country.atlas_id, ...(country.aliases ?? [])];
+    return names.some((name) => normalizeCountryMatchText(name) === normalizedCountryName);
+  });
+
+  return atlasCountry
+    ? {
+        id: atlasCountry.atlas_id,
+        name: countryName,
+      }
+    : null;
+};
+
 const getRegionDisplayName = (countryId: string) => {
   if (!/^[A-Z]{2}$/i.test(countryId)) {
     return null;
@@ -496,6 +531,8 @@ export default function JournalPage() {
   const isLoading = useAuthStore((state) => state.isLoading);
   const visitedMapCountries = useMapStore((state) => state.visitedCountries);
   const mapCountryLabels = useMapStore((state) => state.countryLabels);
+  const addVisitedCountry = useMapStore((state) => state.addVisitedCountry);
+  const setCountryLabel = useMapStore((state) => state.setCountryLabel);
   const activeTool = useJournalLayoutStore((state) => state.activeTool);
   const setActiveTool = useJournalLayoutStore((state) => state.setActiveTool);
   const router = useRouter();
@@ -734,25 +771,6 @@ export default function JournalPage() {
     setOpenedEntry(fullEntry);
   };
 
-  const openEditEntry = async (entry: SavedEntry) => {
-    const fullEntry = await loadFullEntry(entry);
-
-    setEditingEntry(fullEntry);
-    setEditForm({
-      title: fullEntry.title,
-      content: getEntryContent(fullEntry),
-      countryId: getEntryCountry(fullEntry),
-      mood: fullEntry.mood || '',
-      tags: fullEntry.tags?.join(', ') || '',
-      tripStartDate: normalizeJournalDate(getEntryTripStartDate(fullEntry)),
-      tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
-    });
-    setEditError(null);
-    setOpenedEntry(null);
-    setSharingEntryId(null);
-    setCommentEntryId(null);
-  };
-
   const openEntryInWorkspace = useCallback(async (entryId: string) => {
     const fullEntry = await loadFullEntry({ id: entryId } as SavedEntry);
     const countryId = getEntryCountry(fullEntry);
@@ -762,6 +780,19 @@ export default function JournalPage() {
     const instagramEmbeds = getEntryInstagramEmbeds(fullEntry);
     const canvaPages = getEntryCanvaPages(fullEntry);
     const canvaEditUrl = getEntryCanvaEditUrl(fullEntry);
+    const insertedPhotos = getEntryInsertedPhotos(fullEntry);
+    const coverPhoto = getEntryCoverPhoto(fullEntry);
+    const workspacePhotos =
+      insertedPhotos.length || !coverPhoto || canvaPages.length
+        ? insertedPhotos
+        : [
+            {
+              id: 'restored-cover-photo',
+              src: coverPhoto,
+              alt: `${fullEntry.title} cover photo`,
+              caption: 'Cover photo',
+            },
+          ];
 
     setWorkspaceEditingEntry(fullEntry);
     setForm({
@@ -774,8 +805,8 @@ export default function JournalPage() {
       tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
     });
     setCountrySearch(countryName || '');
-    setInsertedJournalPhotos(getEntryInsertedPhotos(fullEntry));
-    setMemoryCoverPhotoId(null);
+    setInsertedJournalPhotos(workspacePhotos);
+    setMemoryCoverPhotoId(workspacePhotos.length === 1 && workspacePhotos[0].id === 'restored-cover-photo' ? workspacePhotos[0].id : null);
     setInstagramEmbedUrl(instagramEmbeds[0]?.url || '');
     setInstagramError(null);
     setCanvaImportedPreview(
@@ -1819,7 +1850,7 @@ export default function JournalPage() {
       parsedTrip: parsedTripNotice,
     });
     setCountrySearch(
-      importedCountry?.name || ''
+      importedCountryNames.length > 1 ? importedCountryNames.join(', ') : importedCountry?.name || ''
     );
     setError(null);
     setStorageWarning(null);
@@ -2510,6 +2541,22 @@ export default function JournalPage() {
   const countryChecklistValue = hasMultipleImportedCountries
     ? importedTripCountryNames.join(', ')
     : selectedVisitedCountry?.name || currentCountry?.name || importedTripCountryNames[0] || 'Choose one';
+  const importedCountryOptions = importedTripCountryNames
+    .map(resolveImportedCountryOption)
+    .filter((country): country is { id: string; name: string } => Boolean(country));
+  const missingImportedCountryOptions = importedCountryOptions.filter(
+    (country) => !visitedMapCountries.includes(country.id)
+  );
+  const markImportedCountryVisited = (country: { id: string; name: string }) => {
+    addVisitedCountry(country.id);
+    setCountryLabel(country.id, country.name);
+    setForm((current) => ({
+      ...current,
+      countryId: current.countryId || country.id,
+    }));
+    setCountrySearch(importedTripCountryNames.length > 1 ? importedTripCountryNames.join(', ') : country.name);
+    setCountryPickerOpen(false);
+  };
   const canSaveCurrentEntry =
     effectiveJournalTitle.length > 0 &&
     form.content.trim().length > 0 &&
@@ -2589,31 +2636,36 @@ export default function JournalPage() {
 
   const renderDraftChecklist = (className = '') => (
     <div className={className}>
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Draft checklist</p>
-      <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Draft checklist</p>
+        <p className="text-xs text-ink/45">
+          {workspaceProgress.filter((item) => item.complete).length} / {workspaceProgress.length}
+        </p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
         {workspaceProgress.map((item) => (
-          <div key={item.label} className="rounded-lg border border-gold/18 bg-cream/55 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-ink">
+          <div key={item.label} className="flex min-w-0 items-center gap-2 rounded-md border border-gold/18 bg-cream/55 px-2.5 py-2">
+            <span
+              className={[
+                'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                item.complete
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                  : 'border-red-200 bg-red-50 text-red-600',
+              ].join(' ')}
+            >
+              {item.complete ? (
+                <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-ink">
                 {item.label}
-                {item.optional ? <span className="ml-1 text-xs font-medium text-ink/45">Optional</span> : null}
-              </span>
-              <span
-                className={[
-                  'flex h-6 w-6 items-center justify-center rounded-full border',
-                  item.complete
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                    : 'border-red-200 bg-red-50 text-red-600',
-                ].join(' ')}
-              >
-                {item.complete ? (
-                  <Check className="h-4 w-4" aria-hidden="true" />
-                ) : (
-                  <X className="h-4 w-4" aria-hidden="true" />
-                )}
-              </span>
+                {item.optional ? <span className="ml-1 font-medium text-ink/45">Optional</span> : null}
+              </p>
+              <p className="truncate text-xs text-ink/55">{item.value}</p>
             </div>
-            <p className="mt-1 truncate text-sm text-ink/60">{item.value}</p>
           </div>
         ))}
       </div>
@@ -3025,9 +3077,24 @@ export default function JournalPage() {
       ) : null}
       <p className="mt-2 text-xs leading-5 text-ink/55">
         {hasMultipleImportedCountries
-          ? `Detected countries: ${importedTripCountryNames.join(', ')}. Choose the country this journal entry should be linked to in your archive.`
+          ? 'If a country is not listed, check it off on the map first.'
           : 'If the country does not appear, please select it on the map first.'}
       </p>
+      {missingImportedCountryOptions.length ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {missingImportedCountryOptions.map((country) => (
+            <button
+              key={country.id}
+              type="button"
+              className="rounded-md border border-gold/30 bg-white px-3 py-1.5 text-xs font-semibold text-ink transition hover:bg-cream focus:outline-none focus:ring-2 focus:ring-gold"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => markImportedCountryVisited(country)}
+            >
+              Mark {country.name} on map
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -3122,15 +3189,6 @@ export default function JournalPage() {
                 Open Canva
               </Button>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              isLoading={saving}
-              disabled={!canSaveCurrentEntry}
-              onClick={() => void saveCurrentJournalEntry()}
-            >
-              {currentEntrySaveLabel}
-            </Button>
           </div>
         </div>
         <div className="bg-[#e8dcc2] p-4 [perspective:1800px] [background-image:linear-gradient(90deg,rgba(61,43,14,0.05)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.38),rgba(255,255,255,0))] sm:p-6">
@@ -3167,8 +3225,9 @@ export default function JournalPage() {
             coverPageIndex: canvaCoverPageIndex,
             onSetCover: setCanvaCoverPageIndex,
           })}
-          <div className="mx-auto mt-4 grid max-w-6xl gap-3 xl:grid-cols-[minmax(0,1fr)_260px_300px]">
-            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+          {renderDraftChecklist('mx-auto mt-4 max-w-7xl rounded-lg border border-gold/20 bg-white/86 p-3 shadow-soft')}
+          <div className="mx-auto mt-4 grid max-w-7xl gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft xl:row-span-2">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-page-story">
                   <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
@@ -3189,9 +3248,9 @@ export default function JournalPage() {
                 id="canva-page-story"
                 value={form.content}
                 onChange={(event) => setForm({ ...form, content: event.target.value })}
-                rows={5}
+                rows={12}
                 placeholder="What do you want to remember?"
-                className="mt-3 w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+                className="mt-3 min-h-[360px] w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25 xl:min-h-[440px]"
                 required
               />
               {isStoryDictating ? <p className="mt-2 text-sm font-semibold text-gold-deep">Listening...</p> : null}
@@ -3245,8 +3304,16 @@ export default function JournalPage() {
                   Add a journal name, story, visited country, and mood to save.
                 </p>
               ) : null}
+              <Button
+                type="button"
+                className="mt-4 w-full"
+                isLoading={saving}
+                disabled={!canSaveCurrentEntry}
+                onClick={() => void saveCurrentJournalEntry()}
+              >
+                {currentEntrySaveLabel}
+              </Button>
             </div>
-            {renderDraftChecklist('rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft')}
           </div>
           {renderCanvaAttachment()}
           {renderMemoryPhotoTray()}
@@ -3716,8 +3783,10 @@ export default function JournalPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-3 bg-[#e8dcc2] p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_260px_300px]">
-            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+          <div className="bg-[#e8dcc2] p-4 sm:p-6">
+            {renderDraftChecklist('mb-3 rounded-lg border border-gold/20 bg-white/86 p-3 shadow-soft')}
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft xl:row-span-2">
               <Input
                 label="Journal name"
                 value={form.title}
@@ -3745,16 +3814,16 @@ export default function JournalPage() {
                 id="canva-draft-story"
                 value={form.content}
                 onChange={(event) => setForm({ ...form, content: event.target.value })}
-                rows={10}
+                rows={14}
                 placeholder="What do you want to remember?"
-                className="mt-3 w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+                className="mt-3 min-h-[420px] w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25 xl:min-h-[520px]"
                 required
               />
               {isStoryDictating ? <p className="mt-2 text-sm font-semibold text-gold-deep">Listening...</p> : null}
               {dictationError ? <p className="mt-2 text-sm text-red-600">{dictationError}</p> : null}
             </div>
 
-            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+              <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
               <label className="text-sm font-semibold text-ink" htmlFor="canva-draft-tags">
                 Tags
               </label>
@@ -3804,9 +3873,8 @@ export default function JournalPage() {
               >
                 {currentEntrySaveLabel}
               </Button>
+              </div>
             </div>
-
-            {renderDraftChecklist('rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft')}
           </div>
           {renderCanvaAttachment()}
           {renderMemoryPhotoTray()}
@@ -4762,7 +4830,7 @@ export default function JournalPage() {
 	              ) : null}
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
-	                <Button type="button" size="sm" variant="secondary" onClick={() => void openEditEntry(openedEntry)}>
+	                <Button type="button" size="sm" variant="secondary" onClick={() => void openEntryInWorkspace(openedEntry.id)}>
 	                  <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Edit
 	                </Button>
