@@ -386,7 +386,7 @@ function FriendsSkeleton() {
   return (
     <div className="space-y-6">
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <CardSkeleton className="overflow-hidden bg-[#fff8ea] p-0">
+        <CardSkeleton className="overflow-hidden rounded-3xl border-gold/30 bg-[#fff8ea] p-0">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_260px]">
             <div className="p-6 sm:p-8">
               <SkeletonLine className="h-7 w-40 rounded-full bg-white/70" />
@@ -403,9 +403,9 @@ function FriendsSkeleton() {
           </div>
         </CardSkeleton>
 
-        <CardSkeleton className="bg-white/90">
-          <SkeletonLine className="h-3 w-24 bg-gold/20" />
-          <SkeletonLine className="mt-3 h-8 w-44" />
+        <CardSkeleton className="rounded-3xl bg-white/90">
+          <SkeletonLine className="h-3 w-28 bg-gold/20" />
+          <SkeletonLine className="mt-3 h-8 w-40" />
           <div className="mt-5 space-y-4">
             <SkeletonLine className="h-12 w-full bg-cream/70" />
             <SkeletonButton className="w-full" />
@@ -415,8 +415,127 @@ function FriendsSkeleton() {
 
       <MetricSkeletonRow />
 
+      <CardSkeleton className="overflow-hidden rounded-3xl border-gold/28 bg-[#FFF8EA] p-0">
+        <div className="grid gap-0 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="relative min-h-72 overflow-hidden border-b border-gold/18 bg-[#20362B] p-6 xl:border-b-0 xl:border-r">
+            <div className="h-11 w-11 rounded-lg bg-cream/12" />
+            <SkeletonLine className="mt-5 h-3 w-36 bg-white/20" />
+            <SkeletonLine className="mt-4 h-10 w-full bg-white/20" />
+            <SkeletonLine className="mt-3 h-10 w-4/5 bg-white/20" />
+            <SkeletonLine className="mt-5 w-full bg-white/20" />
+            <SkeletonLine className="mt-2 w-5/6 bg-white/20" />
+            <div className="mt-5 h-10 w-44 rounded-lg border border-cream/14 bg-cream/8" />
+          </div>
+
+          <div className="p-5 sm:p-6">
+            <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <SkeletonLine className="h-3 w-36 bg-gold/20" />
+                <SkeletonLine className="mt-3 h-8 w-56" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <SkeletonLine className="h-10 w-24 rounded-lg bg-gold/25" />
+                <SkeletonLine className="h-10 w-28 rounded-lg bg-cream/70" />
+              </div>
+            </div>
+
+            <div className="relative rounded-lg border border-gold/24 bg-[#EAD8B8] p-3 shadow-inner">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.82fr)_minmax(0,1fr)]">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className={cn(
+                      'min-h-48 rounded-lg border p-4',
+                      index === 1 ? 'border-gold/30 bg-white/92' : 'border-gold/18 bg-[#FFF8EA]/86'
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="grid flex-1 gap-2">
+                        <SkeletonLine className="h-3 w-32 bg-gold/20" />
+                        <SkeletonLine className="h-7 w-36" />
+                      </div>
+                      <SkeletonLine className="h-8 w-10 rounded-lg bg-gold/20" />
+                    </div>
+                    <div className="mt-5 grid gap-2">
+                      {Array.from({ length: 3 }).map((_, rowIndex) => (
+                        <div key={rowIndex} className="flex items-center gap-2 rounded-lg border border-gold/12 bg-white/70 p-2">
+                          <div className="h-9 w-9 rounded-md bg-gold/18" />
+                          <SkeletonLine className="h-4 flex-1" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-lg border border-gold/24 bg-white shadow-soft">
+              <div className="grid gap-0 md:grid-cols-[minmax(0,1fr)_190px]">
+                <div className="p-4">
+                  <SkeletonLine className="h-3 w-36 bg-gold/20" />
+                  <SkeletonLine className="mt-3 h-8 w-52" />
+                  <SkeletonLine className="mt-3 w-full max-w-lg" />
+                </div>
+                <div className="border-t border-dashed border-gold/34 bg-[#F8F1E4] p-4 md:border-l md:border-t-0">
+                  <SkeletonLine className="h-3 w-28 bg-ink/10" />
+                  <SkeletonLine className="mt-4 h-5 w-32" />
+                  <SkeletonLine className="mt-3 h-3 w-24" />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <SkeletonLine className="h-3 w-32 bg-gold/20" />
+                    <SkeletonLine className="mt-3 h-6 w-40" />
+                  </div>
+                  <SkeletonLine className="h-9 w-9 rounded-lg bg-gold/20" />
+                </div>
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="mb-3 rounded-lg border border-gold/12 bg-cream/40 px-3 py-2 last:mb-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <SkeletonLine className="h-4 w-24" />
+                      <SkeletonLine className="h-3 w-20" />
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                      <div className={cn('h-full rounded-full bg-gold/45', index === 0 ? 'w-3/4' : index === 1 ? 'w-1/2' : 'w-1/3')} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg border border-gold/20 bg-white/90 p-4">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <SkeletonLine className="h-3 w-32 bg-gold/20" />
+                    <SkeletonLine className="mt-3 h-6 w-44" />
+                  </div>
+                  <SkeletonLine className="h-10 w-10 rounded-lg bg-emerald-100" />
+                </div>
+                <RowListSkeleton rows={2} />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-gold/20 bg-white/90 p-4">
+              <SkeletonLine className="h-3 w-40 bg-gold/20" />
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="rounded-lg border border-gold/14 bg-cream/45 p-3">
+                    <SkeletonLine className="h-9 w-9 rounded-lg bg-gold/20" />
+                    <SkeletonLine className="mt-4 h-4 w-28" />
+                    <SkeletonLine className="mt-2 h-3 w-full" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardSkeleton>
+
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <CardSkeleton className="bg-white/90">
+        <CardSkeleton className="rounded-3xl bg-white/90">
           <div className="mb-5 flex items-end justify-between gap-3">
             <div>
               <SkeletonLine className="h-3 w-20 bg-gold/20" />
@@ -428,14 +547,14 @@ function FriendsSkeleton() {
         </CardSkeleton>
 
         <div className="space-y-6">
-          <CardSkeleton className="bg-[#F8F1E4]">
+          <CardSkeleton className="rounded-3xl bg-[#F8F1E4]">
             <SkeletonLine className="h-3 w-24 bg-gold/20" />
             <SkeletonLine className="mt-3 h-8 w-32" />
             <div className="mt-4">
               <RowListSkeleton rows={1} />
             </div>
           </CardSkeleton>
-          <CardSkeleton className="bg-white/90">
+          <CardSkeleton className="rounded-3xl bg-white/90">
             <SkeletonLine className="h-3 w-28 bg-gold/20" />
             <SkeletonLine className="mt-3 h-8 w-40" />
             <div className="mt-4">

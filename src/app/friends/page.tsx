@@ -199,6 +199,9 @@ const buildRegionOverlap = (
     .slice(0, 4);
 };
 
+const getRegionOverlapCount = (region: RegionOverlap) =>
+  region.sharedCount > 0 ? region.sharedCount : Math.min(region.yourCount, region.friendCount);
+
 const buildTravelCircleBadges = (
   comparison: ReturnType<typeof compareCountryLists>,
   regionOverlap: RegionOverlap[],
@@ -993,27 +996,31 @@ function CountryCompareSection({
                       </div>
                       {regionOverlap.length > 0 ? (
                         <div className="mt-4 space-y-3">
-                          {regionOverlap.map((region) => (
-                            <div key={region.region} className="rounded-lg border border-gold/12 bg-cream/40 px-3 py-2">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="min-w-0 truncate text-sm font-semibold text-ink">{region.region}</p>
-                                <p className="shrink-0 text-xs font-semibold uppercase tracking-[0.12em] text-ink/46">
-                                  {region.sharedCount > 0 ? `${region.sharedCount} shared` : 'same region'}
-                                </p>
+                          {regionOverlap.map((region) => {
+                            const overlapCount = getRegionOverlapCount(region);
+
+                            return (
+                              <div key={region.region} className="rounded-lg border border-gold/12 bg-cream/40 px-3 py-2">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="min-w-0 truncate text-sm font-semibold text-ink">{region.region}</p>
+                                  <p className="shrink-0 text-xs font-semibold uppercase tracking-[0.12em] text-ink/46">
+                                    {overlapCount} overlap
+                                  </p>
+                                </div>
+                                <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                                  <div
+                                    className="h-full rounded-full bg-gold"
+                                    style={{
+                                      width: `${Math.max(
+                                        18,
+                                        Math.min(100, (overlapCount / Math.max(region.yourCount, region.friendCount, 1)) * 100)
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
                               </div>
-                              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
-                                <div
-                                  className="h-full rounded-full bg-gold"
-                                  style={{
-                                    width: `${Math.max(
-                                      18,
-                                      Math.min(100, (region.sharedCount / Math.max(region.yourCount, region.friendCount, 1)) * 100)
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       ) : (
                         <p className="mt-4 text-sm leading-6 text-ink/62">
