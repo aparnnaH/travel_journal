@@ -593,6 +593,7 @@ export default function JournalPage() {
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importNotice, setImportNotice] = useState<string | null>(null);
+  const [blankJournalWorkspaceOpen, setBlankJournalWorkspaceOpen] = useState(false);
   const [canvaModalOpen, setCanvaModalOpen] = useState(false);
   const [canvaDesigns, setCanvaDesigns] = useState<CanvaDesign[]>([]);
   const [canvaQuery, setCanvaQuery] = useState('');
@@ -990,6 +991,102 @@ export default function JournalPage() {
       observer.disconnect();
     };
   }, []);
+
+  const defaultDraftDate = getTodayJournalDate();
+  const warningDraftPage = scrapbookPages.find((page) => page.id === activePageId) || scrapbookPages[0];
+  const hasPageContentForWarning = (warningDraftPage?.items.length || 0) > 0 || (warningDraftPage?.drawings.length || 0) > 0;
+  const workspaceEditingBaselineChanged = workspaceEditingEntry
+    ? form.title.trim() !== workspaceEditingEntry.title.trim() ||
+      form.content.trim() !== getEntryContent(workspaceEditingEntry).trim() ||
+      form.countryId !== getEntryCountry(workspaceEditingEntry) ||
+      form.mood !== (workspaceEditingEntry.mood || '') ||
+      form.tags.trim() !== (workspaceEditingEntry.tags?.join(', ') || '') ||
+      form.tripStartDate !== normalizeJournalDate(getEntryTripStartDate(workspaceEditingEntry)) ||
+      form.tripEndDate !== normalizeJournalDate(getEntryTripEndDate(workspaceEditingEntry), normalizeJournalDate(getEntryTripStartDate(workspaceEditingEntry))) ||
+      JSON.stringify(canvaImportedPreview?.dataUrls ?? []) !== JSON.stringify(getEntryCanvaPages(workspaceEditingEntry)) ||
+      JSON.stringify(insertedJournalPhotos) !== JSON.stringify(getEntryInsertedPhotos(workspaceEditingEntry)) ||
+      instagramEmbedUrl.trim() !== (getEntryInstagramEmbeds(workspaceEditingEntry)[0]?.url || '')
+    : false;
+  const hasUnsavedJournalDraftProgress = Boolean(
+    !saving &&
+      (workspaceEditingEntry
+        ? workspaceEditingBaselineChanged
+        : importedTripWorkspaceNotice ||
+          canvaImportedPreview ||
+          form.title.trim() ||
+          form.content.trim() ||
+          form.countryId.trim() ||
+          form.mood.trim() ||
+          form.tags.trim() ||
+          form.tripStartDate !== defaultDraftDate ||
+          form.tripEndDate !== defaultDraftDate ||
+          insertedJournalPhotos.length ||
+          instagramEmbedUrl.trim() ||
+          hasPageContentForWarning)
+  );
+  const confirmLeaveWithUnsavedDraft = useCallback(() => {
+    if (!hasUnsavedJournalDraftProgress) {
+      return true;
+    }
+
+    return window.confirm('Drafts are not saved yet. Leave this page and lose your current journal draft?');
+  }, [hasUnsavedJournalDraftProgress]);
+  const navigateWithUnsavedDraftWarning = useCallback(
+    (href: string) => {
+      if (!confirmLeaveWithUnsavedDraft()) {
+        return;
+      }
+
+      router.push(href);
+    },
+    [confirmLeaveWithUnsavedDraft, router]
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedJournalDraftProgress) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const link = target.closest('a[href]');
+      if (!(link instanceof HTMLAnchorElement) || link.target || link.hasAttribute('download')) {
+        return;
+      }
+
+      const nextUrl = new URL(link.href, window.location.href);
+
+      if (nextUrl.origin !== window.location.origin || nextUrl.href === window.location.href) {
+        return;
+      }
+
+      if (!window.confirm('Drafts are not saved yet. Leave this page and lose your current journal draft?')) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('click', handleDocumentClick, true);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('click', handleDocumentClick, true);
+    };
+  }, [hasUnsavedJournalDraftProgress]);
 
   if (isLoading || !user) {
     return <AppPageSkeleton variant="journal" />;
@@ -1499,7 +1596,7 @@ export default function JournalPage() {
 
       setInsertedJournalPhotos((current) => [...current, ...newPhotos]);
       setMemoryCoverPhotoId((current) =>
-        isDemoUser && !canvaImportedPreview && !current ? newPhotos[0]?.id ?? null : current
+        !canvaImportedPreview && !current ? newPhotos[0]?.id ?? null : current
       );
       setStorageWarning(
         files.length > remainingPhotoSlots
@@ -2115,7 +2212,7 @@ export default function JournalPage() {
     );
     const selectedMemoryCoverPhoto =
       insertedJournalPhotos.find((photo) => photo.id === memoryCoverPhotoId) ?? insertedJournalPhotos[0];
-    const demoMemoryCoverPhoto = isDemoUser && !canvaImportedPreview ? selectedMemoryCoverPhoto?.src ?? null : null;
+    const memoryCoverPhoto = !canvaImportedPreview ? selectedMemoryCoverPhoto?.src ?? null : null;
     const response = workspaceEditingEntry
       ? await updateJournalEntry({
           entryId: workspaceEditingEntry.id,
@@ -2135,7 +2232,7 @@ export default function JournalPage() {
           canvaPages: canvaImportedPreview?.dataUrls ?? [],
           tripStartDate: form.tripStartDate,
           tripEndDate: form.tripEndDate,
-          coverPhoto: demoMemoryCoverPhoto,
+          coverPhoto: memoryCoverPhoto,
           coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
           insertedPhotos: insertedJournalPhotos,
           instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
@@ -2152,7 +2249,7 @@ export default function JournalPage() {
           canvaPages: canvaImportedPreview?.dataUrls,
           tripStartDate: form.tripStartDate,
           tripEndDate: form.tripEndDate,
-          coverPhoto: demoMemoryCoverPhoto,
+          coverPhoto: memoryCoverPhoto,
           coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
           insertedPhotos: insertedJournalPhotos,
           instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
@@ -2171,6 +2268,7 @@ export default function JournalPage() {
       setForm({ ...form, title: '', content: '', countryId: '', mood: '', tags: '', tripStartDate: today, tripEndDate: today });
       setCountrySearch('');
       setWorkspaceEditingEntry(null);
+      setBlankJournalWorkspaceOpen(false);
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
       setInsertedJournalPhotos([]);
@@ -2567,7 +2665,7 @@ export default function JournalPage() {
     hasValidDateRange;
   const currentEntrySaveLabel = workspaceEditingEntry ? 'Update Entry' : 'Save Entry';
   const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
-  const canUseMemoryPhotoCover = isDemoUser && !canvaImportedPreview;
+  const canUseMemoryPhotoCover = !canvaImportedPreview;
   const workspaceProgress = [
     {
       label: 'Journal name',
@@ -2577,9 +2675,9 @@ export default function JournalPage() {
     },
     {
       label: 'Canva pages',
-      value: canvaImportedPreview ? `${canvaImportedPreview.dataUrls.length} linked` : isDemoUser ? 'Optional in demo' : 'Not linked',
-      complete: isDemoUser || Boolean(canvaImportedPreview),
-      optional: isDemoUser,
+      value: canvaImportedPreview ? `${canvaImportedPreview.dataUrls.length} linked` : 'Optional',
+      complete: Boolean(canvaImportedPreview),
+      optional: true,
     },
     {
       label: 'Story',
@@ -2980,7 +3078,7 @@ export default function JournalPage() {
             <div>
               <h3 className="text-sm font-semibold text-ink">Canva pages</h3>
               <p className="text-xs leading-5 text-ink/55">
-                Attach a finished Canva design to this same journal entry.
+                Optional: attach a finished Canva design to this same journal entry.
               </p>
             </div>
           </div>
@@ -3152,16 +3250,6 @@ export default function JournalPage() {
                 </button>
               </div>
             ) : null}
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="gap-2"
-              onClick={openCanvaModal}
-            >
-              <Search className="h-4 w-4" aria-hidden="true" />
-              Choose existing
-            </Button>
             {preview.design ? (
               <Button
                 type="button"
@@ -3737,23 +3825,17 @@ export default function JournalPage() {
     return (
       <div className="p-5">
         <div className="rounded-lg border border-gold/20 bg-white shadow-soft">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gold/15 bg-cream/55 px-4 py-3">
+          <div className="border-b border-gold/15 bg-cream/55 px-4 py-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva story draft</p>
-              <h3 className="mt-1 text-2xl font-serif text-ink">{effectiveJournalTitle || 'Review imported trip'}</h3>
-              <p className="mt-1 text-sm text-ink/60">
-                Your parsed itinerary is ready. Attach or create the Canva page, choose a mood, then save it to the archive.
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">
+                {parsedTrip ? 'Imported trip draft' : 'Journal draft'}
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
-                <Palette className="h-4 w-4" aria-hidden="true" />
-                Create in Canva
-              </Button>
-              <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={openCanvaModal}>
-                <Search className="h-4 w-4" aria-hidden="true" />
-                Choose existing
-              </Button>
+              <h3 className="mt-1 text-2xl font-serif text-ink">
+                {effectiveJournalTitle || (parsedTrip ? 'Review imported trip' : 'Start a journal entry')}
+              </h3>
+              <p className="mt-1 text-sm text-ink/60">
+                Add the story, trip details, and mood, then save it to the archive. Canva pages are optional.
+              </p>
             </div>
           </div>
 
@@ -3922,7 +4004,7 @@ export default function JournalPage() {
             {renderCanvaImportedPreview(canvaImportedPreview)}
           </div>
         </div>
-      ) : hasImportedTripWorkspaceContent ? (
+      ) : hasImportedTripWorkspaceContent || blankJournalWorkspaceOpen ? (
         renderCanvaDraftWorkspace()
       ) : (
         <div className="p-5">
@@ -3943,16 +4025,24 @@ export default function JournalPage() {
                     Create a Canva layout, import an itinerary, or pull in a finished design. This workspace keeps the page, story, dates, country, photos, and sharing-ready entry together.
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-ink">Choose how to start</h4>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   <button
                     type="button"
                     className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
-                    onClick={() => void createCanvaJournalPage()}
-                    disabled={canvaCreatingDesign}
+                    onClick={() => {
+                      setImportedTripWorkspaceNotice(null);
+                      setCanvaImportedPreview(null);
+                      setLocalScrapbookBackupOpen(false);
+                      setBlankJournalWorkspaceOpen(true);
+                      setImportNotice('Started a journal entry without Canva. Add a story and optional memory photos.');
+                      setError(null);
+                    }}
                   >
-                    <Palette className="h-5 w-5 text-gold-deep" aria-hidden="true" />
-                    <p className="mt-3 text-sm font-semibold text-ink">Create in Canva</p>
-                    <p className="mt-1 text-xs leading-5 text-ink/58">Open a fresh design for this entry.</p>
+                    <ImagePlus className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-ink">Start without Canva</p>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">Write a story and use uploaded photos as the cover.</p>
                   </button>
                   <button
                     type="button"
@@ -3969,12 +4059,23 @@ export default function JournalPage() {
                   <button
                     type="button"
                     className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
+                    onClick={() => void createCanvaJournalPage()}
+                    disabled={canvaCreatingDesign}
+                  >
+                    <Palette className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-ink">Create in Canva</p>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">Open a fresh design for this entry.</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
                     onClick={openCanvaModal}
                   >
                     <Search className="h-5 w-5 text-gold-deep" aria-hidden="true" />
                     <p className="mt-3 text-sm font-semibold text-ink">Choose existing</p>
                     <p className="mt-1 text-xs leading-5 text-ink/58">Attach a finished Canva design.</p>
                   </button>
+                  </div>
                 </div>
                 {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
               </div>
@@ -4356,9 +4457,9 @@ export default function JournalPage() {
         description="Attach a Canva page, add the story, trip details, and mood, then save it to your archive with optional photos or Instagram embeds."
         actions={
           <div className="flex flex-wrap gap-3">
-            <Button type="button" variant="secondary" className="gap-2" onClick={() => router.push('/journal/entries')}>
+            <Button type="button" variant="secondary" className="gap-2" onClick={() => navigateWithUnsavedDraftWarning('/journal/entries')}>
               <BookOpen className="h-4 w-4" aria-hidden="true" />
-              Archive
+              All entries
             </Button>
           </div>
         }
@@ -4882,7 +4983,7 @@ export default function JournalPage() {
 	                        variant="secondary"
 	                        size="sm"
 	                        className="mt-3"
-	                        onClick={() => router.push('/friends')}
+	                        onClick={() => navigateWithUnsavedDraftWarning('/friends')}
 	                      >
 	                        Open Travel Circle
 	                      </Button>
