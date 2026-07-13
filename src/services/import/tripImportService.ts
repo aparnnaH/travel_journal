@@ -39,7 +39,7 @@ type CreateTripImportDraftInput = {
 
 // Limits import files to formats the parser can reasonably inspect in-browser.
 export const isSupportedTripImportFile = (file: File) =>
-  file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
 // Reads images as data URLs so they can become scrapbook photo assets.
 const readFileAsDataUrl = (file: File) =>
@@ -253,7 +253,7 @@ export const readTripImportFiles = async (files: File[] = []): Promise<TripImpor
 export const createJournalDraftFromTrip = (trip: ParsedTripDraft): TripJournalDraft => {
   const daySections = trip.timeline.map((day) => {
     const activities = day.activities.length
-      ? day.activities.map((activity) => `- ${activity.time ? `${activity.time} ` : ''}${activity.title}`).join('\n')
+      ? day.activities.map((activity) => `- ${activity.title}`).join('\n')
       : '- Imported source saved for this day';
 
     return `${day.title}\n${activities}`;
@@ -287,7 +287,7 @@ const createImportedPhotoAssets = (trip: ParsedTripDraft): PhotoAsset[] =>
 const getDayNoteText = (day: ParsedTripDay, trip: ParsedTripDraft) => {
   const activities = day.activities.length
     ? day.activities
-        .map((activity) => `${activity.time ? `${activity.time} ` : ''}${activity.title}`)
+        .map((activity) => activity.title)
         .join('\n')
     : trip.summary;
 

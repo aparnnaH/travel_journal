@@ -1,5 +1,5 @@
 // Local itinerary parser for imported travel plans.
-// This parser turns pasted text, screenshots, PDFs, and Wanderlog-style copies
+// This parser turns pasted text, PDFs, and Wanderlog-style copies
 // into the structured draft shape used by journal import and AI memory flows.
 import { COUNTRY_STAMPS } from '@/data/stamps/countries';
 import { placeholderCountries } from '@/lib/placeholderData';
@@ -69,6 +69,7 @@ const MONTHS: Record<string, number> = {
 };
 
 const MONTH_PATTERN = Object.keys(MONTHS).sort((a, b) => b.length - a.length).join('|');
+const YEAR_PATTERN = '(?:19\\d{2}|20\\d{2}|\\d{2}(?!\\s*(?::\\d{2}|am\\b|pm\\b)))';
 
 // Extra aliases cover common cities and country nicknames that are not present
 // in the placeholder country seed data.
@@ -95,8 +96,10 @@ const EXTRA_PLACE_ALIASES: PlaceAlias[] = [
   { alias: 'bangkok', name: 'Bangkok', countryName: 'Thailand', stampId: 'thailand', weight: 10 },
   { alias: 'athens', name: 'Athens', countryName: 'Greece', stampId: 'greece', weight: 10 },
   { alias: 'reykjavik', name: 'Reykjavik', countryName: 'Iceland', stampId: 'iceland', weight: 10 },
-  { alias: 'seoul', name: 'Seoul', countryName: 'South Korea', weight: 10 },
-  { alias: 'suwon', name: 'Suwon', countryName: 'South Korea', weight: 8 },
+  { alias: 'seoul', name: 'Seoul', countryId: 'KR', countryName: 'South Korea', weight: 10 },
+  { alias: 'suwon', name: 'Suwon', countryId: 'KR', countryName: 'South Korea', weight: 8 },
+  { alias: 'jeju', name: 'Jeju', countryId: 'KR', countryName: 'South Korea', weight: 10 },
+  { alias: 'osaka', name: 'Osaka', countryId: 'JP', countryName: 'Japan', weight: 10 },
 ];
 
 // Activity keywords and cleanup patterns help distinguish real itinerary items
@@ -213,6 +216,8 @@ const normalizeLine = (line: string) =>
   line
     .replace(/[\u2022*]+/g, ' ')
     .replace(/[–—]/g, '-')
+    .replace(/\b(\d{1,2})(?::([0-5]\d))?\s*(am|pm)(?=[A-Za-z])/gi, '$1:$2 $3 ')
+    .replace(/:(\s)(am|pm)\b/gi, ' $2')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -282,7 +287,7 @@ const parseDateSignal = (line: string, fallbackYear: number): DateSignal | null 
   }
 
   const monthRangeMatch = line.match(
-    new RegExp(`\\b(${MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:-|to|through)\\s*(?:(${MONTH_PATTERN})\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{2,4}))?`, 'i')
+    new RegExp(`\\b(${MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?\\s*(?:-|to|through)\\s*(?:(${MONTH_PATTERN})\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(${YEAR_PATTERN}))?`, 'i')
   );
 
   if (monthRangeMatch) {
@@ -306,7 +311,7 @@ const parseDateSignal = (line: string, fallbackYear: number): DateSignal | null 
   }
 
   const monthMatch = line.match(
-    new RegExp(`\\b(?:${WEEKDAY_PATTERN})?,?\\s*(${MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{2,4}))?`, 'i')
+    new RegExp(`\\b(?:${WEEKDAY_PATTERN})?,?\\s*(${MONTH_PATTERN})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(${YEAR_PATTERN}))?`, 'i')
   );
 
   if (monthMatch) {
@@ -418,6 +423,19 @@ const isWanderlogDateTimeOnlyLine = (line: string) => {
     .replace(dateSignal.originalText, '')
     .replace(time, '')
     .replace(/[:|-]/g, '')
+    .trim().length === 0;
+};
+
+const isDateOnlyLine = (line: string, fallbackYear: number) => {
+  const dateSignal = parseDateSignal(line, fallbackYear);
+
+  if (!dateSignal?.originalText) {
+    return false;
+  }
+
+  return normalizeLine(line)
+    .replace(dateSignal.originalText, '')
+    .replace(/[:|,-]/g, '')
     .trim().length === 0;
 };
 
@@ -597,7 +615,7 @@ const findLocationsInText = (text: string): ParsedTripLocation[] => {
 // human labels instead of copied itinerary rows.
 const cleanActivityTitle = (line: string, dateSignal: DateSignal | null) => {
   let title = normalizeLine(line)
-    .replace(/^[-\d.)\s]+/, '')
+    .replace(/^\s*(?:[-.)]+\s*|\d{1,3}[.)]\s+|\d{1,3}\s+(?=[A-Z]))/, '')
     .replace(/\bday\s+\d{1,2}\b/gi, '')
     .trim();
 
@@ -609,6 +627,10 @@ const cleanActivityTitle = (line: string, dateSignal: DateSignal | null) => {
     .replace(/^\s*[:|,-]+\s*/, '')
     .replace(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/gi, '')
     .replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b/g, '')
+    .replace(/^to\s+/i, '')
+    .replace(/\s*(?:->|→)\s*/g, ' -> ')
+    .replace(/\s+-\s+/g, ' -> ')
+    .replace(/\s*[-:|,]+\s*$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -893,7 +915,6 @@ const addActivityToDay = (
     id: createParserId('activity'),
     title,
     date: dateSignal?.iso || day.date,
-    time: extractTime(source.line),
     locationName: locations[0]?.name,
     sourceLine: source.line,
     sourceKind: source.kind,
@@ -943,6 +964,9 @@ const buildTimeline = (sourceLines: SourceLine[], fallbackYear: number) => {
 
     currentDay.locations = mergeLocations(currentDay.locations, lineLocations);
     updateDayTitle(currentDay, timeline.indexOf(currentDay) + 1);
+    if (isDateOnlyLine(source.line, fallbackYear)) {
+      return;
+    }
     addActivityToDay(currentDay, source, dateSignal, lineLocations);
   });
 

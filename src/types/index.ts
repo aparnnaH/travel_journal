@@ -21,7 +21,7 @@ export interface JournalEntry {
   countryId: string;
   title: string;
   content: string;
-  mood: 'happy' | 'excited' | 'peaceful' | 'nostalgic' | 'reflective';
+  mood: string;
   tags: string[];
   photos: Photo[];
   canvaDesignId?: string | null;

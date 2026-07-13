@@ -3,6 +3,7 @@ import type { FriendsResponse } from '@/types/friends';
 import type { ScrapbookPageData } from '@/lib/canvas/scrapbook';
 import type { ImportedTripSnapshot } from '@/lib/ai/types';
 import { getImportedTripsStorageKey, getScrapbookStorageKey } from '@/lib/ai/storage';
+import { decodeJournalContentWithCanva, encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 
 export const DEMO_COOKIE_NAME = 'travel-journal-demo';
 export const DEMO_STORAGE_KEY = 'travel-journal:demo-mode';
@@ -12,6 +13,7 @@ export const DEMO_JOURNAL_COMMENT_STORAGE_KEY = 'travel-journal:demo-journal-com
 export const DEMO_SHARED_JOURNAL_STORAGE_KEY = 'travel-journal:demo-shared-journal-entries';
 export const DEMO_FRIENDS_STORAGE_KEY = 'travel-journal:demo-friends';
 export const DEMO_MAP_STORAGE_KEY = 'travel-journal:demo-map-state';
+export const DEMO_TRIP_IMPORT_SAMPLE_STORAGE_KEY = 'travel-journal:demo-trip-import-sample-edited';
 const DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY = 'travel-journal:country-explorer-entry';
 export const DEMO_USER_ID = 'demo-local-user';
 export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
@@ -27,6 +29,80 @@ const DEMO_INDEXED_DB_STORE = 'demo-shared-journal';
 const DEMO_SHARED_JOURNAL_INDEXED_DB_KEY = 'entries';
 
 const demoNow = '2026-06-30T12:00:00.000Z';
+
+export const DEMO_TRIP_IMPORT_SAMPLE_TEXT = `Sunday, November 2nd
+Seoul
+Hotel The Botanik Sewoon
+Seocho Garak Tower East
+COLOR SIGNAL Personal Color Analysis & Makeup 컬러시그널 퍼스널컬러 & 메이크업
+Nov 2 10:30 am
+Kstar road BTS
+Gangnam Style Sculpture
+K-POP Square
+The WAVE anamorphic illusion at COEX Seoul appears regularly throughout the day, with the wave animation typically playing once every hour.
+Starfield Library
+Open 10:30AM-10PM - Futuristic library & cultural event space on 2 levels of a mall with floor-to-ceiling bookshelves.
+Starfield Suwon
+to Hotel The Botanik Sewoon
+
+Monday, November 3rd
+Seoul
+Hotel The Botanik Sewoon
+Bukchon Hanok Village
+Open 10AM-5PM - Village dating to the 14th century filled with narrow streets lined with restored traditional homes.
+Gyeongbokgung Palace
+Open 9AM-5PM - Free guided tours are offered of this large 14th-century royal palace with a museum & gardens.
+Gwanghwamun Square
+Open 24 hours - Huge public square opened in 2009 as part of an environmentally friendly redevelopment of Seoul.
+Cheonggyecheon Stream
+N Seoul Tower
+https://www.koreatodo.com/namsan-seoul-tower
+Namsan Mountain Park
+Open 24 hours - Seoul's largest park, a tranquil, hilly forest with trails, an observatory tower & a cable car.
+Seoul City Wall
+Hotel The Botanik Sewoon
+Gwangjang Market
+Open 9AM-10:30PM - Bustling shopping area offering a wide array of traditional food items, plus clothing & souvenirs.
+Myeongdong Shopping Street
+Mplayground Myeongdong Store
+Olive Young Myeongdong Town
+Open 10AM-10:30PM - Large flagship store for health, cosmetics, beauty & drugs store established in 1999.
+ACORN CARICATURE
+to Hotel The Botanik Sewoon
+
+Tuesday, November 4th
+Seoul -> Jeju 7:00pm
+Seoul — Jeju Hotel The Botanik Sewoon 7:05 PM - 8:20 PM
+Check out
+The Island Blue Check in
+Hotel The Botanik Sewoon
+Dongdaemun Design Plaza (DDP)
+Open 10AM-8PM - Architectural-landmark events venue with futuristic design, a design market & food vendors.
+Seoul City Hall
+10:30 Tour
+Hotel The Botanik Sewoon
+Gimpo International Airport
+Jeju International Airport
+The Island Blue
+
+Wednesday, November 5th
+Jeju
+The Island Blue
+Seongsan Ilchulbong
+Open 5AM-6PM - Iconic volcanic cone with a bowl-like crater with a popular hiking route & paid entry.
+Seogwipo Jeongbang Waterfall
+Open 9AM-5:20PM - Oceanside 75-ft. waterfall cascading from a cliff, with its waters flowing into the sea.
+JW Marriott Jeju Resort & Spa
+Cheonjiyeon Waterfall
+to The Island Blue
+
+Thursday, November 6th
+Jeju -> Osaka 4:00pm
+Jeju — Osaka 4:00 PM - 5:40 PM
+The Island Blue Check out
+Hyeopjae Cave: Hallim Park
+Jeju International Airport
+Kansai International Airport`;
 
 const createDemoCanvaPage = (title: string, subtitle: string, color: string) =>
   `data:image/svg+xml,${encodeURIComponent(
@@ -558,9 +634,75 @@ export function readDemoJournalEntries() {
   }
 }
 
+const stripDemoEntryMediaForStorage = (entry: JournalEntry, keepCoverPhoto: boolean): JournalEntry => {
+  const decodedContent = decodeJournalContentWithCanva(String(entry.content || ''));
+  const canva = decodedContent.canva;
+  const coverPhoto = keepCoverPhoto ? entry.coverPhoto ?? canva?.coverPhoto ?? null : null;
+  const keepPayload = Boolean(
+    canva &&
+      (
+        canva.designId ||
+        canva.designTitle ||
+        canva.designEditUrl ||
+        canva.tripStartDate ||
+        canva.tripEndDate ||
+        canva.instagramEmbeds?.length ||
+        coverPhoto
+      )
+  );
+
+  return {
+    ...entry,
+    content:
+      canva && keepPayload
+        ? encodeJournalContentWithCanva(decodedContent.content, {
+            designId: canva.designId ?? null,
+            designTitle: canva.designTitle ?? null,
+            designEditUrl: canva.designEditUrl ?? null,
+            pages: [],
+            coverPhoto,
+            coverPageIndex: null,
+            insertedPhotos: [],
+            tripStartDate: canva.tripStartDate ?? entry.tripStartDate ?? null,
+            tripEndDate: canva.tripEndDate ?? entry.tripEndDate ?? null,
+            instagramEmbeds: canva.instagramEmbeds ?? [],
+          })
+        : decodedContent.content,
+    photos: [],
+    canvaPages: [],
+    canvaPageCount: null,
+    coverPhoto,
+    coverPageIndex: null,
+    insertedPhotos: [],
+  };
+};
+
 export function writeDemoJournalEntries(entries: JournalEntry[]) {
   if (typeof window === 'undefined') return;
-  window.sessionStorage.setItem(DEMO_JOURNAL_STORAGE_KEY, JSON.stringify(entries));
+
+  try {
+    window.sessionStorage.setItem(DEMO_JOURNAL_STORAGE_KEY, JSON.stringify(entries));
+    return;
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
+      throw error;
+    }
+  }
+
+  const lighterEntries = entries.map((entry, index) => stripDemoEntryMediaForStorage(entry, index === 0));
+
+  try {
+    window.sessionStorage.setItem(DEMO_JOURNAL_STORAGE_KEY, JSON.stringify(lighterEntries));
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
+      throw error;
+    }
+
+    window.sessionStorage.setItem(
+      DEMO_JOURNAL_STORAGE_KEY,
+      JSON.stringify(lighterEntries.map((entry) => stripDemoEntryMediaForStorage(entry, false)))
+    );
+  }
 }
 
 export type DemoJournalShares = Record<string, string[]>;

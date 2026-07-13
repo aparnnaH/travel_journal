@@ -25,7 +25,7 @@ export default function AITripSummary({ trip, isLoading = false }: AITripSummary
   if (!trip) {
     return (
       <div className="rounded-lg border border-dashed border-gold/35 bg-cream/50 p-4 text-sm text-ink/60">
-        AI summary will appear here.
+        Trip import summary will appear here.
       </div>
     );
   }
@@ -38,11 +38,11 @@ export default function AITripSummary({ trip, isLoading = false }: AITripSummary
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">AI Trip Summary</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Trip Import Summary</p>
           <h3 className="mt-1 text-xl font-semibold text-ink">{trip.title}</h3>
         </div>
         <div className="min-w-20 text-right">
-          <p className="text-xs uppercase tracking-wide text-ink/50">Confidence</p>
+          <p className="text-xs uppercase tracking-wide text-ink/50">Parsed detail</p>
           <p className="text-lg font-semibold text-ink">{trip.confidence}%</p>
         </div>
       </div>

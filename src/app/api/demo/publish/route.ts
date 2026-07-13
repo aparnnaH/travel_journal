@@ -2,6 +2,7 @@
 // server-only env var so real account emails are not bundled into client JS.
 import { NextRequest, NextResponse } from 'next/server';
 import { DEMO_SHARE_RECIPIENT_ID, DEMO_USER_ID } from '@/lib/demoMode';
+import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { authCookieName } from '@/lib/supabase';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import { getAuthenticatedRouteContext, isRouteError } from '@/lib/server/auth';
@@ -31,8 +32,13 @@ const buildDemoEntryPayload = ({
   id: string;
   userId: string;
   now: string;
-}) =>
-  ({
+}) => {
+  const decodedContent = decodeJournalContentWithCanva(String(entry.content || ''));
+  const fallbackCanva = decodedContent.canva;
+  const canvaPages = entry.canva_pages ?? fallbackCanva?.pages ?? [];
+  const insertedPhotos = fallbackCanva?.insertedPhotos ?? [];
+
+  return {
     id,
     userId,
     countryId: entry.country_id,
@@ -45,24 +51,26 @@ const buildDemoEntryPayload = ({
     canvaDesignId: entry.canva_design_id ?? null,
     canvaDesignTitle: entry.canva_design_title ?? null,
     canvaDesignEditUrl: null,
-    canvaPages: entry.canva_pages ?? [],
-    canvaPageCount: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
-    coverPhoto: entry.canva_pages?.[0] ?? null,
-    coverPageIndex: null,
+    canvaPages,
+    canvaPageCount: entry.canva_page_count ?? canvaPages.length ?? null,
+    coverPhoto: fallbackCanva?.coverPhoto ?? canvaPages[0] ?? null,
+    coverPageIndex: fallbackCanva?.coverPageIndex ?? null,
     tripStartDate: entry.trip_start_date ?? null,
     tripEndDate: entry.trip_end_date ?? null,
-    insertedPhotos: [],
+    insertedPhotos,
+    instagramEmbeds: fallbackCanva?.instagramEmbeds ?? [],
     canva_design_id: entry.canva_design_id ?? null,
     canva_design_title: entry.canva_design_title ?? null,
     canva_design_edit_url: null,
-    canva_pages: entry.canva_pages ?? [],
-    canva_page_count: entry.canva_page_count ?? entry.canva_pages?.length ?? null,
+    canva_pages: canvaPages,
+    canva_page_count: entry.canva_page_count ?? canvaPages.length ?? null,
     trip_start_date: entry.trip_start_date ?? null,
     trip_end_date: entry.trip_end_date ?? null,
     createdAt: entry.created_at,
     created_at: entry.created_at,
     updatedAt: now,
-  }) satisfies JournalEntry & { country_id: string; created_at: string };
+  } satisfies JournalEntry & { country_id: string; created_at: string };
+};
 
 const mapPublishedRows = (rows: Array<{ entry_payload: unknown; comments_payload: unknown }>) => {
   const commentsByEntry: Record<string, JournalComment[]> = {};

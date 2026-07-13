@@ -12,6 +12,7 @@ import PageShell from '@/components/layout/PageShell';
 import AppPageSkeleton, { InlineLoadingSkeleton } from '@/components/loading/PageSkeletons';
 import { Button, Input } from '@/components/ui';
 import InstagramEmbed from '@/components/journal/InstagramEmbed';
+import JournalMoodPicker from '@/components/journal/JournalMoodPicker';
 import { fetchFriends } from '@/lib/friendService';
 import {
   createJournalComment,
@@ -1782,10 +1783,10 @@ export default function JournalEntriesPage() {
                 ))}
               </select>
             </div>
-            <Input
-              label="Mood"
+            <JournalMoodPicker
+              id="archive-edit-entry-mood"
               value={editForm.mood}
-              onChange={(event) => setEditForm((current) => ({ ...current, mood: event.target.value }))}
+              onChange={(mood) => setEditForm((current) => ({ ...current, mood }))}
               required
             />
             <div className="grid gap-3 sm:grid-cols-2">

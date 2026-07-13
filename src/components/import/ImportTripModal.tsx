@@ -17,6 +17,8 @@ type ImportTripModalProps = {
   inline?: boolean;
   startPageNumber: number;
   boardWidth: number;
+  defaultItineraryText?: string;
+  defaultItineraryStorageKey?: string;
   onClose: () => void;
   onImport: (result: TripImportResult) => void;
 };
@@ -36,11 +38,20 @@ export default function ImportTripModal({
   inline = false,
   startPageNumber,
   boardWidth,
+  defaultItineraryText = '',
+  defaultItineraryStorageKey,
   onClose,
   onImport,
 }: ImportTripModalProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [itineraryText, setItineraryText] = useState('');
+  const [itineraryText, setItineraryText] = useState(() => {
+    const userEditedDefault =
+      defaultItineraryStorageKey &&
+      typeof window !== 'undefined' &&
+      window.sessionStorage.getItem(defaultItineraryStorageKey) === 'true';
+
+    return defaultItineraryText && !userEditedDefault ? defaultItineraryText : '';
+  });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [result, setResult] = useState<TripImportResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -74,6 +85,18 @@ export default function ImportTripModal({
   const clearDraftResult = () => {
     setResult(null);
     setError(null);
+  };
+
+  const markDefaultItineraryEdited = () => {
+    if (defaultItineraryStorageKey) {
+      window.sessionStorage.setItem(defaultItineraryStorageKey, 'true');
+    }
+  };
+
+  const clearItineraryText = () => {
+    markDefaultItineraryEdited();
+    setItineraryText('');
+    clearDraftResult();
   };
 
   const handleFileSelection = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -188,13 +211,21 @@ export default function ImportTripModal({
               <div className="grid gap-5 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
                 <div className="space-y-4">
                   <section className="rounded-lg border border-gold/25 bg-white p-4 shadow-soft">
-                    <label className="mb-2 block text-sm font-semibold text-ink" htmlFor="itinerary-text">
-                      Paste Itinerary Text
-                    </label>
+                    <div className="mb-2 flex items-center justify-between gap-3">
+                      <label className="block text-sm font-semibold text-ink" htmlFor="itinerary-text">
+                        Paste Itinerary Text
+                      </label>
+                      {itineraryText ? (
+                        <Button type="button" size="sm" variant="ghost" onClick={clearItineraryText}>
+                          Clear text
+                        </Button>
+                      ) : null}
+                    </div>
                     <textarea
                       id="itinerary-text"
                       value={itineraryText}
                       onChange={(event) => {
+                        markDefaultItineraryEdited();
                         setItineraryText(event.target.value);
                         clearDraftResult();
                       }}
@@ -207,7 +238,7 @@ export default function ImportTripModal({
                   <section className="rounded-lg border border-gold/25 bg-white p-4 shadow-soft">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-semibold text-ink">Screenshots / PDFs</p>
+                        <p className="text-sm font-semibold text-ink">PDF itinerary</p>
                         <p className="text-xs text-ink/55">{selectedFiles.length} attached</p>
                       </div>
                       <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
@@ -217,7 +248,7 @@ export default function ImportTripModal({
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,application/pdf,.pdf"
+                      accept="application/pdf,.pdf"
                       multiple
                       className="sr-only"
                       onChange={handleFileSelection}
@@ -241,7 +272,7 @@ export default function ImportTripModal({
                       </div>
                     ) : (
                       <div className="rounded border border-dashed border-gold/30 bg-cream/45 px-4 py-6 text-sm text-ink/55">
-                        No files attached.
+                        No PDFs attached.
                       </div>
                     )}
                   </section>
@@ -251,7 +282,7 @@ export default function ImportTripModal({
                       Parse Trip
                     </Button>
                     <Button type="button" variant="secondary" onClick={handleImport} disabled={!result}>
-                      Create Journal Entry
+                      Continue to Workspace
                     </Button>
                   </div>
                   {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}

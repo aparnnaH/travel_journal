@@ -154,6 +154,7 @@ function mapEntry(
     tripStartDate: row.trip_start_date ?? fallbackCanva?.tripStartDate ?? null,
     tripEndDate: row.trip_end_date ?? fallbackCanva?.tripEndDate ?? null,
     insertedPhotos: options.summary ? [] : fallbackCanva?.insertedPhotos ?? [],
+    instagramEmbeds: options.summary ? [] : fallbackCanva?.instagramEmbeds ?? [],
     canva_design_id: row.canva_design_id ?? fallbackCanva?.designId ?? null,
     canva_design_title: row.canva_design_title ?? fallbackCanva?.designTitle ?? null,
     canva_design_edit_url: row.canva_design_edit_url ?? fallbackCanva?.designEditUrl ?? null,
@@ -176,6 +177,7 @@ function summarizeMappedEntry<T extends JournalEntry & { canva_pages?: string[] 
     canva_pages: [],
     coverPhoto: null,
     insertedPhotos: [],
+    instagramEmbeds: [],
     isSummary: true,
   };
 }

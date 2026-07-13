@@ -56,7 +56,6 @@ export default function ParsedTimelineView({ timeline }: ParsedTimelineViewProps
               {day.activities.length ? (
                 day.activities.map((activity) => (
                   <div key={activity.id} className="rounded border border-white/80 bg-white/70 px-3 py-2 text-sm text-ink/75">
-                    {activity.time ? <span className="mr-2 font-semibold text-gold-deep">{activity.time}</span> : null}
                     {activity.title}
                   </div>
                 ))

@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Type, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Sparkles, Type, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -17,6 +17,7 @@ import { Button, Input } from '@/components/ui';
 import ImportTripModal from '@/components/import/ImportTripModal';
 import MemoryKeeperCard from '@/components/memory/MemoryKeeperCard';
 import InstagramEmbed from '@/components/journal/InstagramEmbed';
+import JournalMoodPicker from '@/components/journal/JournalMoodPicker';
 import ScrapbookCanvas from '@/components/journal/canvas/ScrapbookCanvas';
 import PhotoTray from '@/components/journal/scrapbook/PhotoTray';
 import { useJournalLayoutStore } from '@/hooks/journal-layout/JournalLayoutStore';
@@ -37,6 +38,7 @@ import {
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { normalizeInstagramEmbedUrl, sanitizeInstagramEmbedUrls } from '@/lib/instagramEmbeds';
+import { DEMO_TRIP_IMPORT_SAMPLE_STORAGE_KEY, DEMO_TRIP_IMPORT_SAMPLE_TEXT, isDemoUserId } from '@/lib/demoMode';
 import { createCanvaDesign, createCanvaExport, fetchCanvaDesigns, fetchCanvaExport } from '@/lib/canvaService';
 import {
   formatJournalDateRange,
@@ -125,6 +127,7 @@ type ParsedTripNotice = {
   title: string;
   summary: string;
   countryName: string;
+  countryNames: string[];
   dateLabel: string;
   pageCount: number;
   stampCount: number;
@@ -416,11 +419,36 @@ const isFormDraftEmpty = (draft: {
   tags: string;
 }) => !draft.title.trim() && !draft.content.trim() && !draft.countryId.trim() && !draft.tags.trim();
 
+const updateDateRangeForStartChange = <T extends { tripStartDate: string; tripEndDate: string }>(
+  current: T,
+  tripStartDate: string
+): T => ({
+  ...current,
+  tripStartDate,
+  tripEndDate:
+    !current.tripEndDate || current.tripEndDate === current.tripStartDate || current.tripEndDate < tripStartDate
+      ? tripStartDate
+      : current.tripEndDate,
+});
+
 const normalizeCountrySearchText = (value: string) =>
   value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+const normalizeCountryMatchText = (value: string) => normalizeCountrySearchText(value).replace(/\s+/g, '');
+
+const getImportedTripCountryNames = (result: TripImportResult) => {
+  const countryNames = [
+    result.trip.primaryCountryName,
+    ...result.trip.locations.map((location) => location.countryName),
+  ]
+    .map((name) => name?.trim())
+    .filter((name): name is string => Boolean(name));
+
+  return Array.from(new Set(countryNames));
+};
 
 const getRegionDisplayName = (countryId: string) => {
   if (!/^[A-Z]{2}$/i.test(countryId)) {
@@ -540,6 +568,7 @@ export default function JournalPage() {
   const [canvaPreviewTurnDirection, setCanvaPreviewTurnDirection] = useState<'next' | 'previous'>('next');
   const [canvaCoverPageIndex, setCanvaCoverPageIndex] = useState(0);
   const [insertedJournalPhotos, setInsertedJournalPhotos] = useState<InsertedJournalPhoto[]>([]);
+  const [memoryCoverPhotoId, setMemoryCoverPhotoId] = useState<string | null>(null);
   const [instagramEmbedUrl, setInstagramEmbedUrl] = useState('');
   const [instagramError, setInstagramError] = useState<string | null>(null);
   const [openedCanvaPageIndex, setOpenedCanvaPageIndex] = useState(0);
@@ -555,12 +584,13 @@ export default function JournalPage() {
     title: '',
     content: '',
     countryId: '',
-    mood: 'nostalgic',
+    mood: '',
     tags: '',
     tripStartDate: getTodayJournalDate(),
     tripEndDate: getTodayJournalDate(),
   });
   const [error, setError] = useState<string | null>(null);
+  const isDemoUser = isDemoUserId(user?.id);
 
   const currentCountry = useMemo(
     () => placeholderCountries.find((country) => country.id === form.countryId),
@@ -596,6 +626,31 @@ export default function JournalPage() {
 
     return countryOptions.slice(0, 8);
   }, [countrySearch, visitedJournalCountries]);
+  const resolveImportedVisitedCountry = useCallback(
+    (result: TripImportResult) => {
+      const candidateNames = [
+        result.journalDraft.countryId,
+        result.trip.primaryCountryId,
+        result.trip.primaryCountryName,
+        ...result.trip.locations.map((location) => location.countryId || location.countryName || location.name),
+      ]
+        .map((value) => value?.trim())
+        .filter((value): value is string => Boolean(value));
+
+      const normalizedCandidates = new Set(candidateNames.map(normalizeCountryMatchText));
+
+      return (
+        visitedJournalCountries.find((country) => normalizedCandidates.has(normalizeCountryMatchText(country.id))) ||
+        visitedJournalCountries.find((country) => normalizedCandidates.has(normalizeCountryMatchText(country.name))) ||
+        visitedJournalCountries.find((country) => {
+          const placeholderCountry = placeholderCountries.find((candidate) => candidate.id === country.id);
+          return Boolean(placeholderCountry && normalizedCandidates.has(normalizeCountryMatchText(placeholderCountry.name)));
+        }) ||
+        null
+      );
+    },
+    [visitedJournalCountries]
+  );
   const editCountryOptions = useMemo(() => {
     const countryOptions = new Map(visitedJournalCountries.map((country) => [country.id, country]));
 
@@ -713,13 +768,14 @@ export default function JournalPage() {
       title: fullEntry.title,
       content: getEntryContent(fullEntry),
       countryId,
-      mood: fullEntry.mood || 'nostalgic',
+      mood: fullEntry.mood || '',
       tags: fullEntry.tags?.join(', ') || '',
       tripStartDate: normalizeJournalDate(getEntryTripStartDate(fullEntry)),
       tripEndDate: normalizeJournalDate(getEntryTripEndDate(fullEntry), normalizeJournalDate(getEntryTripStartDate(fullEntry))),
     });
     setCountrySearch(countryName || '');
     setInsertedJournalPhotos(getEntryInsertedPhotos(fullEntry));
+    setMemoryCoverPhotoId(null);
     setInstagramEmbedUrl(instagramEmbeds[0]?.url || '');
     setInstagramError(null);
     setCanvaImportedPreview(
@@ -1411,6 +1467,9 @@ export default function JournalPage() {
       }));
 
       setInsertedJournalPhotos((current) => [...current, ...newPhotos]);
+      setMemoryCoverPhotoId((current) =>
+        isDemoUser && !canvaImportedPreview && !current ? newPhotos[0]?.id ?? null : current
+      );
       setStorageWarning(
         files.length > remainingPhotoSlots
           ? `Added ${remainingPhotoSlots} photo${remainingPhotoSlots === 1 ? '' : 's'}. You can insert up to ${MAX_INSERTED_JOURNAL_PHOTOS} photos per journal for now.`
@@ -1431,6 +1490,7 @@ export default function JournalPage() {
 
   const removeInsertedPhoto = (photoId: string) => {
     setInsertedJournalPhotos((current) => current.filter((photo) => photo.id !== photoId));
+    setMemoryCoverPhotoId((current) => (current === photoId ? null : current));
   };
 
   const addNote = () => {
@@ -1717,20 +1777,47 @@ export default function JournalPage() {
     setActiveTool('select');
     const importedStartDate = normalizeJournalDate(result.trip.dateRange?.start);
     const importedEndDate = normalizeJournalDate(result.trip.dateRange?.end, importedStartDate);
+    const importedCountry = resolveImportedVisitedCountry(result);
+    const importedCountryNames = getImportedTripCountryNames(result);
+    const parsedTripNotice = {
+      title: result.trip.title,
+      summary: result.trip.summary,
+      countryName: importedCountry?.name || result.trip.primaryCountryName || importedCountryNames[0] || 'Choose a country',
+      countryNames: importedCountryNames,
+      dateLabel: result.trip.dateRange?.label || formatJournalDateRange(importedStartDate, importedEndDate),
+      pageCount: result.scrapbookPages.length,
+      stampCount: result.passportStampIds.length,
+      dayTitles: result.trip.timeline.map((day) => day.title).slice(0, 3),
+      tags: result.journalDraft.tags.slice(0, 4),
+      canvaTitle: canvaImportedPreview?.title,
+      canvaPageCount: canvaImportedPreview?.dataUrls.length || undefined,
+    } satisfies ParsedTripNotice;
     const importedEntryForm = {
       title: result.journalDraft.title,
       content: result.journalDraft.content,
-      countryId: result.journalDraft.countryId,
-      mood: result.journalDraft.mood,
+      countryId: importedCountry?.id || result.journalDraft.countryId,
+      mood: '',
       tags: result.journalDraft.tags.join(', '),
       tripStartDate: importedStartDate,
       tripEndDate: importedEndDate,
     };
-    const importedCountry = visitedJournalCountries.find((country) => country.id === result.journalDraft.countryId);
-    const linkedCanvaPreview = canvaImportedPreview;
-    const linkedCanvaPageCount = linkedCanvaPreview?.dataUrls.length ?? 0;
 
     setForm(importedEntryForm);
+    setImportedTripWorkspaceNotice({
+      entry: {
+        id: 'imported-trip-draft',
+        userId: user?.id || '',
+        countryId: importedEntryForm.countryId,
+        title: importedEntryForm.title,
+        content: importedEntryForm.content,
+        mood: importedEntryForm.mood,
+        tags: result.journalDraft.tags,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as SavedEntry,
+      message: 'Draft',
+      parsedTrip: parsedTripNotice,
+    });
     setCountrySearch(
       importedCountry?.name || ''
     );
@@ -1748,7 +1835,6 @@ export default function JournalPage() {
     }.`;
 
     if (!importedCountry) {
-      setImportedTripWorkspaceNotice(null);
       setImportNotice(`${importDetails} Pick a visited country to save the journal entry.`);
       setError('Pick a country you have marked on the map before saving this imported trip.');
       return;
@@ -1757,87 +1843,12 @@ export default function JournalPage() {
     const tripDateError = getJournalDateRangeError(importedStartDate, importedEndDate);
 
     if (tripDateError) {
-      setImportedTripWorkspaceNotice(null);
       setImportNotice(`${importDetails} Fix the trip dates to save the journal entry.`);
       setError(tripDateError);
       return;
     }
 
-    setSaving(true);
-
-    try {
-      const response = await createJournalEntry({
-        countryId: importedEntryForm.countryId,
-        title: importedEntryForm.title,
-        content: importedEntryForm.content,
-        mood: importedEntryForm.mood,
-        tags: result.journalDraft.tags,
-        canvaDesignId: linkedCanvaPreview?.design?.id,
-        canvaDesignTitle: linkedCanvaPreview?.title,
-        canvaDesignEditUrl: linkedCanvaPreview?.editUrl ?? (linkedCanvaPreview?.design ? getCanvaEditUrl(linkedCanvaPreview.design) : undefined),
-        canvaPages: linkedCanvaPreview?.dataUrls,
-        tripStartDate: importedEntryForm.tripStartDate,
-        tripEndDate: importedEntryForm.tripEndDate,
-        coverPhoto: null,
-        coverPageIndex: linkedCanvaPreview ? canvaCoverPageIndex : null,
-        insertedPhotos: insertedJournalPhotos,
-      });
-
-      if (response.success && response.data) {
-        const savedEntry = response.data as SavedEntry;
-        const today = getTodayJournalDate();
-        const savedNotice = {
-          entry: savedEntry,
-          message: 'Imported',
-          parsedTrip: {
-            title: result.trip.title,
-            summary: result.trip.summary,
-            countryName: importedCountry.name,
-            dateLabel: result.trip.dateRange?.label || formatJournalDateRange(importedStartDate, importedEndDate),
-            pageCount: result.scrapbookPages.length,
-            stampCount: result.passportStampIds.length,
-            dayTitles: result.trip.timeline.map((day) => day.title).slice(0, 3),
-            tags: result.journalDraft.tags.slice(0, 4),
-            canvaTitle: linkedCanvaPreview?.title,
-            canvaPageCount: linkedCanvaPageCount || undefined,
-          },
-        } satisfies SavedEntryNotice;
-
-        setSavedEntryNotice(savedNotice);
-        setImportedTripWorkspaceNotice(savedNotice);
-        setForm({
-          title: '',
-          content: '',
-          countryId: '',
-          mood: 'nostalgic',
-          tags: '',
-          tripStartDate: today,
-          tripEndDate: today,
-        });
-        setCountrySearch('');
-        setCanvaImportedPreview(null);
-        setCanvaCoverPageIndex(0);
-        setInsertedJournalPhotos([]);
-        setCanvaPreviewPageIndex(0);
-        setCanvaPreviewTurnDirection('next');
-        setImportNotice(
-          `${importDetails} Created "${savedEntry.title}"${
-            linkedCanvaPreview ? ` and linked ${linkedCanvaPageCount} Canva page${linkedCanvaPageCount === 1 ? '' : 's'}.` : '.'
-          }`
-        );
-        return;
-      }
-
-      setImportedTripWorkspaceNotice(null);
-      setImportNotice(`${importDetails} The entry draft is ready, but it could not be saved.`);
-      setError(response.error || 'Could not create the imported journal entry.');
-    } catch {
-      setImportedTripWorkspaceNotice(null);
-      setImportNotice(`${importDetails} The entry draft is ready, but it could not be saved.`);
-      setError('Could not create the imported journal entry.');
-    } finally {
-      setSaving(false);
-    }
+    setImportNotice(`${importDetails} Review the parsed details, then save the journal entry.`);
   };
 
   const loadCanvaDesigns = async (query = canvaQuery) => {
@@ -1999,12 +2010,16 @@ export default function JournalPage() {
       setSelectedItemId(null);
       setDrawingMode(false);
       setActiveTool('select');
-      setForm((current) => ({
-        ...current,
-        title: result.title,
-        content: current.content || `Imported Canva design: ${result.title}`,
-        tags: current.tags ? `${current.tags}, canva` : 'canva',
-      }));
+      setForm((current) => {
+        const legacyCanvaStory = /^Imported Canva design:/i.test(current.content.trim());
+
+        return {
+          ...current,
+          title: current.title,
+          content: legacyCanvaStory ? '' : current.content,
+          tags: current.tags,
+        };
+      });
       setImportNotice(
         `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
       );
@@ -2052,6 +2067,11 @@ export default function JournalPage() {
       return;
     }
 
+    if (!form.mood.trim()) {
+      setError('Please select a mood.');
+      return;
+    }
+
     setError(null);
     setInstagramError(null);
     setSaving(true);
@@ -2062,11 +2082,14 @@ export default function JournalPage() {
         ...(normalizedInstagramUrl ? ['instagram'] : []),
       ])
     );
+    const selectedMemoryCoverPhoto =
+      insertedJournalPhotos.find((photo) => photo.id === memoryCoverPhotoId) ?? insertedJournalPhotos[0];
+    const demoMemoryCoverPhoto = isDemoUser && !canvaImportedPreview ? selectedMemoryCoverPhoto?.src ?? null : null;
     const response = workspaceEditingEntry
       ? await updateJournalEntry({
           entryId: workspaceEditingEntry.id,
           countryId: form.countryId,
-          title: form.title,
+          title: effectiveJournalTitle,
           content: form.content,
           mood: form.mood,
           tags,
@@ -2081,14 +2104,14 @@ export default function JournalPage() {
           canvaPages: canvaImportedPreview?.dataUrls ?? [],
           tripStartDate: form.tripStartDate,
           tripEndDate: form.tripEndDate,
-          coverPhoto: null,
+          coverPhoto: demoMemoryCoverPhoto,
           coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
           insertedPhotos: insertedJournalPhotos,
           instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
         })
       : await createJournalEntry({
           countryId: form.countryId,
-          title: form.title,
+          title: effectiveJournalTitle,
           content: form.content,
           mood: form.mood,
           tags,
@@ -2098,7 +2121,7 @@ export default function JournalPage() {
           canvaPages: canvaImportedPreview?.dataUrls,
           tripStartDate: form.tripStartDate,
           tripEndDate: form.tripEndDate,
-          coverPhoto: null,
+          coverPhoto: demoMemoryCoverPhoto,
           coverPageIndex: canvaImportedPreview ? canvaCoverPageIndex : null,
           insertedPhotos: insertedJournalPhotos,
           instagramEmbeds: normalizedInstagramUrl ? [normalizedInstagramUrl] : [],
@@ -2114,12 +2137,13 @@ export default function JournalPage() {
         message: workspaceEditingEntry ? 'Updated' : 'Saved',
       });
       const today = getTodayJournalDate();
-      setForm({ ...form, title: '', content: '', countryId: '', tags: '', tripStartDate: today, tripEndDate: today });
+      setForm({ ...form, title: '', content: '', countryId: '', mood: '', tags: '', tripStartDate: today, tripEndDate: today });
       setCountrySearch('');
       setWorkspaceEditingEntry(null);
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
       setInsertedJournalPhotos([]);
+      setMemoryCoverPhotoId(null);
       setInstagramEmbedUrl('');
       setInstagramError(null);
       setCanvaPreviewPageIndex(0);
@@ -2186,8 +2210,13 @@ export default function JournalPage() {
     const cleanMood = editForm.mood.trim();
     const tripDateError = getJournalDateRangeError(editForm.tripStartDate, editForm.tripEndDate);
 
-    if (!cleanTitle || !cleanContent || !cleanCountryId || !cleanMood) {
-      setEditError('Add a journal name, story, country, and mood before saving.');
+    if (!cleanTitle || !cleanContent || !cleanCountryId) {
+      setEditError('Add a journal name, story, and country before saving.');
+      return;
+    }
+
+    if (!cleanMood) {
+      setEditError('Please select a mood.');
       return;
     }
 
@@ -2475,15 +2504,121 @@ export default function JournalPage() {
     : null;
   const hasInstagramEmbedDraft = cleanInstagramEmbedUrl.length > 0;
   const hasValidInstagramEmbed = !hasInstagramEmbedDraft || Boolean(normalizedInstagramEmbedUrl);
+  const effectiveJournalTitle = form.title.trim() || canvaImportedPreview?.title.trim() || '';
+  const importedTripCountryNames = importedTripWorkspaceNotice?.parsedTrip?.countryNames ?? [];
+  const hasMultipleImportedCountries = importedTripCountryNames.length > 1;
+  const countryChecklistValue = hasMultipleImportedCountries
+    ? importedTripCountryNames.join(', ')
+    : selectedVisitedCountry?.name || currentCountry?.name || importedTripCountryNames[0] || 'Choose one';
   const canSaveCurrentEntry =
-    form.title.trim().length > 0 &&
+    effectiveJournalTitle.length > 0 &&
     form.content.trim().length > 0 &&
     form.tripStartDate.length > 0 &&
     form.tripEndDate.length > 0 &&
     hasVisitedCountryLink &&
+    form.mood.trim().length > 0 &&
     hasValidDateRange;
   const currentEntrySaveLabel = workspaceEditingEntry ? 'Update Entry' : 'Save Entry';
   const hasImportedTripWorkspaceContent = Boolean(importedTripWorkspaceNotice || !isFormDraftEmpty(form));
+  const canUseMemoryPhotoCover = isDemoUser && !canvaImportedPreview;
+  const workspaceProgress = [
+    {
+      label: 'Journal name',
+      value: form.title.trim() || canvaImportedPreview?.title || 'Add a title',
+      complete: Boolean(effectiveJournalTitle),
+      optional: false,
+    },
+    {
+      label: 'Canva pages',
+      value: canvaImportedPreview ? `${canvaImportedPreview.dataUrls.length} linked` : isDemoUser ? 'Optional in demo' : 'Not linked',
+      complete: isDemoUser || Boolean(canvaImportedPreview),
+      optional: isDemoUser,
+    },
+    {
+      label: 'Story',
+      value: form.content.trim() ? 'Draft started' : 'Blank',
+      complete: Boolean(form.content.trim()),
+      optional: false,
+    },
+    {
+      label: 'Tags',
+      value: form.tags.trim() || 'Optional tags',
+      complete: Boolean(form.tags.trim()),
+      optional: true,
+    },
+    {
+      label: 'Trip dates',
+      value:
+        form.tripStartDate && form.tripEndDate && hasValidDateRange
+          ? formatJournalDateRange(form.tripStartDate, form.tripEndDate)
+          : 'Choose dates',
+      complete: Boolean(form.tripStartDate && form.tripEndDate && hasValidDateRange),
+      optional: false,
+    },
+    {
+      label: hasMultipleImportedCountries ? 'Countries' : 'Country',
+      value: countryChecklistValue,
+      complete: hasVisitedCountryLink,
+      optional: false,
+    },
+    {
+      label: 'Mood',
+      value: form.mood.trim() || 'Please select a mood',
+      complete: Boolean(form.mood.trim()),
+      optional: false,
+    },
+    {
+      label: 'Photos',
+      value: insertedJournalPhotos.length
+        ? `${insertedJournalPhotos.length} added`
+        : `${MAX_INSERTED_JOURNAL_PHOTOS} optional slots`,
+      complete: insertedJournalPhotos.length > 0,
+      optional: true,
+    },
+    {
+      label: 'Instagram',
+      value: hasInstagramEmbedDraft
+        ? hasValidInstagramEmbed
+          ? 'Ready to attach'
+          : 'Check link'
+        : 'Optional embed',
+      complete: hasInstagramEmbedDraft && hasValidInstagramEmbed,
+      optional: true,
+    },
+  ];
+
+  const renderDraftChecklist = (className = '') => (
+    <div className={className}>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-deep">Draft checklist</p>
+      <div className="mt-4 space-y-3">
+        {workspaceProgress.map((item) => (
+          <div key={item.label} className="rounded-lg border border-gold/18 bg-cream/55 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-ink">
+                {item.label}
+                {item.optional ? <span className="ml-1 text-xs font-medium text-ink/45">Optional</span> : null}
+              </span>
+              <span
+                className={[
+                  'flex h-6 w-6 items-center justify-center rounded-full border',
+                  item.complete
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-red-200 bg-red-50 text-red-600',
+                ].join(' ')}
+              >
+                {item.complete ? (
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <X className="h-4 w-4" aria-hidden="true" />
+                )}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-sm text-ink/60">{item.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   const renderCanvaPolaroidStrip = ({
     pages,
@@ -2678,7 +2813,15 @@ export default function JournalPage() {
       {insertedJournalPhotos.length ? (
         <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
           {insertedJournalPhotos.map((photo, index) => (
-            <figure key={photo.id} className="w-44 shrink-0 overflow-hidden rounded-md border border-gold/20 bg-cream/45">
+            <figure
+              key={photo.id}
+              className={[
+                'w-44 shrink-0 overflow-hidden rounded-md border bg-cream/45',
+                canUseMemoryPhotoCover && memoryCoverPhotoId === photo.id
+                  ? 'border-gold bg-gold/10'
+                  : 'border-gold/20',
+              ].join(' ')}
+            >
               <div
                 role="img"
                 aria-label={photo.alt || `Memory photo ${index + 1}`}
@@ -2700,6 +2843,18 @@ export default function JournalPage() {
                 >
                   Remove
                 </button>
+                {canUseMemoryPhotoCover ? (
+                  <button
+                    type="button"
+                    className={[
+                      'ml-3 text-xs font-semibold transition',
+                      memoryCoverPhotoId === photo.id ? 'text-gold-deep' : 'text-ink/55 hover:text-gold-deep',
+                    ].join(' ')}
+                    onClick={() => setMemoryCoverPhotoId((current) => (current === photo.id ? null : photo.id))}
+                  >
+                    {memoryCoverPhotoId === photo.id ? 'Cover selected' : 'Set cover'}
+                  </button>
+                ) : null}
               </figcaption>
             </figure>
           ))}
@@ -2792,10 +2947,10 @@ export default function JournalPage() {
     );
   };
 
-  const renderCountrySearch = (inputId: string) => (
+  const renderCountrySearch = (inputId: string, label = hasMultipleImportedCountries ? 'Countries' : 'Country') => (
     <div>
       <label className="mb-2 block text-sm font-medium text-ink" htmlFor={inputId}>
-        Country
+        {label}
       </label>
       <div className="relative">
         <input
@@ -2869,7 +3024,9 @@ export default function JournalPage() {
         </div>
       ) : null}
       <p className="mt-2 text-xs leading-5 text-ink/55">
-        If the country does not appear, please select it on the map first.
+        {hasMultipleImportedCountries
+          ? `Detected countries: ${importedTripCountryNames.join(', ')}. Choose the country this journal entry should be linked to in your archive.`
+          : 'If the country does not appear, please select it on the map first.'}
       </p>
     </div>
   );
@@ -2893,7 +3050,8 @@ export default function JournalPage() {
                 id="canva-journal-name"
                 value={form.title}
                 onChange={(event) => setForm({ ...form, title: event.target.value })}
-                className="mt-1 w-full min-w-[220px] rounded-md border border-gold/25 bg-cream px-3 py-2 text-sm font-semibold text-ink outline-none transition focus:border-gold focus:ring-2 focus:ring-gold/25"
+                placeholder={preview.title}
+                className="mt-1 w-full min-w-[220px] rounded-md border border-gold/25 bg-cream px-3 py-2 text-sm font-semibold text-ink outline-none transition placeholder:text-ink/38 focus:border-gold focus:ring-2 focus:ring-gold/25"
                 required
               />
               <p className="text-xs text-ink/50">
@@ -2931,12 +3089,11 @@ export default function JournalPage() {
               type="button"
               size="sm"
               variant="secondary"
-              onClick={() => {
-                setCanvaImportedPreview(null);
-                setCanvaCoverPageIndex(0);
-              }}
+              className="gap-2"
+              onClick={openCanvaModal}
             >
-              Replace Pages
+              <Search className="h-4 w-4" aria-hidden="true" />
+              Choose existing
             </Button>
             {preview.design ? (
               <Button
@@ -3010,7 +3167,7 @@ export default function JournalPage() {
             coverPageIndex: canvaCoverPageIndex,
             onSetCover: setCanvaCoverPageIndex,
           })}
-          <div className="mx-auto mt-4 grid max-w-4xl gap-3 lg:grid-cols-[minmax(0,1fr)_240px]">
+          <div className="mx-auto mt-4 grid max-w-6xl gap-3 xl:grid-cols-[minmax(0,1fr)_260px_300px]">
             <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-page-story">
@@ -3058,7 +3215,7 @@ export default function JournalPage() {
                   value={form.tripStartDate}
                   max={form.tripEndDate}
                   error={dateRangeErrors.startDate}
-                  onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                  onChange={(event) => setForm((current) => updateDateRangeForStartChange(current, event.target.value))}
                   required
                 />
                 <Input
@@ -3074,13 +3231,22 @@ export default function JournalPage() {
               <div className="mt-3">
                 {renderCountrySearch('canva-page-country')}
               </div>
+              <div className="mt-3">
+                <JournalMoodPicker
+                  id="canva-preview-mood"
+                  value={form.mood}
+                  onChange={(mood) => setForm({ ...form, mood })}
+                  required
+                />
+              </div>
               {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
               {!canSaveCurrentEntry ? (
                 <p className="mt-3 text-xs font-semibold text-gold-deep">
-                  Add a journal name, story, and visited country to save.
+                  Add a journal name, story, visited country, and mood to save.
                 </p>
               ) : null}
             </div>
+            {renderDraftChecklist('rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft')}
           </div>
           {renderCanvaAttachment()}
           {renderMemoryPhotoTray()}
@@ -3222,9 +3388,11 @@ export default function JournalPage() {
     );
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const renderImportedTripWorkspace = () => {
     const parsedTrip = importedTripWorkspaceNotice?.parsedTrip;
-    const savedEntry = importedTripWorkspaceNotice?.entry;
+    const isImportedTripDraft = importedTripWorkspaceNotice?.message === 'Draft';
+    const savedEntry = isImportedTripDraft ? null : importedTripWorkspaceNotice?.entry;
     const savedEntryContent = savedEntry ? getEntryContent(savedEntry) : '';
     const memoryDraftText = form.content.trim() || savedEntryContent;
     const memoryDateLabel = parsedTrip?.dateLabel || formatJournalDateRange(form.tripStartDate, form.tripEndDate);
@@ -3268,14 +3436,14 @@ export default function JournalPage() {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">
-                {parsedTrip ? 'Imported trip' : 'Imported trip draft'}
+                {isImportedTripDraft ? 'Imported trip draft' : parsedTrip ? 'Imported trip' : 'Imported trip draft'}
               </p>
               <h3 className="mt-1 text-2xl font-serif text-ink">
                 {parsedTrip?.title || form.title || 'Review imported trip'}
               </h3>
             </div>
             <div className="flex flex-wrap gap-2">
-              {importedTripWorkspaceNotice ? (
+              {importedTripWorkspaceNotice && !isImportedTripDraft ? (
                 <Button
                   type="button"
                   size="sm"
@@ -3297,8 +3465,12 @@ export default function JournalPage() {
               <p className="text-sm leading-6 text-ink/72">{parsedTrip.summary}</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-4">
                 <div className="rounded-md border border-gold/15 bg-white px-3 py-2">
-                  <p className="text-xs uppercase tracking-wide text-ink/45">Country</p>
-                  <p className="mt-1 font-semibold text-ink">{parsedTrip.countryName}</p>
+                  <p className="text-xs uppercase tracking-wide text-ink/45">
+                    {parsedTrip.countryNames.length > 1 ? 'Countries' : 'Country'}
+                  </p>
+                  <p className="mt-1 font-semibold text-ink">
+                    {(parsedTrip.countryNames.length ? parsedTrip.countryNames : [parsedTrip.countryName]).join(', ')}
+                  </p>
                 </div>
                 <div className="rounded-md border border-gold/15 bg-white px-3 py-2 sm:col-span-2">
                   <p className="text-xs uppercase tracking-wide text-ink/45">Dates</p>
@@ -3325,7 +3497,9 @@ export default function JournalPage() {
                 </div>
               ) : null}
             </div>
-          ) : (
+          ) : null}
+
+          {isImportedTripDraft || !parsedTrip ? (
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               <Input
                 label="Journal name"
@@ -3335,10 +3509,11 @@ export default function JournalPage() {
               />
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                 {renderCountrySearch('imported-trip-country')}
-                <Input
-                  label="Mood"
+                <JournalMoodPicker
+                  id="imported-trip-mood"
                   value={form.mood}
-                  onChange={(event) => setForm({ ...form, mood: event.target.value })}
+                  onChange={(mood) => setForm({ ...form, mood })}
+                  required
                 />
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -3348,7 +3523,7 @@ export default function JournalPage() {
                   value={form.tripStartDate}
                   max={form.tripEndDate}
                   error={dateRangeErrors.startDate}
-                  onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                  onChange={(event) => setForm((current) => updateDateRangeForStartChange(current, event.target.value))}
                   required
                 />
                 <Input
@@ -3409,14 +3584,16 @@ export default function JournalPage() {
                 {currentEntrySaveLabel}
               </Button>
             </form>
-          )}
+          ) : null}
         </section>
 
         <aside className="space-y-4">
           <section className="rounded-lg border border-gold/20 bg-white/88 p-4 shadow-soft">
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Status</p>
             <p className="mt-2 text-sm leading-6 text-ink/65">
-              {importedTripWorkspaceNotice
+              {isImportedTripDraft
+                ? 'This imported trip is ready to review. Select a mood, confirm the country, then save it.'
+                : importedTripWorkspaceNotice
                 ? importedTripWorkspaceNotice.parsedTrip?.canvaTitle
                   ? 'This imported trip was saved and linked to the Canva page.'
                   : 'This imported trip was saved as a journal entry.'
@@ -3433,14 +3610,14 @@ export default function JournalPage() {
             context={memoryKeeperContext}
             draftText={memoryDraftText}
             onUseDraft={
-              parsedTrip
+              !isImportedTripDraft && parsedTrip
                 ? undefined
                 : (nextContent) => {
                     setForm((current) => ({ ...current, content: nextContent }));
                   }
             }
             onAppendDraft={
-              parsedTrip
+              !isImportedTripDraft && parsedTrip
                 ? undefined
                 : (nextContent) => {
                     setForm((current) => ({
@@ -3487,38 +3664,168 @@ export default function JournalPage() {
     );
   };
 
+  const renderCanvaDraftWorkspace = () => {
+    const parsedTrip = importedTripWorkspaceNotice?.parsedTrip;
+
+    return (
+      <div className="p-5">
+        <div className="rounded-lg border border-gold/20 bg-white shadow-soft">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gold/15 bg-cream/55 px-4 py-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva story draft</p>
+              <h3 className="mt-1 text-2xl font-serif text-ink">{effectiveJournalTitle || 'Review imported trip'}</h3>
+              <p className="mt-1 text-sm text-ink/60">
+                Your parsed itinerary is ready. Attach or create the Canva page, choose a mood, then save it to the archive.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
+                <Palette className="h-4 w-4" aria-hidden="true" />
+                Create in Canva
+              </Button>
+              <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={openCanvaModal}>
+                <Search className="h-4 w-4" aria-hidden="true" />
+                Choose existing
+              </Button>
+            </div>
+          </div>
+
+          {parsedTrip ? (
+            <div className="border-b border-gold/15 bg-[#e8dcc2] p-4">
+              <div className="rounded-lg border border-gold/18 bg-white/90 p-4">
+                <p className="text-sm leading-6 text-ink/72">{parsedTrip.summary}</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="rounded-md border border-gold/15 bg-cream/45 px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-ink/45">
+                      {parsedTrip.countryNames.length > 1 ? 'Countries' : 'Country'}
+                    </p>
+                    <p className="mt-1 font-semibold text-ink">
+                      {(parsedTrip.countryNames.length ? parsedTrip.countryNames : [parsedTrip.countryName]).join(', ')}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-gold/15 bg-cream/45 px-3 py-2 sm:col-span-2">
+                    <p className="text-xs uppercase tracking-wide text-ink/45">Dates</p>
+                    <p className="mt-1 font-semibold text-ink">{parsedTrip.dateLabel}</p>
+                  </div>
+                  <div className="rounded-md border border-gold/15 bg-cream/45 px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-ink/45">Pages</p>
+                    <p className="mt-1 font-semibold text-ink">{parsedTrip.pageCount}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 bg-[#e8dcc2] p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_260px_300px]">
+            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+              <Input
+                label="Journal name"
+                value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                placeholder={canvaImportedPreview?.title || 'Name this journal entry'}
+                required={!canvaImportedPreview?.title}
+              />
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm font-semibold text-ink" htmlFor="canva-draft-story">
+                  <Type className="h-4 w-4 text-gold-deep" aria-hidden="true" />
+                  Story below this page
+                </label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={isStoryDictating ? 'secondary' : 'ghost'}
+                  className="gap-2"
+                  onClick={() => toggleDictation({ type: 'story' })}
+                >
+                  <Mic className="h-4 w-4" aria-hidden="true" />
+                  {isStoryDictating ? 'Stop' : 'Dictate'}
+                </Button>
+              </div>
+              <textarea
+                id="canva-draft-story"
+                value={form.content}
+                onChange={(event) => setForm({ ...form, content: event.target.value })}
+                rows={10}
+                placeholder="What do you want to remember?"
+                className="mt-3 w-full resize-y rounded-lg border border-gold/25 bg-cream/45 px-4 py-3 text-sm leading-6 text-ink outline-none transition placeholder:text-ink/40 focus:border-gold focus:ring-2 focus:ring-gold/25"
+                required
+              />
+              {isStoryDictating ? <p className="mt-2 text-sm font-semibold text-gold-deep">Listening...</p> : null}
+              {dictationError ? <p className="mt-2 text-sm text-red-600">{dictationError}</p> : null}
+            </div>
+
+            <div className="rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft">
+              <label className="text-sm font-semibold text-ink" htmlFor="canva-draft-tags">
+                Tags
+              </label>
+              <Input
+                id="canva-draft-tags"
+                value={form.tags}
+                onChange={(event) => setForm({ ...form, tags: event.target.value })}
+                placeholder="market, sunset, train"
+                className="mt-3"
+              />
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Input
+                  label="Trip start"
+                  type="date"
+                  value={form.tripStartDate}
+                  max={form.tripEndDate}
+                  error={dateRangeErrors.startDate}
+                  onChange={(event) => setForm((current) => updateDateRangeForStartChange(current, event.target.value))}
+                  required
+                />
+                <Input
+                  label="Trip end"
+                  type="date"
+                  value={form.tripEndDate}
+                  min={form.tripStartDate}
+                  error={dateRangeErrors.endDate}
+                  onChange={(event) => setForm({ ...form, tripEndDate: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="mt-3">{renderCountrySearch('canva-draft-country')}</div>
+              <div className="mt-3">
+                <JournalMoodPicker
+                  id="canva-draft-mood"
+                  value={form.mood}
+                  onChange={(mood) => setForm({ ...form, mood })}
+                  required
+                />
+              </div>
+              {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+              <Button
+                type="button"
+                className="mt-4 w-full"
+                isLoading={saving}
+                disabled={!canSaveCurrentEntry}
+                onClick={() => void saveCurrentJournalEntry()}
+              >
+                {currentEntrySaveLabel}
+              </Button>
+            </div>
+
+            {renderDraftChecklist('rounded-lg border border-gold/20 bg-white/86 p-4 shadow-soft')}
+          </div>
+          {renderCanvaAttachment()}
+          {renderMemoryPhotoTray()}
+          {renderInstagramAttachment()}
+        </div>
+      </div>
+    );
+  };
+
   const renderCanvaWorkspace = () => (
     <section className="overflow-hidden rounded-lg border border-gold/25 bg-[#fff8ea] shadow-soft">
       <div className="border-b border-gold/20 bg-white/72 px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">Canva workspace</p>
             <h2 className="mt-1 text-3xl font-serif text-ink">Design the page in Canva</h2>
             <p className="mt-2 max-w-2xl text-sm text-ink/62">
               Start a fresh journal page, bring in a finished Canva design, then add the story and country before saving.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" className="gap-2" isLoading={canvaCreatingDesign} onClick={() => void createCanvaJournalPage()}>
-              <Palette className="h-4 w-4" aria-hidden="true" />
-              Create New Canva Design
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="gap-2"
-              onClick={() => {
-                setImportModalOpen(true);
-                setLocalScrapbookBackupOpen(false);
-              }}
-            >
-              <FileUp className="h-4 w-4" aria-hidden="true" />
-              Import Trip Itinerary
-            </Button>
-            <Button type="button" variant="secondary" className="gap-2" onClick={openCanvaModal}>
-              <Search className="h-4 w-4" aria-hidden="true" />
-              Choose Existing Canva Design
-            </Button>
           </div>
         </div>
       </div>
@@ -3535,12 +3842,12 @@ export default function JournalPage() {
             inline
             startPageNumber={scrapbookPages.length + 1}
             boardWidth={visibleBoardWidth}
+            defaultItineraryText={isDemoUser ? DEMO_TRIP_IMPORT_SAMPLE_TEXT : undefined}
+            defaultItineraryStorageKey={isDemoUser ? DEMO_TRIP_IMPORT_SAMPLE_STORAGE_KEY : undefined}
             onClose={() => setImportModalOpen(false)}
             onImport={handleTripImported}
           />
         </div>
-      ) : importedTripWorkspaceNotice ? (
-        renderImportedTripWorkspace()
       ) : canvaImportedPreview ? (
         <div className="p-5">
           <div className="overflow-hidden rounded-lg border border-gold/20 bg-white shadow-soft">
@@ -3548,19 +3855,59 @@ export default function JournalPage() {
           </div>
         </div>
       ) : hasImportedTripWorkspaceContent ? (
-        renderImportedTripWorkspace()
+        renderCanvaDraftWorkspace()
       ) : (
         <div className="p-5">
           <div className="relative min-h-[680px] overflow-hidden rounded-lg border border-gold/20 bg-cream">
             <div className="absolute inset-0 bg-[linear-gradient(rgba(61,43,14,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(61,43,14,0.07)_1px,transparent_1px)] bg-[size:36px_36px]" />
-            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.7),rgba(47,111,109,0.08)_44%,rgba(193,154,91,0.12))]" />
-            <div className="relative flex min-h-[680px] items-center justify-center px-5 text-center">
-              <div className="max-w-2xl rounded-lg border border-gold/25 bg-white/88 p-6 shadow-soft">
-                <Palette className="mx-auto h-10 w-10 text-gold-deep" aria-hidden="true" />
-                <h3 className="mt-4 text-2xl font-serif text-ink">Your next journal page starts here</h3>
-                <p className="mt-3 text-sm leading-6 text-ink/64">
-                  Use the buttons above to create a page in Canva or import a design you already finished.
-                </p>
+            <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.78),rgba(47,111,109,0.09)_44%,rgba(193,154,91,0.13))]" />
+            <div className="relative flex min-h-[680px] items-center p-6 sm:p-8">
+              <div className="flex flex-col justify-between gap-10 p-6 sm:p-8">
+                <div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-gold/25 bg-white/76 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-gold-deep">
+                    <Sparkles className="h-4 w-4" aria-hidden="true" />
+                    Ready for a page
+                  </div>
+                  <h3 className="mt-5 max-w-2xl text-4xl font-serif font-semibold leading-tight text-ink sm:text-5xl">
+                    Start with a design, then turn it into a saved travel story.
+                  </h3>
+                  <p className="mt-4 max-w-2xl text-base leading-7 text-ink/68">
+                    Create a Canva layout, import an itinerary, or pull in a finished design. This workspace keeps the page, story, dates, country, photos, and sharing-ready entry together.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
+                    onClick={() => void createCanvaJournalPage()}
+                    disabled={canvaCreatingDesign}
+                  >
+                    <Palette className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-ink">Create in Canva</p>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">Open a fresh design for this entry.</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
+                    onClick={() => {
+                      setImportModalOpen(true);
+                      setLocalScrapbookBackupOpen(false);
+                    }}
+                  >
+                    <FileUp className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-ink">Import a trip</p>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">Turn an itinerary into draft pages.</p>
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
+                    onClick={openCanvaModal}
+                  >
+                    <Search className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-semibold text-ink">Choose existing</p>
+                    <p className="mt-1 text-xs leading-5 text-ink/58">Attach a finished Canva design.</p>
+                  </button>
+                </div>
                 {canvaError ? <p className="mt-4 text-sm text-red-600">{canvaError}</p> : null}
               </div>
             </div>
@@ -3619,6 +3966,14 @@ export default function JournalPage() {
                 Connect
               </Button>
             </form>
+            <div className="mb-4 rounded-lg border border-gold/20 bg-white p-4 shadow-soft">
+              <JournalMoodPicker
+                id="canva-import-mood"
+                value={form.mood}
+                onChange={(mood) => setForm({ ...form, mood })}
+                required
+              />
+            </div>
 
             {canvaError ? (
               <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -3766,10 +4121,10 @@ export default function JournalPage() {
               </select>
             </div>
 
-            <Input
-              label="Mood"
+            <JournalMoodPicker
+              id="edit-entry-mood"
               value={editForm.mood}
-              onChange={(event) => setEditForm((current) => ({ ...current, mood: event.target.value }))}
+              onChange={(mood) => setEditForm((current) => ({ ...current, mood }))}
               required
             />
 
@@ -3780,7 +4135,7 @@ export default function JournalPage() {
                 value={editForm.tripStartDate}
                 max={editForm.tripEndDate}
                 error={editDateRangeErrors.startDate}
-                onChange={(event) => setEditForm((current) => ({ ...current, tripStartDate: event.target.value }))}
+                onChange={(event) => setEditForm((current) => updateDateRangeForStartChange(current, event.target.value))}
                 required
               />
               <Input
@@ -3930,7 +4285,15 @@ export default function JournalPage() {
       <AppHeader />
       <PageShell
         title="Travel Journal"
-        description="Design Canva journal pages, save travel stories, and revisit shared memories."
+        description="Attach a Canva page, add the story, trip details, and mood, then save it to your archive with optional photos or Instagram embeds."
+        actions={
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" variant="secondary" className="gap-2" onClick={() => router.push('/journal/entries')}>
+              <BookOpen className="h-4 w-4" aria-hidden="true" />
+              Archive
+            </Button>
+          </div>
+        }
       >
         <DndContext onDragEnd={handleDndDragEnd}>
           <div className={localScrapbookBackupOpen ? 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]' : 'grid gap-6'}>
@@ -4144,10 +4507,11 @@ export default function JournalPage() {
                   required
                 />
                 {renderCountrySearch('scrapbook-entry-country')}
-                <Input
-                  label="Mood"
+                <JournalMoodPicker
+                  id="scrapbook-entry-mood"
                   value={form.mood}
-                  onChange={(event) => setForm({ ...form, mood: event.target.value })}
+                  onChange={(mood) => setForm({ ...form, mood })}
+                  required
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
@@ -4156,7 +4520,7 @@ export default function JournalPage() {
                     value={form.tripStartDate}
                     max={form.tripEndDate}
                     error={dateRangeErrors.startDate}
-                    onChange={(event) => setForm({ ...form, tripStartDate: event.target.value })}
+                    onChange={(event) => setForm((current) => updateDateRangeForStartChange(current, event.target.value))}
                     required
                   />
                   <Input
