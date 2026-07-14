@@ -14,13 +14,20 @@ export const DEMO_SHARED_JOURNAL_STORAGE_KEY = 'travel-journal:demo-shared-journ
 export const DEMO_FRIENDS_STORAGE_KEY = 'travel-journal:demo-friends';
 export const DEMO_MAP_STORAGE_KEY = 'travel-journal:demo-map-state';
 export const DEMO_TRIP_IMPORT_SAMPLE_STORAGE_KEY = 'travel-journal:demo-trip-import-sample-edited';
+export const DEMO_STARTED_AT_STORAGE_KEY = 'travel-journal:demo-started-at';
 const DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY = 'travel-journal:country-explorer-entry';
 export const DEMO_USER_ID = 'demo-local-user';
 export const DEMO_SHARE_RECIPIENT_ID = 'demo-share-recipient-aparnna';
 export const DEMO_SHARE_RECIPIENT_EMAIL = 'aparnna.demo@traveljournal.app';
 export const DEMO_SHARE_RECIPIENT_NAME = 'Aparnna';
 const DEMO_PENDING_FRIEND_ID = 'demo-friend-mary-chen';
-const DEMO_OUTGOING_FRIEND_ID = 'demo-friend-lena-park';
+export const DEMO_OUTGOING_FRIEND_ID = 'demo-friend-lena-park';
+export const DEMO_OUTGOING_FRIEND_EMAIL = 'lena.park@example.com';
+export const DEMO_OUTGOING_FRIEND_NAME = 'Lena Park';
+export const DEMO_OUTGOING_FRIEND_REQUEST_ID = 'demo-friend-request-lena-park';
+export const DEMO_LENA_SHARED_ENTRY_ID = 'demo-shared-lena-tokyo-evening';
+export const DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY = 'travel-journal:demo-lena-share-triggered';
+export const DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY = 'travel-journal:demo-lena-share-dismissed';
 export const DEMO_REMOVABLE_FRIEND_ID = 'demo-friend-sofia-rivera';
 export const DEMO_REMOVABLE_FRIEND_EMAIL = 'sofia.rivera@example.com';
 export const DEMO_REMOVABLE_FRIEND_NAME = 'Sofia Rivera';
@@ -325,6 +332,50 @@ export const demoSharedJournalEntries: JournalEntry[] = [
   },
 ];
 
+export const demoLenaSharedJournalEntry: JournalEntry = {
+  id: DEMO_LENA_SHARED_ENTRY_ID,
+  userId: DEMO_OUTGOING_FRIEND_ID,
+  countryId: 'JP',
+  title: 'Tokyo Evening Food Walk',
+  content:
+    "The evening began near Shinjuku Station, where every side street seemed to glow with a different color of neon. Following the aroma of grilled skewers led to a tiny alley packed with local restaurants. Ordering a little too much food turned into the perfect excuse to linger and chat with fellow travelers, swapping recommendations for favorite convenience-store desserts.\n\nBy the end of the night, the best memory wasn't a single landmark—it was the rhythm of Tokyo itself. The sound of train chimes, the glow of neon signs, bowls of late-night ramen, and the feeling that there was always one more corner waiting to be explored made the city feel endlessly alive.",
+  mood: 'curious',
+  tags: ['tokyo', 'japan', 'food-walk', 'shared'],
+  photos: [
+    {
+      id: 'demo-lena-tokyo-cover',
+      url: '/images/demo/lena-tokyo-cover.jpeg',
+      alt: 'Neon-lit Tokyo street at night',
+      uploadedAt: '2026-06-29T10:45:00.000Z',
+    },
+    {
+      id: 'demo-lena-tokyo',
+      url: '/images/demo/lena-tokyo.jpg',
+      alt: 'Tokyo evening food walk',
+      uploadedAt: '2026-06-29T10:45:00.000Z',
+    },
+  ],
+  coverPhoto: '/images/demo/lena-tokyo-cover.jpeg',
+  insertedPhotos: [
+    {
+      id: 'demo-lena-tokyo',
+      src: '/images/demo/lena-tokyo.jpg',
+      alt: 'Tokyo evening food walk',
+      caption: 'Shinjuku evening food walk',
+    },
+  ],
+  instagramEmbeds: [
+    {
+      id: 'instagram-1',
+      url: 'https://www.instagram.com/p/DDzaqD5uRnj/',
+    },
+  ],
+  tripStartDate: '2026-06-24',
+  tripEndDate: '2026-06-24',
+  createdAt: '2026-06-29T10:45:00.000Z',
+  updatedAt: '2026-06-29T10:45:00.000Z',
+};
+
 export const demoFriends: FriendsResponse = {
   friends: [
     {
@@ -374,7 +425,7 @@ export const demoFriends: FriendsResponse = {
   ],
   outgoing: [
     {
-      id: 'demo-friend-request-lena-park',
+      id: DEMO_OUTGOING_FRIEND_REQUEST_ID,
       requesterId: DEMO_USER_ID,
       addresseeId: DEMO_OUTGOING_FRIEND_ID,
       status: 'pending',
@@ -382,8 +433,8 @@ export const demoFriends: FriendsResponse = {
       respondedAt: null,
       profile: {
         id: DEMO_OUTGOING_FRIEND_ID,
-        email: 'lena.park@example.com',
-        displayName: 'Lena Park',
+        email: DEMO_OUTGOING_FRIEND_EMAIL,
+        displayName: DEMO_OUTGOING_FRIEND_NAME,
       },
       direction: 'outgoing',
     },
@@ -498,10 +549,13 @@ export function isLocalDemoHost() {
   return isLocalHostName(window.location.hostname);
 }
 
-export function enableDemoMode() {
+export function enableDemoMode(options?: { resetStart?: boolean }) {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(DEMO_STORAGE_KEY);
   window.sessionStorage.setItem(DEMO_STORAGE_KEY, 'true');
+  if (options?.resetStart || !window.sessionStorage.getItem(DEMO_STARTED_AT_STORAGE_KEY)) {
+    window.sessionStorage.setItem(DEMO_STARTED_AT_STORAGE_KEY, String(Date.now()));
+  }
   document.cookie = `${DEMO_COOKIE_NAME}=true; path=/; SameSite=Lax`;
 }
 
@@ -552,6 +606,9 @@ export async function resetDemoBrowserState() {
 
   seedDemoLocalContext({ reset: true });
   window.sessionStorage.removeItem(DEMO_COUNTRY_EXPLORER_ENTRY_STORAGE_KEY);
+  window.sessionStorage.setItem(DEMO_STARTED_AT_STORAGE_KEY, String(Date.now()));
+  window.sessionStorage.removeItem(DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY);
 
   try {
     await writeDemoSharedJournalEntriesLarge(demoSharedJournalEntries);
@@ -572,6 +629,9 @@ export function disableDemoMode() {
   window.sessionStorage.removeItem(DEMO_JOURNAL_COMMENT_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_FRIENDS_STORAGE_KEY);
   window.sessionStorage.removeItem(DEMO_MAP_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_STARTED_AT_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY);
+  window.sessionStorage.removeItem(DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY);
   document.cookie = `${DEMO_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;
 }
 

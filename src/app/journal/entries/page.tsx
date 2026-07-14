@@ -330,6 +330,7 @@ export default function JournalEntriesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const deepLinkedEntryId = searchParams.get('entryId')?.trim() ?? '';
+  const deepLinkedSharedEntryId = searchParams.get('sharedEntryId')?.trim() ?? '';
   const [entries, setEntries] = useState<SavedEntry[]>([]);
   const [entryCount, setEntryCount] = useState(0);
   const [hasMoreEntries, setHasMoreEntries] = useState(false);
@@ -382,6 +383,7 @@ export default function JournalEntriesPage() {
   const [exportingEntryId, setExportingEntryId] = useState<string | null>(null);
   const [demoPublishAccess, setDemoPublishAccess] = useState<{ userId: string; canPublish: boolean } | null>(null);
   const openedDeepLinkEntryIdRef = useRef<string | null>(null);
+  const openedDeepLinkSharedEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const activeSearchQuery = deferredSearchQuery.trim();
   const isSearching = activeSearchQuery.length > 0;
@@ -669,6 +671,58 @@ export default function JournalEntriesPage() {
 
     return fullEntry;
   };
+
+  useEffect(() => {
+    if (!user || !deepLinkedSharedEntryId || openedDeepLinkSharedEntryIdRef.current === deepLinkedSharedEntryId) {
+      return;
+    }
+
+    let isCurrent = true;
+    openedDeepLinkSharedEntryIdRef.current = deepLinkedSharedEntryId;
+
+    const openDeepLinkedSharedEntry = async () => {
+      const visibleEntry = sharedEntries.find((entry) => entry.id === deepLinkedSharedEntryId);
+
+      if (visibleEntry && isCurrent) {
+        setOpenedEntry(null);
+        setOpenedSharedEntry(visibleEntry);
+      }
+
+      const response = await fetchSharedJournalEntry(deepLinkedSharedEntryId);
+
+      if (!isCurrent) {
+        return;
+      }
+
+      if (!response.success || !response.data) {
+        setSharedLoadError(response.error || 'Could not load this shared journal entry.');
+        return;
+      }
+
+      const fullEntry = response.data;
+      setSharedEntries((current) => {
+        const hasEntry = current.some((entry) => entry.id === fullEntry.id && entry.sharedBy.id === fullEntry.sharedBy.id);
+
+        return hasEntry
+          ? current.map((entry) =>
+              entry.id === fullEntry.id && entry.sharedBy.id === fullEntry.sharedBy.id
+                ? { ...entry, ...fullEntry, isSummary: false }
+                : entry
+            )
+          : [fullEntry, ...current];
+      });
+      setOpenedEntry(null);
+      setOpenedSharedEntry(fullEntry);
+    };
+
+    // Travel Circle demo notices link here with ?sharedEntryId=... so the
+    // shared-story modal opens without an extra archive click.
+    void openDeepLinkedSharedEntry();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [deepLinkedSharedEntryId, sharedEntries, user]);
 
   useEffect(() => {
     if (!user || entries.length === 0) {

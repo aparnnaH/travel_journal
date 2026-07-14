@@ -9,6 +9,9 @@ import { encodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
 import { addJournalFavoriteTag, hasJournalFavoriteTag, removeJournalFavoriteTags } from '@/lib/journalFavorites';
 import {
   createDefaultDemoJournalShares,
+  DEMO_OUTGOING_FRIEND_EMAIL,
+  DEMO_OUTGOING_FRIEND_ID,
+  DEMO_OUTGOING_FRIEND_NAME,
   DEMO_REMOVABLE_FRIEND_EMAIL,
   DEMO_REMOVABLE_FRIEND_ID,
   DEMO_REMOVABLE_FRIEND_NAME,
@@ -45,6 +48,12 @@ const getDemoSharedByProfile = (entry: JournalEntry) =>
         id: DEMO_REMOVABLE_FRIEND_ID,
         email: DEMO_REMOVABLE_FRIEND_EMAIL,
         displayName: DEMO_REMOVABLE_FRIEND_NAME,
+      }
+    : entry.userId === DEMO_OUTGOING_FRIEND_ID
+    ? {
+        id: DEMO_OUTGOING_FRIEND_ID,
+        email: DEMO_OUTGOING_FRIEND_EMAIL,
+        displayName: DEMO_OUTGOING_FRIEND_NAME,
       }
     : {
         id: DEMO_SHARE_RECIPIENT_ID,

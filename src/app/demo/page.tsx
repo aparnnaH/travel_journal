@@ -16,7 +16,7 @@ export default function DemoPage() {
   const replaceMapState = useMapStore((state) => state.replaceMapState);
 
   useEffect(() => {
-    enableDemoMode();
+    enableDemoMode({ resetStart: true });
     seedDemoLocalContext({ reset: true });
     setLoading(false);
     setUser(demoUser);

@@ -3,7 +3,7 @@
 // manage relationships that journal sharing depends on.
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import {
   AlertTriangle,
@@ -33,7 +33,22 @@ import AppPageSkeleton from '@/components/loading/PageSkeletons';
 import StampRenderer from '@/components/stamps/StampRenderer';
 import { Button, Card, Input } from '@/components/ui';
 import { ATLAS_STAMP_COUNTRIES } from '@/data/stamps/atlasCountries';
-import { DEMO_REMOVABLE_FRIEND_ID, DEMO_SHARE_RECIPIENT_ID, isDemoMode } from '@/lib/demoMode';
+import {
+  demoLenaSharedJournalEntry,
+  DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY,
+  DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY,
+  DEMO_OUTGOING_FRIEND_ID,
+  DEMO_OUTGOING_FRIEND_NAME,
+  DEMO_OUTGOING_FRIEND_REQUEST_ID,
+  DEMO_REMOVABLE_FRIEND_ID,
+  DEMO_SHARE_RECIPIENT_ID,
+  DEMO_STARTED_AT_STORAGE_KEY,
+  isDemoMode,
+  readDemoFriends,
+  readDemoSharedJournalEntriesLarge,
+  writeDemoFriends,
+  writeDemoSharedJournalEntriesLarge,
+} from '@/lib/demoMode';
 import {
   fetchFriendCountrySnapshots,
   fetchFriends,
@@ -55,6 +70,8 @@ const emptyFriends: FriendsResponse = {
   outgoing: [],
   blocked: [],
 };
+
+const DEMO_LENA_SHARE_DELAY_MS = 12000;
 
 const atlasCountryLookup = new Map<string, string>();
 
@@ -361,6 +378,8 @@ export default function FriendsPage() {
   const [sharedJournalsError, setSharedJournalsError] = useState<string | null>(null);
   const [isSharedJournalsLoading, setIsSharedJournalsLoading] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<Friendship | null>(null);
+  const [demoShareNotice, setDemoShareNotice] = useState<{ entryId: string; friendName: string; title: string } | null>(null);
+  const demoShareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     // Redirect anonymous users and fetch Travel Circle data for signed-in users.
@@ -478,6 +497,106 @@ export default function FriendsPage() {
     [countryLabels, inboundSharedEntries, outboundSharedEntries, selectedCountrySnapshot?.friend]
   );
 
+  useEffect(() => {
+    if (!user || loading || !isDemoMode()) {
+      return;
+    }
+
+    const hasDismissedNotice = window.sessionStorage.getItem(DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY) === 'true';
+    if (hasDismissedNotice) {
+      return;
+    }
+
+    const hasTriggeredShare = window.sessionStorage.getItem(DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY) === 'true';
+    const lenaInvite = friendsData.outgoing.find(
+      (friendship) => friendship.id === DEMO_OUTGOING_FRIEND_REQUEST_ID || friendship.profile.id === DEMO_OUTGOING_FRIEND_ID
+    );
+    const lenaAccepted = friendsData.friends.some((friendship) => friendship.profile.id === DEMO_OUTGOING_FRIEND_ID);
+
+    if (hasTriggeredShare && lenaAccepted) {
+      void readDemoSharedJournalEntriesLarge().then((entries) => {
+        if (entries.some((entry) => entry.id === demoLenaSharedJournalEntry.id)) {
+          setDemoShareNotice({
+            entryId: demoLenaSharedJournalEntry.id,
+            friendName: DEMO_OUTGOING_FRIEND_NAME,
+            title: demoLenaSharedJournalEntry.title,
+          });
+        }
+      });
+      return;
+    }
+
+    if (!lenaInvite || hasTriggeredShare || demoShareTimerRef.current) {
+      return;
+    }
+
+    const demoStartedAt = Number(window.sessionStorage.getItem(DEMO_STARTED_AT_STORAGE_KEY));
+    const elapsedDemoTime = Number.isFinite(demoStartedAt) ? Date.now() - demoStartedAt : 0;
+    const remainingDelay = Math.max(0, DEMO_LENA_SHARE_DELAY_MS - elapsedDemoTime);
+
+    demoShareTimerRef.current = setTimeout(() => {
+      demoShareTimerRef.current = null;
+      window.sessionStorage.setItem(DEMO_LENA_SHARE_TRIGGER_STORAGE_KEY, 'true');
+
+      void (async () => {
+        const currentFriends = readDemoFriends();
+        const currentInvite =
+          currentFriends.outgoing.find(
+            (friendship) => friendship.id === DEMO_OUTGOING_FRIEND_REQUEST_ID || friendship.profile.id === DEMO_OUTGOING_FRIEND_ID
+          ) ?? lenaInvite;
+        const acceptedFriendship: Friendship = {
+          ...currentInvite,
+          status: 'accepted',
+          respondedAt: new Date().toISOString(),
+          direction: 'friend',
+          blockedBy: null,
+        };
+        const nextFriends: FriendsResponse = {
+          ...currentFriends,
+          outgoing: currentFriends.outgoing.filter((friendship) => friendship.id !== currentInvite.id),
+          friends: [
+            acceptedFriendship,
+            ...currentFriends.friends.filter((friendship) => friendship.profile.id !== DEMO_OUTGOING_FRIEND_ID),
+          ],
+        };
+        writeDemoFriends(nextFriends);
+
+        const currentSharedEntries = await readDemoSharedJournalEntriesLarge();
+        const nextSharedEntries = currentSharedEntries.some((entry) => entry.id === demoLenaSharedJournalEntry.id)
+          ? currentSharedEntries
+          : [demoLenaSharedJournalEntry, ...currentSharedEntries];
+        await writeDemoSharedJournalEntriesLarge(nextSharedEntries);
+
+        const [countryResponse, sharedJournalContext] = await Promise.all([
+          fetchFriendCountrySnapshots(),
+          fetchSharedJournalContext(),
+        ]);
+        setFriendsData(nextFriends);
+        if (countryResponse.success && countryResponse.data) {
+          setFriendCountrySnapshots(countryResponse.data.friends);
+          setCompareError(null);
+        }
+        setInboundSharedEntries(sharedJournalContext.inboundEntries);
+        setOutboundSharedEntries(sharedJournalContext.outboundEntries);
+        setSharedJournalsError(sharedJournalContext.error);
+        setMessage(`${DEMO_OUTGOING_FRIEND_NAME} accepted your invite.`);
+        setDemoShareNotice({
+          entryId: demoLenaSharedJournalEntry.id,
+          friendName: DEMO_OUTGOING_FRIEND_NAME,
+          title: demoLenaSharedJournalEntry.title,
+        });
+      })();
+    }, remainingDelay);
+  }, [friendsData.friends, friendsData.outgoing, loading, user]);
+
+  useEffect(() => {
+    return () => {
+      if (demoShareTimerRef.current) {
+        clearTimeout(demoShareTimerRef.current);
+      }
+    };
+  }, []);
+
   if (isLoading || !user) {
     return <AppPageSkeleton variant="friends" />;
   }
@@ -562,6 +681,47 @@ export default function FriendsPage() {
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader />
+      {demoShareNotice ? (
+        <div className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-3xl rounded-2xl border border-gold/30 bg-white p-4 shadow-2xl sm:left-auto sm:right-6 sm:w-[420px]">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#E8F1EA] text-[#315F43]">
+              <BookOpen className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-ink">{demoShareNotice.friendName} shared a journal entry with you.</p>
+              <p className="mt-1 text-sm leading-6 text-ink/68">
+                <span aria-hidden="true">&ldquo;</span>
+                {demoShareNotice.title}
+                <span aria-hidden="true">&rdquo;</span> is ready in All Entries.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => {
+                    window.sessionStorage.setItem(DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY, 'true');
+                    setDemoShareNotice(null);
+                    router.push(`/journal/entries?sharedEntryId=${encodeURIComponent(demoShareNotice.entryId)}`);
+                  }}
+                >
+                  See entry
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    window.sessionStorage.setItem(DEMO_LENA_SHARE_DISMISSED_STORAGE_KEY, 'true');
+                    setDemoShareNotice(null);
+                  }}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <PageShell
         title="Friends"
         description="Build a private travel circle for requests now, and shared journals next."

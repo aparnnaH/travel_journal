@@ -5,6 +5,7 @@ import type { FriendRequestAction, FriendsResponse, Friendship } from '@/types/f
 import type { FriendCountrySnapshotsResponse } from '@/types/friends';
 import {
   DEMO_SHARE_RECIPIENT_ID,
+  DEMO_OUTGOING_FRIEND_ID,
   DEMO_USER_ID,
   isDemoMode,
   readDemoFriends,
@@ -76,6 +77,15 @@ function getDemoFriendCountrySnapshots(): FriendCountrySnapshotsResponse {
       { id: 'TW', name: 'Taiwan' },
       { id: 'US', name: 'United States' },
       { id: 'VN', name: 'Vietnam' },
+    ],
+    [DEMO_OUTGOING_FRIEND_ID]: [
+      { id: 'CA', name: 'Canada' },
+      { id: 'FR', name: 'France' },
+      { id: 'IT', name: 'Italy' },
+      { id: 'JP', name: 'Japan' },
+      { id: 'KR', name: 'South Korea' },
+      { id: 'TH', name: 'Thailand' },
+      { id: 'US', name: 'United States' },
     ],
   };
 
