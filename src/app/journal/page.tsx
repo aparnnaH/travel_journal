@@ -154,6 +154,14 @@ type VisitedJournalCountry = {
 const wait = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration));
 const SCRAPBOOK_STORAGE_WARNING_BYTES = 3_500_000;
 const MAX_INSERTED_JOURNAL_PHOTOS = 8;
+const DEMO_VIEW_ONLY_ENTRY_MESSAGE = 'Demo sample entries are view-only. Create your own journal entry to test editing.';
+const DEMO_STARTER_PHOTO_ID = 'demo-starter-world-cup-cover';
+const DEMO_STARTER_INSTAGRAM_URL = 'https://www.instagram.com/p/DaI7yJfRVmt/';
+const DEMO_STARTER_JOURNAL_STORY = `Today we watched Canada play South Africa in the FIFA World Cup at SoFi Stadium in Los Angeles. As Canadians, seeing so many fans dressed in red and waving Canadian flags made us feel right at home.
+
+The match stayed tense until the final moments. Just when it looked like the game might end without a goal, Canada scored a dramatic last-minute winner. The entire Canadian section erupted-we were cheering, hugging, and celebrating with everyone around us.
+
+Watching Canada win on the world's biggest stage was unforgettable. It was easily one of the most exciting moments of our trip to Los Angeles.`;
 
 type DragState = {
   id: string;
@@ -306,7 +314,7 @@ const getEntryCoverPhoto = (entry: SavedEntry | SharedJournalEntry) => {
   const pages = getEntryCanvaPages(entry);
   const insertedPhotos = decodedCanva?.insertedPhotos ?? entry.insertedPhotos ?? [];
   const insertedCoverPhoto = Array.isArray(insertedPhotos)
-    ? insertedPhotos.find((photo) => photo?.src?.startsWith('data:image/'))?.src
+    ? insertedPhotos.find((photo) => typeof photo?.src === 'string' && photo.src.trim())?.src
     : null;
   const snakeCaseCoverPhoto = (entry as { cover_photo?: string | null }).cover_photo;
   const coverPageIndex = clamp(getEntryCoverPageIndex(entry), 0, Math.max(0, pages.length - 1));
@@ -594,6 +602,7 @@ export default function JournalPage() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importNotice, setImportNotice] = useState<string | null>(null);
   const [blankJournalWorkspaceOpen, setBlankJournalWorkspaceOpen] = useState(false);
+  const [demoStarterDraftOpen, setDemoStarterDraftOpen] = useState(false);
   const [canvaModalOpen, setCanvaModalOpen] = useState(false);
   const [canvaDesigns, setCanvaDesigns] = useState<CanvaDesign[]>([]);
   const [canvaQuery, setCanvaQuery] = useState('');
@@ -752,17 +761,21 @@ export default function JournalPage() {
     const response = await fetchJournalEntry(entry.id);
 
     if (!response.success || !response.data) {
-      setError(response.error || 'Could not load this journal entry.');
-      return entry;
+      setError(isDemoUser ? DEMO_VIEW_ONLY_ENTRY_MESSAGE : response.error || 'Could not load this journal entry.');
+      return null;
     }
 
     const fullEntry = response.data as SavedEntry;
 
     return fullEntry;
-  }, []);
+  }, [isDemoUser]);
 
   const openSavedEntry = async (entry: SavedEntry) => {
     const fullEntry = await loadFullEntry(entry);
+
+    if (!fullEntry) {
+      return;
+    }
 
     setOpenedCanvaPageIndex(0);
     setOpenedCanvaTurnDirection('next');
@@ -774,6 +787,11 @@ export default function JournalPage() {
 
   const openEntryInWorkspace = useCallback(async (entryId: string) => {
     const fullEntry = await loadFullEntry({ id: entryId } as SavedEntry);
+
+    if (!fullEntry) {
+      return;
+    }
+
     const countryId = getEntryCountry(fullEntry);
     const countryName =
       visitedJournalCountries.find((country) => country.id === countryId)?.name ||
@@ -828,6 +846,7 @@ export default function JournalPage() {
     setCommentEntryId(null);
     setSavedEntryNotice(null);
     setImportedTripWorkspaceNotice(null);
+    setDemoStarterDraftOpen(false);
     setError(null);
     setActiveTool('select');
   }, [loadFullEntry, setActiveTool, visitedJournalCountries]);
@@ -839,6 +858,42 @@ export default function JournalPage() {
 
     setEditingEntry(null);
     setEditError(null);
+  };
+
+  const openDemoStarterDraft = () => {
+    const demoPhoto: InsertedJournalPhoto = {
+      id: DEMO_STARTER_PHOTO_ID,
+      src: '/images/demo/demo-journal-cover.jpeg',
+      alt: 'Canada fans celebrating at a FIFA World Cup match in Los Angeles',
+      caption: 'Canada vs. South Africa at SoFi Stadium',
+    };
+
+    setWorkspaceEditingEntry(null);
+    setImportedTripWorkspaceNotice(null);
+    setCanvaImportedPreview(null);
+    setCanvaCoverPageIndex(0);
+    setCanvaPreviewPageIndex(0);
+    setCanvaPreviewTurnDirection('next');
+    setLocalScrapbookBackupOpen(false);
+    setBlankJournalWorkspaceOpen(true);
+    setDemoStarterDraftOpen(true);
+    setForm({
+      title: 'Canada vs. South Africa - FIFA World Cup in Los Angeles',
+      content: DEMO_STARTER_JOURNAL_STORY,
+      countryId: 'US',
+      mood: 'excited',
+      tags: 'Los Angeles, Canada, FIFA World Cup, Soccer, SoFi Stadium, Team Canada',
+      tripStartDate: '2026-06-28',
+      tripEndDate: '2026-06-28',
+    });
+    setCountrySearch('United States');
+    setInsertedJournalPhotos([demoPhoto]);
+    setMemoryCoverPhotoId(demoPhoto.id);
+    setInstagramEmbedUrl(DEMO_STARTER_INSTAGRAM_URL);
+    setInstagramError(null);
+    setImportNotice('Opened a demo starter draft. Edit anything, then save it as your own demo journal entry.');
+    setError(null);
+    setStorageWarning(null);
   };
 
   useEffect(() => {
@@ -1928,6 +1983,7 @@ export default function JournalPage() {
     };
 
     setForm(importedEntryForm);
+    setDemoStarterDraftOpen(false);
     setImportedTripWorkspaceNotice({
       entry: {
         id: 'imported-trip-draft',
@@ -2064,6 +2120,7 @@ export default function JournalPage() {
     }
 
     setCanvaImportedPreview(null);
+    setDemoStarterDraftOpen(false);
     setCanvaCoverPageIndex(0);
     setLocalScrapbookBackupOpen(false);
     openCanvaPopup(response.data);
@@ -2148,6 +2205,7 @@ export default function JournalPage() {
       setImportNotice(
         `Imported ${result.scrapbookPages.length} Canva page${result.scrapbookPages.length === 1 ? '' : 's'} from ${result.title}.`
       );
+      setDemoStarterDraftOpen(false);
       setCanvaImportedPreview({
         design,
         title: result.title,
@@ -2266,6 +2324,7 @@ export default function JournalPage() {
       setCountrySearch('');
       setWorkspaceEditingEntry(null);
       setBlankJournalWorkspaceOpen(false);
+      setDemoStarterDraftOpen(false);
       setCanvaImportedPreview(null);
       setCanvaCoverPageIndex(0);
       setInsertedJournalPhotos([]);
@@ -3053,6 +3112,9 @@ export default function JournalPage() {
         Instagram embeds only work for public posts from public accounts. If the post is deleted, made private,
         restricted, or Instagram blocks embedding for it, it may not appear in the journal.
       </div>
+      {hasInstagramEmbedDraft && normalizedInstagramEmbedUrl ? (
+        <InstagramEmbed embeds={[{ id: 'draft-instagram-preview', url: normalizedInstagramEmbedUrl }]} />
+      ) : null}
       {instagramError ? <p className="mt-2 text-sm text-red-600">{instagramError}</p> : null}
       {hasInstagramEmbedDraft && !hasValidInstagramEmbed ? (
         <p className="mt-2 text-sm text-red-600">Paste a public Instagram post or Reel URL.</p>
@@ -3818,6 +3880,13 @@ export default function JournalPage() {
 
   const renderCanvaDraftWorkspace = () => {
     const parsedTrip = importedTripWorkspaceNotice?.parsedTrip;
+    const draftEyebrow = demoStarterDraftOpen ? 'Demo starter draft' : parsedTrip ? 'Imported trip draft' : 'Journal draft';
+    const draftTitle = demoStarterDraftOpen
+      ? 'Edit a prefilled journal draft'
+      : effectiveJournalTitle || (parsedTrip ? 'Review imported trip' : 'Start a journal entry');
+    const draftDescription = demoStarterDraftOpen
+      ? 'This sample is unsaved. Change anything, then save it as your own demo journal entry.'
+      : 'Add the story, trip details, and mood, then save it to the archive. Canva pages are optional.';
 
     return (
       <div className="p-5">
@@ -3825,13 +3894,11 @@ export default function JournalPage() {
           <div className="border-b border-gold/15 bg-cream/55 px-4 py-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gold-deep">
-                {parsedTrip ? 'Imported trip draft' : 'Journal draft'}
+                {draftEyebrow}
               </p>
-              <h3 className="mt-1 text-2xl font-serif text-ink">
-                {effectiveJournalTitle || (parsedTrip ? 'Review imported trip' : 'Start a journal entry')}
-              </h3>
+              <h3 className="mt-1 text-2xl font-serif text-ink">{draftTitle}</h3>
               <p className="mt-1 text-sm text-ink/60">
-                Add the story, trip details, and mood, then save it to the archive. Canva pages are optional.
+                {draftDescription}
               </p>
             </div>
           </div>
@@ -4024,7 +4091,18 @@ export default function JournalPage() {
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-ink">Choose how to start</h4>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className={`mt-3 grid gap-3 md:grid-cols-2 ${isDemoUser ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+                  {isDemoUser ? (
+                    <button
+                      type="button"
+                      className="rounded-lg border border-gold/24 bg-white/90 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/50 hover:bg-white"
+                      onClick={openDemoStarterDraft}
+                    >
+                      <Sparkles className="h-5 w-5 text-gold-deep" aria-hidden="true" />
+                      <p className="mt-3 text-sm font-semibold text-ink">Start with demo draft</p>
+                      <p className="mt-1 text-xs leading-5 text-ink/58">Open a prefilled editable journal draft to test the workspace.</p>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
@@ -4033,6 +4111,7 @@ export default function JournalPage() {
                       setCanvaImportedPreview(null);
                       setLocalScrapbookBackupOpen(false);
                       setBlankJournalWorkspaceOpen(true);
+                      setDemoStarterDraftOpen(false);
                       setImportNotice('Started a journal entry without Canva. Add a story and optional memory photos.');
                       setError(null);
                     }}
@@ -4047,6 +4126,7 @@ export default function JournalPage() {
                     onClick={() => {
                       setImportModalOpen(true);
                       setLocalScrapbookBackupOpen(false);
+                      setDemoStarterDraftOpen(false);
                     }}
                   >
                     <FileUp className="h-5 w-5 text-gold-deep" aria-hidden="true" />
@@ -4066,7 +4146,10 @@ export default function JournalPage() {
                   <button
                     type="button"
                     className="rounded-lg border border-gold/20 bg-white/80 p-4 text-left shadow-soft transition hover:-translate-y-0.5 hover:border-gold/40 hover:bg-white"
-                    onClick={openCanvaModal}
+                    onClick={() => {
+                      setDemoStarterDraftOpen(false);
+                      openCanvaModal();
+                    }}
                   >
                     <Search className="h-5 w-5 text-gold-deep" aria-hidden="true" />
                     <p className="mt-3 text-sm font-semibold text-ink">Choose existing</p>
@@ -4461,6 +4544,11 @@ export default function JournalPage() {
           </div>
         }
       >
+        {error === DEMO_VIEW_ONLY_ENTRY_MESSAGE ? (
+          <div className="mb-4 rounded-lg border border-gold/24 bg-white px-4 py-3 text-sm font-semibold text-ink shadow-soft">
+            {DEMO_VIEW_ONLY_ENTRY_MESSAGE}
+          </div>
+        ) : null}
         <DndContext onDragEnd={handleDndDragEnd}>
           <div className={localScrapbookBackupOpen ? 'grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]' : 'grid gap-6'}>
             {!localScrapbookBackupOpen ? (

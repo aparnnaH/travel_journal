@@ -127,7 +127,7 @@ const getEntryCoverPhoto = (entry: EntryCardData) => {
   const pages = getEntryCanvaPages(entry);
   const insertedPhotos = decodedCanva?.insertedPhotos ?? entry.insertedPhotos ?? [];
   const insertedCoverPhoto = Array.isArray(insertedPhotos)
-    ? insertedPhotos.find((photo) => photo?.src?.startsWith('data:image/'))?.src
+    ? insertedPhotos.find((photo) => typeof photo?.src === 'string' && photo.src.trim())?.src
     : null;
   const snakeCaseCoverPhoto = (entry as { cover_photo?: string | null }).cover_photo;
   const coverPageIndex = Math.min(Math.max(getEntryCoverPageIndex(entry), 0), Math.max(0, pages.length - 1));

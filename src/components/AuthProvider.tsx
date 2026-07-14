@@ -45,6 +45,21 @@ function firstProfileRecord(response: unknown): ProfileRecord | null {
   return profile && typeof profile === 'object' ? (profile as ProfileRecord) : null;
 }
 
+// Supabase can leave a stale refresh token in browser storage after local
+// development resets, account switches, or demo/auth transitions. Treat that as
+// logged out instead of surfacing a scary AuthApiError in the console.
+function isMissingRefreshTokenError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+
+  const authError = error as { code?: unknown; message?: unknown; name?: unknown };
+  const message = typeof authError.message === 'string' ? authError.message.toLowerCase() : '';
+
+  return (
+    authError.code === 'refresh_token_not_found' ||
+    (authError.name === 'AuthApiError' && message.includes('refresh token not found'))
+  );
+}
+
 // Combines Supabase Auth identity with optional profile table details into the
 // normalized AuthUser shape used by the UI.
 async function buildAuthUser(user: User): Promise<AuthUser> {
@@ -129,7 +144,18 @@ export default function AuthProvider({ children }: AuthProviderProps) {
           logout();
         }
       } catch (error) {
-        console.warn('Unable to initialize authentication.', error);
+        if (!isMissingRefreshTokenError(error)) {
+          console.warn('Unable to initialize authentication.', error);
+        }
+
+        try {
+          await getSupabaseClient().auth.signOut({ scope: 'local' });
+        } catch (signOutError) {
+          if (!isMissingRefreshTokenError(signOutError)) {
+            console.warn('Unable to clear stale authentication session.', signOutError);
+          }
+        }
+
         await syncAuthCookie(null);
         logout();
       } finally {

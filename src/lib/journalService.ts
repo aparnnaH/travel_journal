@@ -28,6 +28,8 @@ import {
 } from '@/lib/demoMode';
 
 const MAX_DEMO_INSERTED_JOURNAL_PHOTOS = 8;
+const isAllowedDemoJournalImage = (src?: string | null) =>
+  typeof src === 'string' && (src.startsWith('data:image/') || src.startsWith('/images/demo/'));
 
 const createDemoShareRecipient = (sharedAt: string): JournalShareRecipient => ({
   id: DEMO_SHARE_RECIPIENT_ID,
@@ -253,14 +255,14 @@ export async function createJournalEntry(entry: {
   if (isDemoMode()) {
     const now = new Date().toISOString();
     const cleanCanvaPages = entry.canvaPages?.filter((page) => page.startsWith('data:image/')) ?? [];
-    const cleanCoverPhoto = entry.coverPhoto?.startsWith('data:image/') ? entry.coverPhoto : null;
+    const cleanCoverPhoto = isAllowedDemoJournalImage(entry.coverPhoto) ? entry.coverPhoto ?? null : null;
     const cleanCoverPageIndex =
       typeof entry.coverPageIndex === 'number' && Number.isFinite(entry.coverPageIndex) && cleanCanvaPages.length
         ? Math.max(0, Math.min(cleanCanvaPages.length - 1, Math.floor(entry.coverPageIndex)))
         : null;
     const cleanInsertedPhotos =
       entry.insertedPhotos
-        ?.filter((photo) => photo?.src?.startsWith('data:image/'))
+        ?.filter((photo) => isAllowedDemoJournalImage(photo?.src))
         .slice(0, MAX_DEMO_INSERTED_JOURNAL_PHOTOS)
         .map((photo, index) => ({
           id: photo.id || `demo-photo-${index + 1}`,
@@ -395,14 +397,14 @@ export async function updateJournalEntry(entry: {
         }
 
         const cleanCanvaPages = entry.canvaPages?.filter((page) => page.startsWith('data:image/')) ?? item.canvaPages ?? [];
-        const cleanCoverPhoto = entry.coverPhoto?.startsWith('data:image/') ? entry.coverPhoto : item.coverPhoto ?? null;
+        const cleanCoverPhoto = isAllowedDemoJournalImage(entry.coverPhoto) ? entry.coverPhoto ?? null : item.coverPhoto ?? null;
         const cleanCoverPageIndex =
           typeof entry.coverPageIndex === 'number' && Number.isFinite(entry.coverPageIndex) && cleanCanvaPages.length
             ? Math.max(0, Math.min(cleanCanvaPages.length - 1, Math.floor(entry.coverPageIndex)))
             : item.coverPageIndex ?? null;
         const cleanInsertedPhotos =
           entry.insertedPhotos
-            ?.filter((photo) => photo?.src?.startsWith('data:image/'))
+            ?.filter((photo) => isAllowedDemoJournalImage(photo?.src))
             .slice(0, MAX_DEMO_INSERTED_JOURNAL_PHOTOS)
             .map((photo, index) => ({
               id: photo.id || `demo-photo-${index + 1}`,
