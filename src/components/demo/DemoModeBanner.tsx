@@ -1,8 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
-import Link from 'next/link';
-import { RotateCcw, ShieldCheck, Stamp } from 'lucide-react';
+import { RotateCcw, ShieldCheck } from 'lucide-react';
 import { usePathname, useRouter } from 'next/navigation';
 import { demoMapState, isDemoMode, resetDemoBrowserState } from '@/lib/demoMode';
 import { useMapStore } from '@/store/mapStore';
@@ -53,13 +52,6 @@ export default function DemoModeBanner() {
             <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
             Reset demo
           </button>
-          <Link
-            href="/passport?stamp=japan"
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-gold-deep px-3 text-xs font-semibold text-white transition hover:bg-ink"
-          >
-            <Stamp className="h-3.5 w-3.5" aria-hidden="true" />
-            View stamp
-          </Link>
         </div>
       </div>
     </div>

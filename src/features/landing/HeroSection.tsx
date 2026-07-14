@@ -39,7 +39,7 @@ export function HeroSection() {
   return (
     <section className="relative pt-16 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
       <motion.div
-        className="container mx-auto max-w-6xl relative z-10"
+        className="container mx-auto max-w-7xl relative z-10"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
