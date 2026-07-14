@@ -290,12 +290,34 @@ export const demoSharedJournalEntries: JournalEntry[] = [
     id: 'demo-shared-sofia-lisbon-morning',
     userId: DEMO_REMOVABLE_FRIEND_ID,
     countryId: 'PT',
-    title: 'Lisbon morning tiles',
+    title: 'A Peaceful Morning in Lisbon',
     content:
-      'Sofia shared a gentle Lisbon morning: blue tiles catching the sun, a tiny espresso at the corner cafe, and a slow climb toward the viewpoint before the streets got busy.',
+      'The morning started quietly as Lisbon slowly woke up. Blue azulejo tiles reflected the warm sunlight, and the streets were calm enough to enjoy every little detail. After a quick espresso and a freshly baked pastel de nata from a neighborhood cafe, it was time for a slow walk uphill.\n\nReaching the viewpoint just before the crowds arrived made it even more special. The colorful rooftops, the Tagus River, and the city\'s iconic red trams created a view that was impossible to stop photographing. It was one of those peaceful mornings that perfectly captured the charm of Lisbon.',
     mood: 'peaceful',
     tags: ['lisbon', 'portugal', 'tiles', 'morning'],
-    photos: [],
+    photos: [
+      {
+        id: 'demo-sofia-lisbon-cover',
+        url: '/images/demo/sofia-lisbon-cover.jpeg',
+        alt: 'Blue azulejo tiles in Lisbon',
+        uploadedAt: '2026-05-22T09:30:00.000Z',
+      },
+    ],
+    coverPhoto: '/images/demo/sofia-lisbon-cover.jpeg',
+    insertedPhotos: [
+      {
+        id: 'demo-sofia-lisbon-cover',
+        src: '/images/demo/sofia-lisbon-cover.jpeg',
+        alt: 'Blue azulejo tiles in Lisbon',
+        caption: 'Morning tiles in Lisbon',
+      },
+    ],
+    instagramEmbeds: [
+      {
+        id: 'instagram-1',
+        url: 'https://www.instagram.com/p/DBDncuuNAaS/',
+      },
+    ],
     tripStartDate: '2026-05-20',
     tripEndDate: '2026-05-22',
     createdAt: '2026-05-22T09:30:00.000Z',
