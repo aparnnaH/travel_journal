@@ -140,7 +140,9 @@ const getEntryInsertedPhotos = (entry: EntryCardData) => {
   return Array.isArray(decodedPhotos)
     ? decodedPhotos.filter(
         (photo): photo is InsertedJournalPhoto =>
-          Boolean(photo) && typeof photo.src === 'string' && photo.src.startsWith('data:image/')
+          Boolean(photo) &&
+          typeof photo.src === 'string' &&
+          (photo.src.startsWith('data:image/') || photo.src.startsWith('/images/demo/'))
       )
     : [];
 };
@@ -158,6 +160,7 @@ const getEntryCanvaDesignEditUrl = (entry: EntryCardData) =>
   entry.canva_design_edit_url ||
   decodeJournalContentWithCanva(String(entry.content || '')).canva?.designEditUrl ||
   '';
+const isDemoPublishedEntry = (entry: EntryCardData) => entry.id.startsWith('demo-entry-copy-') || entry.id.startsWith('demo-shared-copy-');
 // Summary list responses omit heavy image payloads, so entries may need a full
 // hydration fetch before showing a cover.
 const needsEntryCoverHydration = (entry: EntryCardData) =>
@@ -184,6 +187,14 @@ const getInstagramPostLabel = (url: string, index: number) => {
   }
 };
 
+const resolveStandaloneImageSrc = (src: string) => {
+  if (src.startsWith('/')) {
+    return typeof window === 'undefined' ? src : new URL(src, window.location.origin).toString();
+  }
+
+  return src;
+};
+
 const createStandaloneJournalHtml = (entry: EntryCardData, options?: { sharedBy?: string }) => {
   const title = entry.title.trim() || 'Travel Journal Entry';
   const countryLabel = getEntryCountryLabel(entry);
@@ -204,7 +215,7 @@ const createStandaloneJournalHtml = (entry: EntryCardData, options?: { sharedBy?
   ].filter(Boolean);
   const renderImageFigure = (src: string, label: string, caption?: string) => `
     <figure class="memory-figure">
-      <img src="${src}" alt="${escapeHtml(label)}" />
+      <img src="${escapeHtml(resolveStandaloneImageSrc(src))}" alt="${escapeHtml(label)}" />
       ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ''}
     </figure>`;
   const renderInstagramPreviewCard = (url: string, index: number) => {
@@ -775,6 +786,11 @@ export default function JournalEntriesPage() {
 
   // Sends owned entries back to the full journal workspace for editing.
   const openEditEntry = (entry: SavedEntry) => {
+    if (isDemoPublishedEntry(entry)) {
+      setNotice('Demo sample entries are view-only. Create your own journal entry to test editing.');
+      return;
+    }
+
     router.push(`/journal?editEntryId=${encodeURIComponent(entry.id)}`);
   };
 
@@ -1398,6 +1414,7 @@ export default function JournalEntriesPage() {
       return null;
     }
 
+    const isOpenedEntryViewOnlyDemoCopy = isDemoPublishedEntry(openedEntry);
     const canvaPages = getEntryCanvaPages(openedEntry);
     const insertedPhotos = getEntryInsertedPhotos(openedEntry);
 
@@ -1496,10 +1513,17 @@ export default function JournalEntriesPage() {
           ) : null}
 
 	          <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
+            {isOpenedEntryViewOnlyDemoCopy ? (
+              <p className="w-full rounded-lg border border-gold/18 bg-cream/45 px-3 py-2 text-sm text-ink/65">
+                This copied demo sample is view-only. You can still create a new journal entry or edit entries you make during the demo.
+              </p>
+            ) : null}
             <Button
               type="button"
               size="sm"
               variant="secondary"
+              disabled={isOpenedEntryViewOnlyDemoCopy}
+              title={isOpenedEntryViewOnlyDemoCopy ? 'Demo sample entries are view-only. Create your own journal entry to test editing.' : undefined}
               onClick={() => openEditEntry(openedEntry)}
             >
               <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />

@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import { motion } from 'framer-motion';
-import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Sparkles, Type, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, Download, ExternalLink, FileUp, ImagePlus, MessageCircle, Mic, Palette, PencilLine, Search, Send, Share2, Sparkles, Star, Type, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import AppHeader from '@/components/layout/AppHeader';
 import PageShell from '@/components/layout/PageShell';
@@ -34,6 +34,7 @@ import {
   fetchJournalEntryShares,
   saveJournalEntryShares,
   updateJournalEntry,
+  updateJournalEntryFavorite,
   updateJournalEntryTitle,
 } from '@/lib/journalService';
 import { decodeJournalContentWithCanva } from '@/lib/journalCanvaPayload';
@@ -49,6 +50,7 @@ import {
   normalizeJournalDate,
 } from '@/lib/journalDates';
 import { placeholderCountries } from '@/lib/placeholderData';
+import { hasJournalFavoriteTag } from '@/lib/journalFavorites';
 import { createCanvaImportPages } from '@/services/import/canvaImportService';
 import {
   BOARD_FALLBACK_WIDTH,
@@ -286,6 +288,8 @@ const getEntryCanvaEditUrl = (entry: SavedEntry | SharedJournalEntry) =>
   entry.canva_design_edit_url ||
   decodeJournalContentWithCanva(String(entry.content || '')).canva?.designEditUrl ||
   null;
+const isDemoPublishedEntry = (entry: SavedEntry | SharedJournalEntry) =>
+  entry.id.startsWith('demo-entry-copy-') || entry.id.startsWith('demo-shared-copy-');
 const getEntryContent = (entry: SavedEntry | SharedJournalEntry) =>
   decodeJournalContentWithCanva(String(entry.content || '')).content;
 const getEntryFallbackTripDate = (entry: SavedEntry | SharedJournalEntry) =>
@@ -327,7 +331,9 @@ const getEntryInsertedPhotos = (entry: SavedEntry | SharedJournalEntry) => {
   return Array.isArray(decodedPhotos)
     ? decodedPhotos.filter(
         (photo): photo is InsertedJournalPhoto =>
-          Boolean(photo) && typeof photo.src === 'string' && photo.src.startsWith('data:image/')
+          Boolean(photo) &&
+          typeof photo.src === 'string' &&
+          (photo.src.startsWith('data:image/') || photo.src.startsWith('/images/demo/'))
       )
     : [];
 };
@@ -335,6 +341,100 @@ const getEntryInstagramEmbeds = (entry: SavedEntry | SharedJournalEntry) =>
   sanitizeInstagramEmbedUrls(
     decodeJournalContentWithCanva(String(entry.content || '')).canva?.instagramEmbeds ?? entry.instagramEmbeds ?? []
   );
+const isFavoriteEntry = (entry: SavedEntry | SharedJournalEntry) => hasJournalFavoriteTag(entry.tags);
+
+const escapeHtml = (value: string) =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+const createJournalExportFileName = (entry: SavedEntry | SharedJournalEntry) => {
+  const slug = entry.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+
+  return `${slug || 'travel-journal-entry'}.html`;
+};
+
+const resolveStandaloneImageSrc = (src: string) => {
+  if (src.startsWith('/')) {
+    return typeof window === 'undefined' ? src : new URL(src, window.location.origin).toString();
+  }
+
+  return src;
+};
+
+const createStandaloneJournalHtml = (entry: SavedEntry | SharedJournalEntry) => {
+  const title = entry.title.trim() || 'Travel Journal Entry';
+  const countryLabel = getEntryCountryLabel(entry);
+  const dateRange = formatJournalDateRange(getEntryTripStartDate(entry), getEntryTripEndDate(entry));
+  const canvaPages = getEntryCanvaPages(entry);
+  const insertedPhotos = getEntryInsertedPhotos(entry);
+  const instagramEmbeds = getEntryInstagramEmbeds(entry);
+  const story = getEntryContent(entry).trim();
+  const tags = entry.tags ?? [];
+  const metaItems = [
+    countryLabel,
+    dateRange,
+    entry.mood ? entry.mood.charAt(0).toUpperCase() + entry.mood.slice(1) : '',
+  ].filter(Boolean);
+  const renderImageFigure = (src: string, label: string, caption?: string) => `
+    <figure class="memory-figure">
+      <img src="${escapeHtml(resolveStandaloneImageSrc(src))}" alt="${escapeHtml(label)}" />
+      ${caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ''}
+    </figure>`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(title)} - Travel Journal</title>
+  <style>
+    :root { color-scheme: light; --ink: #2f271f; --muted: #765f45; --paper: #fffaf0; --line: #e8d8b8; --gold: #b6842d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f7f0df; color: var(--ink); font-family: Georgia, 'Times New Roman', serif; }
+    main { width: min(920px, calc(100% - 32px)); margin: 32px auto; border: 1px solid var(--line); background: var(--paper); padding: clamp(22px, 4vw, 44px); box-shadow: 0 24px 70px rgba(47, 39, 31, 0.14); }
+    .eyebrow { margin: 0 0 10px; color: var(--gold); font: 700 12px/1.4 Arial, sans-serif; letter-spacing: 0.16em; text-transform: uppercase; }
+    h1 { margin: 0; font-size: clamp(34px, 7vw, 68px); line-height: 0.96; letter-spacing: 0; }
+    .meta, .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .meta { margin: 22px 0 0; padding: 0; list-style: none; font: 700 13px/1.4 Arial, sans-serif; color: var(--muted); }
+    .meta li, .tag { border: 1px solid var(--line); border-radius: 999px; background: #fffdf7; padding: 7px 10px; }
+    section { margin-top: 30px; }
+    h2 { margin: 0 0 14px; font: 700 18px/1.2 Arial, sans-serif; color: var(--ink); }
+    .story { white-space: pre-wrap; font-size: 18px; line-height: 1.8; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    .memory-figure { margin: 0; overflow: hidden; border: 1px solid var(--line); background: #fffdf7; }
+    .memory-figure img { display: block; width: 100%; height: auto; }
+    figcaption { padding: 10px 12px; font: 700 13px/1.4 Arial, sans-serif; color: var(--muted); }
+    .instagram-list a { display: inline-block; margin: 0 0 8px; color: #7a4c09; font: 700 15px/1.5 Arial, sans-serif; overflow-wrap: anywhere; }
+    footer { margin-top: 36px; border-top: 1px solid var(--line); padding-top: 16px; color: var(--muted); font: 13px/1.6 Arial, sans-serif; }
+    @media print { body { background: #fff; } main { width: 100%; margin: 0; border: 0; box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Travel Journal Memory</p>
+    <h1>${escapeHtml(title)}</h1>
+    ${metaItems.length ? `<ul class="meta">${metaItems.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+    ${canvaPages.length ? `<section><h2>Canva Pages</h2><div class="grid">${canvaPages.map((page, index) => renderImageFigure(page, `Canva page ${index + 1}`)).join('')}</div></section>` : ''}
+    ${insertedPhotos.length ? `<section><h2>Memory Photos</h2><div class="grid">${insertedPhotos.map((photo, index) => renderImageFigure(photo.src, photo.alt || `Memory photo ${index + 1}`, photo.caption)).join('')}</div></section>` : ''}
+    ${instagramEmbeds.length ? `<section><h2>Instagram Posts</h2><div class="instagram-list">${instagramEmbeds.map((embed) => `<a href="${escapeHtml(embed.url)}" target="_blank" rel="noreferrer">${escapeHtml(embed.url)}</a>`).join('')}</div></section>` : ''}
+    ${story ? `<section><h2>Story</h2><div class="story">${escapeHtml(story)}</div></section>` : ''}
+    {TAGS_SECTION}
+    <footer>Exported from Travel Journal on ${escapeHtml(new Date().toLocaleDateString())}. This file is a standalone memory snapshot.</footer>
+  </main>
+</body>
+</html>`.replace(
+    '{TAGS_SECTION}',
+    tags.length ? `<section><h2>Tags</h2><div class="tags">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}</div></section>` : ''
+  );
+};
 
 // Extracts scrapbook photos into the compact input shape expected by Memory Keeper.
 const getMemoryKeeperPhotos = (pages: ScrapbookPageData[]) =>
@@ -570,6 +670,7 @@ export default function JournalPage() {
   const [entryPendingDelete, setEntryPendingDelete] = useState<SavedEntry | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exportingEntryId, setExportingEntryId] = useState<string | null>(null);
   const [sharingEntryId, setSharingEntryId] = useState<string | null>(null);
   const [shareRecipientsByEntry, setShareRecipientsByEntry] = useState<Record<string, JournalShareRecipient[]>>({});
   const [selectedShareFriendIds, setSelectedShareFriendIds] = useState<string[]>([]);
@@ -786,6 +887,11 @@ export default function JournalPage() {
   };
 
   const openEntryInWorkspace = useCallback(async (entryId: string) => {
+    if (entryId.startsWith('demo-entry-copy-') || entryId.startsWith('demo-shared-copy-')) {
+      setError(DEMO_VIEW_ONLY_ENTRY_MESSAGE);
+      return;
+    }
+
     const fullEntry = await loadFullEntry({ id: entryId } as SavedEntry);
 
     if (!fullEntry) {
@@ -2449,6 +2555,58 @@ export default function JournalPage() {
     setDeleteError(null);
     setSharingEntryId(null);
     setCommentEntryId(null);
+  };
+
+  const downloadStandaloneHtml = async (entry: SavedEntry) => {
+    setExportingEntryId(entry.id);
+    setSavedEntryNotice(null);
+
+    try {
+      const html = createStandaloneJournalHtml(entry);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = createJournalExportFileName(entry);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setSavedEntryNotice({ entry, message: 'Exported' });
+    } catch {
+      setError('Could not export this journal entry.');
+    } finally {
+      setExportingEntryId(null);
+    }
+  };
+
+  const toggleFavoriteEntry = async (entry: SavedEntry) => {
+    const countryLabel = getEntryCountryLabel(entry) || 'this country';
+    const nextFavoriteState = !isFavoriteEntry(entry);
+
+    setSavedEntryNotice(null);
+    setError(null);
+
+    const response = await updateJournalEntryFavorite({
+      entryId: entry.id,
+      favoriteForCountry: nextFavoriteState,
+    });
+
+    if (!response.success || !response.data) {
+      setError(response.error || 'Could not update this favorite.');
+      return;
+    }
+
+    const updatedEntries = (response.updatedEntries ?? [response.data]) as SavedEntry[];
+    const updatedById = new Map(updatedEntries.map((updatedEntry) => [updatedEntry.id, updatedEntry]));
+    const updatedEntry = updatedById.get(entry.id) ?? (response.data as SavedEntry);
+
+    setOpenedEntry((current) => (current?.id === updatedEntry.id ? { ...current, ...updatedEntry } : current));
+    setSavedEntryNotice({
+      entry: updatedEntry,
+      message: nextFavoriteState ? `Added to favorites for ${countryLabel}.` : `Removed from favorites for ${countryLabel}.`,
+    });
   };
 
   const cancelDeleteEntry = () => {
@@ -5016,13 +5174,39 @@ export default function JournalPage() {
 	              ) : null}
 
 	              <div className="mt-6 flex flex-wrap gap-2 border-t border-gold/16 pt-4">
-	                <Button type="button" size="sm" variant="secondary" onClick={() => void openEntryInWorkspace(openedEntry.id)}>
+	                {isDemoPublishedEntry(openedEntry) ? (
+	                  <p className="w-full rounded-lg border border-gold/18 bg-cream/45 px-3 py-2 text-sm text-ink/65">
+	                    This copied demo sample is view-only. You can still create a new journal entry or edit entries you make during the demo.
+	                  </p>
+	                ) : null}
+	                <Button
+	                  type="button"
+	                  size="sm"
+	                  variant="secondary"
+	                  disabled={isDemoPublishedEntry(openedEntry)}
+	                  title={isDemoPublishedEntry(openedEntry) ? 'Demo sample entries are view-only. Create your own journal entry to test editing.' : undefined}
+	                  onClick={() => void openEntryInWorkspace(openedEntry.id)}
+	                >
 	                  <PencilLine className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Edit
 	                </Button>
 	                <Button type="button" size="sm" variant="secondary" onClick={() => openSharePanel(openedEntry)}>
 	                  <Share2 className="mr-2 h-4 w-4" aria-hidden="true" />
 	                  Share
+	                </Button>
+	                <Button
+	                  type="button"
+	                  size="sm"
+	                  variant="secondary"
+	                  isLoading={exportingEntryId === openedEntry.id}
+	                  onClick={() => void downloadStandaloneHtml(openedEntry)}
+	                >
+	                  <Download className="mr-2 h-4 w-4" aria-hidden="true" />
+	                  Export HTML
+	                </Button>
+	                <Button type="button" size="sm" variant="ghost" onClick={() => void toggleFavoriteEntry(openedEntry)}>
+	                  <Star className={isFavoriteEntry(openedEntry) ? 'mr-2 h-4 w-4 fill-current' : 'mr-2 h-4 w-4'} aria-hidden="true" />
+	                  {isFavoriteEntry(openedEntry) ? 'Favorited' : 'Favorite'}
 	                </Button>
 	                <Button type="button" size="sm" variant="ghost" onClick={() => openCommentPanel(openedEntry.id)}>
 	                  <MessageCircle className="mr-2 h-4 w-4" aria-hidden="true" />
